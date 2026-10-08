@@ -93,3 +93,6 @@ Plugins/**/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
+
+# 사용하지 않는 게임 에셋
+/.mcp.json
