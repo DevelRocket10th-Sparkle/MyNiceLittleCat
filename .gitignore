@@ -1,5 +1,24 @@
-# Visual Studio 2015 user specific files
+# UE5 빌드/캐시 산출물 (git 추적 제외)
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+Build/
 .vs/
+*.VC.db
+*.VC.opendb
+
+# 프로젝트 파일 (재생성 가능)
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.opendb
+
+# 패키징 결과물
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
 
 # Compiled Object files
 *.slo
@@ -35,6 +54,7 @@
 *.xcodeproj
 *.xcworkspace
 *.sln
+*.slnx
 *.suo
 *.opensdf
 *.sdf
