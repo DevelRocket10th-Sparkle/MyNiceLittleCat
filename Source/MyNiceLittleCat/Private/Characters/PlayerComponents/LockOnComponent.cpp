@@ -128,6 +128,7 @@ void ULockOnComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
     if (GetWorld())
     {
         GetWorld()->GetTimerManager().ClearTimer(ScanTimerHandle);
+        GetWorld()->GetTimerManager().ClearTimer(CameraFocusTimerHandle);
     }
 
     Super::EndPlay(EndPlayReason);
