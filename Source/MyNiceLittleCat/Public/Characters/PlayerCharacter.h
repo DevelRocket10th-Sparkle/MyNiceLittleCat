@@ -7,6 +7,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "PlayerComponents/LockOnComponent.h"
 #include "PlayerCharacter.generated.h"
 
 class USpringArmComponent;
@@ -38,6 +39,10 @@ public:
 protected:
 	// 이동 함수
 	void Move(const FInputActionValue& Value);
+	// 락온 함수
+	void ToggleTargetLock();
+	// 락온 타겟 변경 함수
+	void SwitchTarget(const FInputActionValue& Value);
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
@@ -46,10 +51,19 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputMappingContext> DefaultMappingContext;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "LockOn")
+	TObjectPtr<ULockOnComponent> LockOnComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputAction> MoveAction;
+	TObjectPtr<UInputMappingContext> IMC;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> IA_Move;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> IA_TargetLock;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> IA_TargetSwitch;
 
 };

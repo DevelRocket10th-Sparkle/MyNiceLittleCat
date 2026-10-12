@@ -47,6 +47,9 @@ APlayerCharacter::APlayerCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
+    // 락온 컴포넌트
+    LockOnComponent = CreateDefaultSubobject<ULockOnComponent>(TEXT("LockOnComponent"));
+
 }
 
 // Called when the game starts or when spawned
@@ -56,7 +59,7 @@ void APlayerCharacter::BeginPlay()
 
     APlayerController* PC = Cast<APlayerController>(GetController());
 
-    if (!PC || !DefaultMappingContext) return;
+    if (!PC || !IMC) return;
     ULocalPlayer* LocalPlayer = PC->GetLocalPlayer();
 
 	if (!LocalPlayer) return;
@@ -64,7 +67,7 @@ void APlayerCharacter::BeginPlay()
 
     if (Subsystem)
     {
-        Subsystem->AddMappingContext(DefaultMappingContext, 0);
+        Subsystem->AddMappingContext(IMC, 0);
     }
 
 }
@@ -86,15 +89,33 @@ void APlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 
     if (!EnhancedInput) return;
 
-    if (MoveAction)
+    if (IA_Move)
     {
         EnhancedInput->BindAction(
-            MoveAction,
+            IA_Move,
             ETriggerEvent::Triggered,
             this,
             &APlayerCharacter::Move
         );
     }
+	if (IA_TargetLock)
+	{
+		EnhancedInput->BindAction(
+			IA_TargetLock,
+			ETriggerEvent::Started,
+			this,
+			&APlayerCharacter::ToggleTargetLock
+		);
+	}
+	if (IA_TargetSwitch)
+	{
+		EnhancedInput->BindAction(
+			IA_TargetSwitch,
+			ETriggerEvent::Triggered,
+			this,
+			&APlayerCharacter::SwitchTarget
+		);
+	}
 }
 
 void APlayerCharacter::Move(const FInputActionValue& Value)
@@ -121,5 +142,21 @@ void APlayerCharacter::Move(const FInputActionValue& Value)
 
     AddMovementInput(ForwardDirection, Input.Y);
     AddMovementInput(RightDirection, Input.X);
+}
+
+void APlayerCharacter::ToggleTargetLock()
+{
+    if (LockOnComponent)
+    {
+        LockOnComponent->ToggleTargetLock();
+    }
+}
+
+void APlayerCharacter::SwitchTarget(const FInputActionValue& Value)
+{
+    if (LockOnComponent)
+    {
+        LockOnComponent->SwitchTarget(Value.Get<float>());
+    }
 }
 
