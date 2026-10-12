@@ -6,10 +6,11 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
-
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
+
+#include "Characters/PlayerComponents/LockOnComponent.h"
 
 // Sets default values
 APlayerCharacter::APlayerCharacter()
@@ -77,6 +78,38 @@ void APlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+    if (!IsValid(LockOnComponent) ||
+        !LockOnComponent->IsLockedOn())
+    {
+        return;
+    }
+
+    AActor* Target = LockOnComponent->GetLockedTarget();
+
+    if (!IsValid(Target))
+    {
+        return;
+    }
+
+    FVector Direction =
+        Target->GetActorLocation() - GetActorLocation();
+
+    // 수평 방향만 사용
+    Direction.Z = 0.0f;
+
+    if (Direction.IsNearlyZero()) return;
+
+    const FRotator TargetRotation = Direction.Rotation();
+
+    // TODO 보간속도 하드코딩 수정
+    const FRotator NewRotation = FMath::RInterpTo(
+        GetActorRotation(),
+        FRotator(0.0f, TargetRotation.Yaw, 0.0f),
+        DeltaTime,
+        20.0f
+    );
+
+    SetActorRotation(NewRotation);
 }
 
 // Called to bind functionality to input
