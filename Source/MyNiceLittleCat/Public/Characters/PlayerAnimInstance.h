@@ -28,4 +28,11 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "LockOn")
     bool bIsLockedOn = false;
+
+
+    UPROPERTY(BlueprintReadOnly, Category = "LockOn")
+    float AimYaw = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "LockOn")
+    float AimPitch = 0.0f;
 };

@@ -9,6 +9,8 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 
 #include "Characters/PlayerComponents/LockOnComponent.h"
 
@@ -78,38 +80,48 @@ void APlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-    if (!IsValid(LockOnComponent) ||
-        !LockOnComponent->IsLockedOn())
+    if (!IsValid(LockOnComponent) || !LockOnComponent->IsLockedOn())
     {
         return;
     }
 
     AActor* Target = LockOnComponent->GetLockedTarget();
-
     if (!IsValid(Target))
     {
         return;
     }
 
-    FVector Direction =
+    FVector ToTarget =
         Target->GetActorLocation() - GetActorLocation();
 
-    // 수평 방향만 사용
-    Direction.Z = 0.0f;
+    ToTarget.Z = 0.0f;
 
-    if (Direction.IsNearlyZero()) return;
+    if (ToTarget.IsNearlyZero())
+    {
+        return;
+    }
 
-    const FRotator TargetRotation = Direction.Rotation();
+    const float TargetYaw = ToTarget.Rotation().Yaw;
 
-    // TODO 보간속도 하드코딩 수정
-    const FRotator NewRotation = FMath::RInterpTo(
-        GetActorRotation(),
-        FRotator(0.0f, TargetRotation.Yaw, 0.0f),
-        DeltaTime,
-        20.0f
+    const float DeltaYaw = FMath::FindDeltaAngleDegrees(
+        GetActorRotation().Yaw,
+        TargetYaw
     );
 
-    SetActorRotation(NewRotation);
+    // 상체 회전 한계를 넘으면 몸 전체를 타겟 방향으로 정렬
+    if (FMath::Abs(DeltaYaw) > BodyTurnThreshold)
+    {
+        const FRotator DesiredRotation(0.0f, TargetYaw, 0.0f);
+
+        const FRotator SmoothedRotation = FMath::RInterpTo(
+            GetActorRotation(),
+            DesiredRotation,
+            DeltaTime,
+            BodyTurnInterpSpeed
+        );
+
+        SetActorRotation(SmoothedRotation);
+    }
 }
 
 // Called to bind functionality to input
@@ -147,6 +159,15 @@ void APlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 			ETriggerEvent::Triggered,
 			this,
 			&APlayerCharacter::SwitchTarget
+		);
+	}
+	if (IA_Dodge)
+	{
+		EnhancedInput->BindAction(
+			IA_Dodge,
+			ETriggerEvent::Started,
+			this,
+			&APlayerCharacter::OnDodgeInput
 		);
 	}
 }
@@ -191,5 +212,77 @@ void APlayerCharacter::SwitchTarget(const FInputActionValue& Value)
     {
         LockOnComponent->SwitchTarget(Value.Get<float>());
     }
+}
+
+void APlayerCharacter::StartDodge()
+{
+    if (bIsDodging || !DodgeMontage) return;
+
+    bIsDodging = true;
+
+    FVector Direction = GetLastMovementInputVector();
+
+    if (Direction.IsNearlyZero())
+    {
+        Direction = GetActorForwardVector();
+    }
+    else
+    {
+        Direction.Z = 0.0f;
+    }
+
+	DodgeDirection = Direction.GetSafeNormal();
+
+    if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
+    {
+        AnimInstance->Montage_Play(DodgeMontage);
+    }
+
+    UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+
+    if (MoveComp)
+    {
+        OriginalMaxWalkSpeed = MoveComp->MaxWalkSpeed;
+        MoveComp->MaxWalkSpeed = 3000.0f;
+        MoveComp->Velocity.Z = 350.0f;
+        MoveComp->SetMovementMode(MOVE_Falling);
+    }
+
+    GetWorldTimerManager().SetTimer(
+        DodgeUpdateTimer,
+        this,
+        &APlayerCharacter::UpdateDodge,
+        0.02f,
+        true
+    );
+
+    GetWorldTimerManager().SetTimer(
+        DodgeEndTimer,
+        this,
+        &APlayerCharacter::EndDodge,
+        0.5f,
+        false
+    );
+}
+
+void APlayerCharacter::UpdateDodge()
+{
+    if (!bIsDodging) return;
+
+    AddMovementInput(DodgeDirection, 10.0f);
+}
+
+void APlayerCharacter::EndDodge()
+{
+    bIsDodging = false;
+    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+    {
+        MoveComp->MaxWalkSpeed = OriginalMaxWalkSpeed;
+    }
+}
+
+void APlayerCharacter::OnDodgeInput(const FInputActionValue& Value)
+{
+    StartDodge();
 }
 

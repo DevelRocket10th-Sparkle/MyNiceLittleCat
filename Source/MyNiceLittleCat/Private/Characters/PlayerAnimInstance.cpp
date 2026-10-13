@@ -21,18 +21,69 @@ void UPlayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     }
 
     const FVector Velocity = OwnerPawn->GetVelocity();
-    Speed = Velocity.Size2D();
+    //const FVector LocalVelocity = OwnerPawn->GetActorTransform().InverseTransformVectorNoScale(Velocity);
+    const FVector HorizontalVelocity(Velocity.X, Velocity.Y, 0.0f);
 
-    const FVector LocalVelocity =
-        OwnerPawn->GetActorTransform().InverseTransformVectorNoScale(Velocity);
-    Direction = FMath::RadiansToDegrees(
-        FMath::Atan2(LocalVelocity.Y, LocalVelocity.X)
+    Speed = HorizontalVelocity.Size2D();
+
+	if (FMath::IsNearlyZero(Speed))
+	{
+		Speed = 0.0f;
+		Direction = 0.0f;
+	}
+    else
+    {
+        const FVector Forward = OwnerPawn->GetActorForwardVector();
+        const FVector Right = OwnerPawn->GetActorRightVector();
+
+        const float ForwardSpeed =
+            FVector::DotProduct(HorizontalVelocity, Forward);
+
+        const float RightSpeed =
+            FVector::DotProduct(HorizontalVelocity, Right);
+
+        Direction = FMath::RadiansToDegrees(FMath::Atan2(RightSpeed, ForwardSpeed));
+    }
+
+    //Direction = FMath::RadiansToDegrees(FMath::Atan2(LocalVelocity.Y, LocalVelocity.X));
+    UE_LOG(
+        LogTemp,
+        Log,
+        TEXT("Speed: %f, Direction: %f"),
+        Speed,
+        Direction
     );
-
     bIsLockedOn = false;
-
-    if (ULockOnComponent* LockOnComponent = OwnerPawn->FindComponentByClass<ULockOnComponent>())
+    ULockOnComponent* LockOnComponent = OwnerPawn->FindComponentByClass<ULockOnComponent>();
+    if (LockOnComponent)
     {
         bIsLockedOn = LockOnComponent->IsLockedOn();
     }
+
+    AActor* Target = LockOnComponent->GetLockedTarget();
+    if (!IsValid(Target))
+    {
+        return;
+    }
+
+    const FVector ToTarget =
+        Target->GetActorLocation() - OwnerPawn->GetActorLocation();
+
+    const FRotator TargetRotation = ToTarget.Rotation();
+
+    FRotator RelativeRotation =
+        TargetRotation - OwnerPawn->GetActorRotation();
+
+    RelativeRotation.Normalize();
+
+    float TargetAimYaw = FMath::Clamp(RelativeRotation.Yaw, -360.0f, 360.0f);
+    float TargetAimPitch = FMath::Clamp(-RelativeRotation.Pitch, -35.0f, 10.0f);
+
+
+
+    AimYaw = FMath::FInterpTo(
+        AimYaw, TargetAimYaw, DeltaSeconds, 10.0f);
+
+    AimPitch = FMath::FInterpTo(
+        AimPitch, TargetAimPitch, DeltaSeconds, 10.0f);
 }
