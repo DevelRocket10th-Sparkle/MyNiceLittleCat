@@ -18,36 +18,38 @@ APetCharacter::APetCharacter()
 	// 펫 캐릭터에 컨트롤러 세팅
 	AIControllerClass = APetAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
-
-	
 }
 
 void APetCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
 }
 
 void APetCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
 }
 
 void APetCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
-
 }
 
-void APetCharacter::SetFollowTarget(AActor* _target)
+void APetCharacter::InitializePet(const FPetInitializationData& _data)
 {
-	if (this == _target) return; // 펫 본인은 추종 대상에서 제외해요
+	// 펫한테 필요한 초기 세팅을 해요
+	InitializationData = _data;
+	RequestedBehavior = _data.InitialBehavior;
+	bInitialized = true;
 
-	FollowTarget = (true == IsValid(_target)) ? _target : nullptr;
+	// 초기 세팅이 끝나면 컨트롤러에게 알려줘요
+	if (APetAIController* PetController = Cast<APetAIController>(GetController()))
+		PetController->StartPetLogic();
+	// 컨트롤러가 아직 없다면 ? 이후 기존 OnPossess에서 진행
 }
 
-AActor* APetCharacter::GetFollowTarget() const
+APawn* APetCharacter::GetPartnerPlayer() const
 {
-	return (true == IsValid(FollowTarget.Get())) ? FollowTarget.Get() : nullptr;
+	APawn* Player = InitializationData.PartnerPlayer.Get();
+	return (true == IsValid(Player)) ? Player : nullptr;
 }
