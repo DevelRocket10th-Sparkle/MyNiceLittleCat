@@ -80,26 +80,14 @@ void APlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-    if (!IsValid(LockOnComponent) || !LockOnComponent->IsLockedOn())
-    {
-        return;
-    }
+    if (!IsValid(LockOnComponent) || !LockOnComponent->IsLockedOn()) return;
 
     AActor* Target = LockOnComponent->GetLockedTarget();
-    if (!IsValid(Target))
-    {
-        return;
-    }
+    if (!IsValid(Target)) return;
 
-    FVector ToTarget =
-        Target->GetActorLocation() - GetActorLocation();
-
+    FVector ToTarget = Target->GetActorLocation() - GetActorLocation();
     ToTarget.Z = 0.0f;
-
-    if (ToTarget.IsNearlyZero())
-    {
-        return;
-    }
+    if (ToTarget.IsNearlyZero()) return;
 
     const float TargetYaw = ToTarget.Rotation().Yaw;
 
@@ -109,7 +97,7 @@ void APlayerCharacter::Tick(float DeltaTime)
     );
 
     // 상체 회전 한계를 넘으면 몸 전체를 타겟 방향으로 정렬
-    if (FMath::Abs(DeltaYaw) > BodyTurnThreshold)
+    if (FMath::Abs(DeltaYaw) > BodyTurnThreshold && !bIsDodging)
     {
         const FRotator DesiredRotation(0.0f, TargetYaw, 0.0f);
 
@@ -174,6 +162,7 @@ void APlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 
 void APlayerCharacter::Move(const FInputActionValue& Value)
 {
+    if (bIsDodging) return;
     const FVector2D Input = Value.Get<FVector2D>();
 
     if (Input.IsNearlyZero()) return;
@@ -235,6 +224,7 @@ void APlayerCharacter::StartDodge()
 
     if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
     {
+        SetActorRotation(DodgeDirection.Rotation());
         AnimInstance->Montage_Play(DodgeMontage);
     }
 
@@ -243,9 +233,9 @@ void APlayerCharacter::StartDodge()
     if (MoveComp)
     {
         OriginalMaxWalkSpeed = MoveComp->MaxWalkSpeed;
-        MoveComp->MaxWalkSpeed = 3000.0f;
-        MoveComp->Velocity.Z = 350.0f;
+
         MoveComp->SetMovementMode(MOVE_Falling);
+        MoveComp->Velocity.Z = 280.0f;
     }
 
     GetWorldTimerManager().SetTimer(
@@ -260,7 +250,7 @@ void APlayerCharacter::StartDodge()
         DodgeEndTimer,
         this,
         &APlayerCharacter::EndDodge,
-        0.5f,
+        0.52f,
         false
     );
 }
@@ -269,7 +259,16 @@ void APlayerCharacter::UpdateDodge()
 {
     if (!bIsDodging) return;
 
-    AddMovementInput(DodgeDirection, 10.0f);
+    constexpr float DodgeSpeed = 1050.0f;
+
+    UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+    FVector Velocity = MoveComp->Velocity;
+
+    Velocity.X = DodgeDirection.X * DodgeSpeed;
+    Velocity.Y = DodgeDirection.Y * DodgeSpeed;
+
+    // Z 속도는 유지해서 살짝 뜨는 동작과 중력 적용
+    MoveComp->Velocity = Velocity;
 }
 
 void APlayerCharacter::EndDodge()
