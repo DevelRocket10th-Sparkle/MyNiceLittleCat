@@ -35,6 +35,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pet")
 	EPetBehavior GetRequestedBehavior() const { return RequestedBehavior; }
 
+	UFUNCTION(BlueprintCallable, Category = "Pet|Behavior")
+	bool RequestBehavior(EPetBehavior NewBehavior); // 행동을 요청하는 함수
+
+	UFUNCTION(CallInEditor, Category = "Pet|Debug")
+	void DebugRequestIdle(); //! State 테스트용
+
+	UFUNCTION(CallInEditor, Category = "Pet|Debug")
+	void DebugRequestFollow(); //! State 테스트용
+
 	// =============================================================================
 protected:
 	UPROPERTY(EditInstanceOnly, Category = "Pet|Follow")

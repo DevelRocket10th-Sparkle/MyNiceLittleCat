@@ -53,3 +53,24 @@ APawn* APetCharacter::GetPartnerPlayer() const
 	APawn* Player = InitializationData.PartnerPlayer.Get();
 	return (true == IsValid(Player)) ? Player : nullptr;
 }
+
+bool APetCharacter::RequestBehavior(EPetBehavior NewBehavior)
+{
+	if (false == bInitialized) return false;
+
+	if((EPetBehavior::Follow == NewBehavior) && (false == IsValid(GetPartnerPlayer())))
+		return false;
+
+		RequestedBehavior = NewBehavior;
+		return true;
+}
+
+void APetCharacter::DebugRequestIdle()
+{
+	RequestBehavior(EPetBehavior::Idle);
+}
+
+void APetCharacter::DebugRequestFollow()
+{
+	RequestBehavior(EPetBehavior::Follow);
+}
