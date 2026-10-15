@@ -58,8 +58,13 @@ bool APetCharacter::RequestBehavior(EPetBehavior NewBehavior)
 {
 	if (false == bInitialized) return false;
 
+	//! 테스트용
+	//! MoveTo는 RequestMoveTo(_destination)로 호출 
+	if ((EPetBehavior::MoveTo == NewBehavior)) return false;
+
 	if((EPetBehavior::Follow == NewBehavior) && (false == IsValid(GetPartnerPlayer())))
 		return false;
+
 
 		RequestedBehavior = NewBehavior;
 		return true;
@@ -73,4 +78,20 @@ void APetCharacter::DebugRequestIdle()
 void APetCharacter::DebugRequestFollow()
 {
 	RequestBehavior(EPetBehavior::Follow);
+}
+
+void APetCharacter::DebugRequestMoveTo()
+{
+	RequestMoveTo(DebugMoveDestination);
+}
+
+bool APetCharacter::RequestMoveTo(const FVector& _destination)
+{
+	if (false == bInitialized) return false;
+	if (true == _destination.ContainsNaN()) return false;
+
+	MoveDestination = _destination;
+	RequestedBehavior = EPetBehavior::MoveTo;
+
+	return true; // MoveTo 명령 접수 완료
 }

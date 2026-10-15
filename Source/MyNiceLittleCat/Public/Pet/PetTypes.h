@@ -10,7 +10,8 @@ UENUM(BlueprintType)
 enum class EPetBehavior : uint8
 {
     Idle   UMETA(DisplayName = "Idle"),
-    Follow UMETA(DisplayName = "Follow")
+    Follow UMETA(DisplayName = "Follow"),
+    MoveTo UMETA(DisplayName = "MoveTo")
 };
 
 // 외부에서 펫에게 전달할 펫 초기화 정보
