@@ -1,4 +1,7 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+// 작성자: 강진구
+// 작성일자: 2026-10-12
+// 
+// 플레이어가 락온 가능한 오브젝트가 구현하는 인터페이스입니다.
 
 #pragma once
 
