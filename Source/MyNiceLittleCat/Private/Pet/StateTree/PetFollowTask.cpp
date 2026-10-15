@@ -24,7 +24,7 @@ EStateTreeRunStatus FPetFollowTask::EnterState(FStateTreeExecutionContext& Conte
         return EStateTreeRunStatus::Failed;
 
     // 펫의 타겟이 없다 : Task 실패
-    AActor* Target = Data.Pet->GetFollowTarget();
+    AActor* Target = Data.Pet->GetPartnerPlayer();
     if (false == IsValid(Target))
         return EStateTreeRunStatus::Failed;
 
@@ -71,7 +71,7 @@ EStateTreeRunStatus FPetFollowTask::Tick(FStateTreeExecutionContext& Context, co
     if (false == IsValid(Data.Pet.Get()) || false == IsValid(Controller))
         return EStateTreeRunStatus::Failed;
 
-    AActor* Target = Data.Pet->GetFollowTarget();
+    AActor* Target = Data.Pet->GetPartnerPlayer();
     if (false == IsValid(Target))
     {
         Controller->StopMovement();

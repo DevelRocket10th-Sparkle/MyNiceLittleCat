@@ -34,12 +34,20 @@ void APetAIController::OnUnPossess()
 	Super::OnUnPossess();
 }
 
+void APetAIController::StartPetLogic()
+{
+	if (true == HasActorBegunPlay())
+		TryStartPetLogic();
+}
+
 void APetAIController::TryStartPetLogic()
 {
 	APetCharacter* Pet = Cast<APetCharacter>(GetPawn());
 
 	if (false == IsValid(Pet)) return;
-	if (false == IsValid(Pet->GetFollowTarget())) return;
+
+	// 펫 초기 세팅 진행 확인
+	if (false == Pet->IsPetInitialized()) return;
 
 	if (false == StateTreeComponent->IsRunning())
 		StateTreeComponent->StartLogic();

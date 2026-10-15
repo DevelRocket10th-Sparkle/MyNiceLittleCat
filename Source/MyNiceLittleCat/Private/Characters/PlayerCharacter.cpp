@@ -12,6 +12,8 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 
+#include "Characters/GAS/PlayerAttributeSet.h"
+#include "Characters/GAS/GA_MeleeAttack.h"
 #include "Characters/PlayerComponents/LockOnComponent.h"
 
 // Sets default values
@@ -53,6 +55,15 @@ APlayerCharacter::APlayerCharacter()
     // 락온 컴포넌트
     LockOnComponent = CreateDefaultSubobject<ULockOnComponent>(TEXT("LockOnComponent"));
 
+    // GAS
+    AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+    AttributeSet = CreateDefaultSubobject<UPlayerAttributeSet>(TEXT("AttributeSet"));
+
+}
+
+UAbilitySystemComponent* APlayerCharacter::GetAbilitySystemComponent() const
+{
+    return AbilitySystemComponent;
 }
 
 // Called when the game starts or when spawned
@@ -71,6 +82,18 @@ void APlayerCharacter::BeginPlay()
     if (Subsystem)
     {
         Subsystem->AddMappingContext(IMC, 0);
+    }
+
+    if (AbilitySystemComponent)
+    {
+        AbilitySystemComponent->InitAbilityActorInfo(this, this);
+    }
+
+    if (AbilitySystemComponent && MeleeAttackAbilityClass)
+    {
+        AbilitySystemComponent->GiveAbility(
+            FGameplayAbilitySpec(MeleeAttackAbilityClass, 1)
+        );
     }
 
 }
@@ -158,6 +181,15 @@ void APlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 			&APlayerCharacter::OnDodgeInput
 		);
 	}
+    if (IA_MeleeAttack)
+    {
+        EnhancedInput->BindAction(
+            IA_MeleeAttack,
+            ETriggerEvent::Started,
+            this,
+            &APlayerCharacter::OnMeleeAttackInput
+        );
+    }
 }
 
 void APlayerCharacter::Move(const FInputActionValue& Value)
@@ -283,5 +315,15 @@ void APlayerCharacter::EndDodge()
 void APlayerCharacter::OnDodgeInput(const FInputActionValue& Value)
 {
     StartDodge();
+}
+
+void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
+{
+    if (!AbilitySystemComponent || !MeleeAttackAbilityClass)
+    {
+        return;
+    }
+
+    AbilitySystemComponent->TryActivateAbilityByClass(MeleeAttackAbilityClass);
 }
 

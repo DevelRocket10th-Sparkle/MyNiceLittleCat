@@ -21,10 +21,14 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void OnUnPossess() override;
+	// =============================================================================
+public:
+	UFUNCTION(BlueprintCallable, Category = "Pet|AI")
+	void StartPetLogic();
 
 private:
 	void TryStartPetLogic();
-
+	// =============================================================================
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pet|AI")
 	TObjectPtr<class UStateTreeAIComponent> StateTreeComponent;
