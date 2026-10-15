@@ -1,11 +1,11 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
+#include "Characters/PlayerAnimInstance.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 #include "Characters/PlayerComponents/LockOnComponent.h"
-#include "Characters/PlayerAnimInstance.h"
 
 void UPlayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
