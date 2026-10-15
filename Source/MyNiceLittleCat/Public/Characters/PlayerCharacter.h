@@ -7,24 +7,37 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
-#include "PlayerComponents/LockOnComponent.h"
+#include "AbilitySystemInterface.h"
+#include "AbilitySystemComponent.h"
 #include "PlayerCharacter.generated.h"
 
 class USpringArmComponent;
 class UCameraComponent;
+class ULockOnComponent;
 class UInputMappingContext;
 class UInputAction;
-struct FInputActionValue;
 class UAnimMontage;
+class UStaticMeshComponent;
+class UPlayerAttributeSet;
+class UGA_MeleeAttack;
+struct FInputActionValue;
 
 UCLASS()
-class MYNICELITTLECAT_API APlayerCharacter : public ACharacter
+class MYNICELITTLECAT_API APlayerCharacter : public ACharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this character's properties
 	APlayerCharacter();
+
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
+	void BeginMeleeHitWindow();
+	void TickMeleeHitWindow();
+	void EndMeleeHitWindow();
+
+	UStaticMeshComponent* GetWeaponMesh() const{ return WeaponMesh.Get(); }
 
 protected:
 	// Called when the game starts or when spawned
@@ -52,6 +65,9 @@ protected:
 
 	// 구르기 입력 시 실행 함수
 	void OnDodgeInput(const FInputActionValue& Value);
+
+	// 공격 입력 시 실행 함수
+	void OnMeleeAttackInput(const FInputActionValue& Value);
 
 protected:
 	FTimerHandle DodgeUpdateTimer;
@@ -81,14 +97,29 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> IA_Dodge;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> IA_MeleeAttack;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> IA_TargetLock;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> IA_TargetSwitch;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS")
+	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
+
+	UPROPERTY()
+	TObjectPtr<UPlayerAttributeSet> AttributeSet;
+
+	UPROPERTY(EditDefaultsOnly, Category = "GAS")
+	TSubclassOf<UGA_MeleeAttack> MeleeAttackAbilityClass;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Dodge|Animation")
 	TObjectPtr<UAnimMontage> DodgeMontage;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	TWeakObjectPtr<UStaticMeshComponent> WeaponMesh;
 
 private:
 	bool bIsDodging = false;

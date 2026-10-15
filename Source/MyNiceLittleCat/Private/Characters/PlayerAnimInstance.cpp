@@ -46,13 +46,7 @@ void UPlayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
     }
 
     //Direction = FMath::RadiansToDegrees(FMath::Atan2(LocalVelocity.Y, LocalVelocity.X));
-    UE_LOG(
-        LogTemp,
-        Log,
-        TEXT("Speed: %f, Direction: %f"),
-        Speed,
-        Direction
-    );
+
     bIsLockedOn = false;
     ULockOnComponent* LockOnComponent = OwnerPawn->FindComponentByClass<ULockOnComponent>();
     if (LockOnComponent)
