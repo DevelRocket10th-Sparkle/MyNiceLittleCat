@@ -235,7 +235,7 @@ void APlayerCharacter::StartDodge()
         OriginalMaxWalkSpeed = MoveComp->MaxWalkSpeed;
 
         MoveComp->SetMovementMode(MOVE_Falling);
-        MoveComp->Velocity.Z = 280.0f;
+        MoveComp->Velocity.Z = 300.0f;
     }
 
     GetWorldTimerManager().SetTimer(
@@ -259,7 +259,7 @@ void APlayerCharacter::UpdateDodge()
 {
     if (!bIsDodging) return;
 
-    constexpr float DodgeSpeed = 1050.0f;
+    constexpr float DodgeSpeed = 1100.0f;
 
     UCharacterMovementComponent* MoveComp = GetCharacterMovement();
     FVector Velocity = MoveComp->Velocity;
