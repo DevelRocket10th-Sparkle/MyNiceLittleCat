@@ -231,23 +231,31 @@ void ULockOnComponent::RefreshCandidates()
 
 bool ULockOnComponent::GetTargetScreenPosition(AActor* Target, FVector2D& OutScreenPosition) const
 {
-    if (!IsValid(Target)) false;
+    if (!IsValid(Target))  return false;
 
     const ACharacter* Character = Cast<ACharacter>(GetOwner());
-    if (!Character) false;
+    if (!Character) return false;
 
     APlayerController* PC = Cast<APlayerController>(Character->GetController());
-    if (!PC) false;
+    if (!PC) return false;
 
     FVector BoundsOrigin;
     FVector BoundsExtent;
     Target->GetActorBounds(false, BoundsOrigin, BoundsExtent);
 
-    return PC->ProjectWorldLocationToScreen(
-        BoundsOrigin,
-        OutScreenPosition,
-        true
-    );
+    if (!PC->ProjectWorldLocationToScreen(BoundsOrigin, OutScreenPosition, true))
+    {
+        return false;
+    }
+
+    int32 ViewportX = 0;
+    int32 ViewportY = 0;
+    PC->GetViewportSize(ViewportX, ViewportY);
+
+    return OutScreenPosition.X >= 0.0f
+        && OutScreenPosition.X <= ViewportX
+        && OutScreenPosition.Y >= 0.0f
+        && OutScreenPosition.Y <= ViewportY;
 }
 
 bool ULockOnComponent::IsValidCandidate(AActor* Target) const

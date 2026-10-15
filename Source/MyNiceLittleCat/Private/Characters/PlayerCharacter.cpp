@@ -6,10 +6,13 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
-
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+
+#include "Characters/PlayerComponents/LockOnComponent.h"
 
 // Sets default values
 APlayerCharacter::APlayerCharacter()
@@ -77,6 +80,36 @@ void APlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+    if (!IsValid(LockOnComponent) || !LockOnComponent->IsLockedOn()) return;
+
+    AActor* Target = LockOnComponent->GetLockedTarget();
+    if (!IsValid(Target)) return;
+
+    FVector ToTarget = Target->GetActorLocation() - GetActorLocation();
+    ToTarget.Z = 0.0f;
+    if (ToTarget.IsNearlyZero()) return;
+
+    const float TargetYaw = ToTarget.Rotation().Yaw;
+
+    const float DeltaYaw = FMath::FindDeltaAngleDegrees(
+        GetActorRotation().Yaw,
+        TargetYaw
+    );
+
+    // 상체 회전 한계를 넘으면 몸 전체를 타겟 방향으로 정렬
+    if (FMath::Abs(DeltaYaw) > BodyTurnThreshold && !bIsDodging)
+    {
+        const FRotator DesiredRotation(0.0f, TargetYaw, 0.0f);
+
+        const FRotator SmoothedRotation = FMath::RInterpTo(
+            GetActorRotation(),
+            DesiredRotation,
+            DeltaTime,
+            BodyTurnInterpSpeed
+        );
+
+        SetActorRotation(SmoothedRotation);
+    }
 }
 
 // Called to bind functionality to input
@@ -116,10 +149,20 @@ void APlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 			&APlayerCharacter::SwitchTarget
 		);
 	}
+	if (IA_Dodge)
+	{
+		EnhancedInput->BindAction(
+			IA_Dodge,
+			ETriggerEvent::Started,
+			this,
+			&APlayerCharacter::OnDodgeInput
+		);
+	}
 }
 
 void APlayerCharacter::Move(const FInputActionValue& Value)
 {
+    if (bIsDodging) return;
     const FVector2D Input = Value.Get<FVector2D>();
 
     if (Input.IsNearlyZero()) return;
@@ -158,5 +201,87 @@ void APlayerCharacter::SwitchTarget(const FInputActionValue& Value)
     {
         LockOnComponent->SwitchTarget(Value.Get<float>());
     }
+}
+
+void APlayerCharacter::StartDodge()
+{
+    if (bIsDodging || !DodgeMontage) return;
+
+    bIsDodging = true;
+
+    FVector Direction = GetLastMovementInputVector();
+
+    if (Direction.IsNearlyZero())
+    {
+        Direction = GetActorForwardVector();
+    }
+    else
+    {
+        Direction.Z = 0.0f;
+    }
+
+	DodgeDirection = Direction.GetSafeNormal();
+
+    if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
+    {
+        SetActorRotation(DodgeDirection.Rotation());
+        AnimInstance->Montage_Play(DodgeMontage);
+    }
+
+    UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+
+    if (MoveComp)
+    {
+        OriginalMaxWalkSpeed = MoveComp->MaxWalkSpeed;
+
+        MoveComp->SetMovementMode(MOVE_Falling);
+        MoveComp->Velocity.Z = 300.0f;
+    }
+
+    GetWorldTimerManager().SetTimer(
+        DodgeUpdateTimer,
+        this,
+        &APlayerCharacter::UpdateDodge,
+        0.02f,
+        true
+    );
+
+    GetWorldTimerManager().SetTimer(
+        DodgeEndTimer,
+        this,
+        &APlayerCharacter::EndDodge,
+        0.52f,
+        false
+    );
+}
+
+void APlayerCharacter::UpdateDodge()
+{
+    if (!bIsDodging) return;
+
+    constexpr float DodgeSpeed = 1100.0f;
+
+    UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+    FVector Velocity = MoveComp->Velocity;
+
+    Velocity.X = DodgeDirection.X * DodgeSpeed;
+    Velocity.Y = DodgeDirection.Y * DodgeSpeed;
+
+    // Z 속도는 유지해서 살짝 뜨는 동작과 중력 적용
+    MoveComp->Velocity = Velocity;
+}
+
+void APlayerCharacter::EndDodge()
+{
+    bIsDodging = false;
+    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+    {
+        MoveComp->MaxWalkSpeed = OriginalMaxWalkSpeed;
+    }
+}
+
+void APlayerCharacter::OnDodgeInput(const FInputActionValue& Value)
+{
+    StartDodge();
 }
 

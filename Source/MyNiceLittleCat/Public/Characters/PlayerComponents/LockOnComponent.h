@@ -1,5 +1,7 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
+// 작성자: 강진구
+// 작성일자: 2026-10-12
+// 
+// 플레이어용 락온 컴포넌트입니다.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -28,6 +30,7 @@ public:
 
 	__forceinline AActor* GetCurrentCandidate() const { return CurrentCandidate.Get(); }
 	__forceinline AActor* GetLockedTarget() const { return LockedTarget.Get(); }
+	__forceinline bool IsLockedOn() const { return IsValid(LockedTarget.Get()); }
 
 protected:
 	// Called when the game starts
