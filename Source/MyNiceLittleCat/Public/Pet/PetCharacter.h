@@ -8,6 +8,8 @@
 #include "Pet/PetTypes.h"
 #include "PetCharacter.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPetModeChanged, EPetMode, PreviousMode, EPetMode, NewMode);
+
 // 괴냥이 클래스
 UCLASS()
 class MYNICELITTLECAT_API APetCharacter : public ACharacter
@@ -53,11 +55,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pet|Behavior")
 	FVector GetMoveDestination() const { return MoveDestination;}
 
-	// =============================================================================
-protected:
-	//UPROPERTY(EditInstanceOnly, Category = "Pet|Follow")
-	//TObjectPtr<AActor> FollowTarget; //! 추후 플레이어 캐릭터로 변경 예정
+	UFUNCTION(BlueprintCallable, Category = "Pet|Mode")
+	bool RequestMode(EPetMode _newMode); // 실제 UI에서 모드를 변경하는 함수
 
+	UFUNCTION(BlueprintPure)
+	EPetMode GetCurrentMode() const { return CurrentMode; }
+
+	UFUNCTION(CallInEditor, Category = "Pet|Debug")
+	void DebugRequestBasicMode(); //! Mode 테스트용
+
+	UFUNCTION(CallInEditor, Category = "Pet|Debug")
+	void DebugRequestMagnetMode(); //! Mode 테스트용
+
+	UFUNCTION(CallInEditor, Category = "Pet|Debug")
+	void DebugRequestReflectMode(); //! Mode 테스트용
+
+	// =============================================================================
+public:
+	UPROPERTY(BlueprintAssignable, Category = "Pet|Mode")
+	FOnPetModeChanged OnPetModeChanged;
+
+protected:
 	// 펫 초기화 데이터
 	UPROPERTY(Transient)
 	FPetInitializationData InitializationData;
@@ -72,6 +90,10 @@ protected:
 	//! State 테스트용
 	UPROPERTY(EditAnywhere, Category = "Pet|Debug")
 	FVector DebugMoveDestination = FVector::ZeroVector; 
+
+	// 펫 모드
+	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Pet", meta = (AllowPrivateAccess = "true"))
+	EPetMode CurrentMode = EPetMode::Basic;
 
 private:
 	// 초기화 됨?

@@ -11,7 +11,16 @@ enum class EPetBehavior : uint8
 {
     Idle   UMETA(DisplayName = "Idle"),
     Follow UMETA(DisplayName = "Follow"),
-    MoveTo UMETA(DisplayName = "MoveTo")
+    MoveTo UMETA(DisplayName = "MoveTo"),
+};
+
+// 플레이어가 선택한 펫 능력 모드
+UENUM(BlueprintType)
+enum class EPetMode : uint8
+{
+    Basic   UMETA(DisplayName = "Basic"),
+    Magnet  UMETA(DisplayName = "Magnet"),
+    Reflect UMETA(DisplayName = "Reflect"),
 };
 
 // 외부에서 펫에게 전달할 펫 초기화 정보

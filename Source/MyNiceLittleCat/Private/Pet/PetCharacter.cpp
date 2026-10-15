@@ -95,3 +95,44 @@ bool APetCharacter::RequestMoveTo(const FVector& _destination)
 
 	return true; // MoveTo 명령 접수 완료
 }
+
+bool APetCharacter::RequestMode(EPetMode _newMode)
+{
+	if(false == bInitialized)
+		return false;
+
+	// 올바른 모드가 요청된건지 확인해요
+	switch (_newMode)
+	{
+	case EPetMode::Basic:
+	case EPetMode::Magnet:
+	case EPetMode::Reflect:
+		break;
+	default: return false;
+	}
+
+	if (_newMode == CurrentMode) return true;
+
+	// 모드 갈아끼우고 델리게이트 보내요
+	const EPetMode PrevMode = CurrentMode;
+	CurrentMode = _newMode;
+
+	OnPetModeChanged.Broadcast(PrevMode, CurrentMode);
+
+	return true;
+}
+
+void APetCharacter::DebugRequestBasicMode()
+{
+	RequestMode(EPetMode::Basic);
+}
+
+void APetCharacter::DebugRequestMagnetMode()
+{
+	RequestMode(EPetMode::Magnet);
+}
+
+void APetCharacter::DebugRequestReflectMode()
+{
+	RequestMode(EPetMode::Reflect);
+}
