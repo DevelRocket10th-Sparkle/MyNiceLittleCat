@@ -1,12 +1,54 @@
-// 작성자: 최요환
-// 작성일자: 2026-10-15
-//
-// 보스전 배리어 구현
+/// 작성자: 최요환
+/// 작성일자: 2026-10-15
+///
+/// 보스전 배리어 구현
 
 #include "Gimmicks/Boss/Barrier.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
 #include "Gimmicks/Boss/BarrierGenerator.h"
+#include "HAL/IConsoleManager.h"
+
+#if !UE_BUILD_SHIPPING
+// 테스트용 콘솔 명령: Barrier.Debug <Activate|Deactivate> [이름 일부]
+// 이름 일부를 생략하면 월드의 모든 배리어에 적용 (예: Barrier.Debug Activate 70)
+static FAutoConsoleCommandWithWorldAndArgs GBarrierDebugCommand(
+	TEXT("Barrier.Debug"),
+	TEXT("Barrier.Debug <Activate|Deactivate> [NameFilter] : 테스트용 배리어 제어"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+	{
+		if (!World || Args.IsEmpty())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("사용법: Barrier.Debug <Activate|Deactivate> [NameFilter]"));
+			return;
+		}
+
+		const FString& Action = Args[0];
+		const FString NameFilter = Args.IsValidIndex(1) ? Args[1] : FString();
+
+		for (TActorIterator<ABarrier> It(World); It; ++It)
+		{
+			ABarrier* Barrier = *It;
+			if (!NameFilter.IsEmpty() && !Barrier->GetActorNameOrLabel().Contains(NameFilter))
+			{
+				continue;
+			}
+
+			if (Action.Equals(TEXT("Activate"), ESearchCase::IgnoreCase))
+			{
+				Barrier->ActivateBarrier();
+			}
+			else if (Action.Equals(TEXT("Deactivate"), ESearchCase::IgnoreCase))
+			{
+				Barrier->DeactivateBarrier();
+			}
+
+			UE_LOG(LogTemp, Log, TEXT("Barrier.Debug %s -> %s (Active: %d)"), *Action, *Barrier->GetActorNameOrLabel(), Barrier->IsBarrierActive());
+		}
+	}));
+#endif
 
 ABarrier::ABarrier()
 {
@@ -65,7 +107,7 @@ void ABarrier::ActivateBarrier()
 	{
 		if (IsValid(Generator))
 		{
-			Generator->ResetGenerator();
+			Generator->ActivateGenerator();
 		}
 	}
 
@@ -83,6 +125,7 @@ void ABarrier::DeactivateBarrier()
 	}
 
 	bBarrierActive = false;
+	DeactivateGenerators();
 	ApplyVisualState();
 	K2_OnBarrierStateChanged(false, false);
 }
@@ -95,6 +138,7 @@ void ABarrier::BreakBarrier()
 	}
 
 	bBarrierActive = false;
+	DeactivateGenerators();
 	ApplyVisualState();
 	K2_OnBarrierStateChanged(false, true);
 	OnBarrierBroken.Broadcast(this);
@@ -105,6 +149,17 @@ void ABarrier::HandleGeneratorDisabled(ABarrierGenerator* Generator)
 	if (bBarrierActive && AreAllGeneratorsDisabled())
 	{
 		BreakBarrier();
+	}
+}
+
+void ABarrier::DeactivateGenerators()
+{
+	for (ABarrierGenerator* Generator : Generators)
+	{
+		if (IsValid(Generator))
+		{
+			Generator->DeactivateGenerator();
+		}
 	}
 }
 

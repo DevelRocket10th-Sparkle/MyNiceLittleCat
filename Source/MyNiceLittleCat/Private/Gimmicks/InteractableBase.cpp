@@ -1,7 +1,7 @@
-// 작성자: 최요환
-// 작성일자: 2026-10-15
-//
-// 상호작용 기믹 베이스 액터 구현
+/// 작성자: 최요환
+/// 작성일자: 2026-10-15
+///
+/// 상호작용 기믹 베이스 액터 구현
 
 #include "Gimmicks/InteractableBase.h"
 #include "Components/StaticMeshComponent.h"

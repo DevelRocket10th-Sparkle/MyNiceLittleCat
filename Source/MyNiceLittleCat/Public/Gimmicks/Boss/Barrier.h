@@ -1,11 +1,13 @@
-// 작성자: 최요환
-// 작성일자: 2026-10-15
-//
-// 보스전 배리어입니다.
-// 에디터에서 지정한 생성장치(Generators)를 구독하고, 배리어가 켜져 있는 동안 전부 무력화되면 붕괴합니다.
-// 보스와는 느슨하게 연결합니다: 보스 페이즈가 ActivateBarrier()를 호출하고 OnBarrierBroken을 구독하며,
-// 보스 피격 처리에서 IsBarrierActive()로 피해 무효 여부를 판단합니다. 메시는 시각 표현용입니다.
-// IActivatableInterface도 구현해서 레버 등 다른 기믹으로도 켜고 끌 수 있습니다.
+/// 작성자: 최요환
+/// 작성일자: 2026-10-15
+///
+/// 보스전 배리어입니다.
+/// 에디터에서 지정한 생성장치(Generators)를 구독하고, 배리어가 켜져 있는 동안 전부 무력화되면 붕괴합니다.
+/// 비활성 상태로 시작하며, 켜질 때 생성장치를 가동하고 붕괴/해제 시 생성장치도 정지합니다.
+/// 보스 페이즈(70%, 30%)마다 별도 인스턴스를 배치하고 각각 생성장치를 연결해서 사용합니다.
+/// 보스와는 느슨하게 연결합니다: 보스 페이즈가 ActivateBarrier()를 호출하고 OnBarrierBroken을 구독하며,
+/// 보스 피격 처리에서 IsBarrierActive()로 피해 무효 여부를 판단합니다. 메시는 시각 표현용입니다.
+/// IActivatableInterface도 구현해서 레버 등 다른 기믹으로도 켜고 끌 수 있습니다.
 
 #pragma once
 
@@ -33,11 +35,11 @@ public:
 	virtual void Activate_Implementation(AActor* Activator) override;
 	virtual void Deactivate_Implementation(AActor* Activator) override;
 
-	// 배리어 켜기: 생성장치 전부 리셋 후 표시
+	// 배리어 켜기: 연결된 생성장치 전부 가동 후 표시
 	UFUNCTION(BlueprintCallable, Category = "Barrier")
 	void ActivateBarrier();
 
-	// 배리어 끄기 (깨짐 이벤트 없이 끔, 페이즈 종료 등 외부 사유)
+	// 배리어 끄기 (깨짐 이벤트 없이 끔, 페이즈 종료 등 외부 사유). 생성장치도 정지
 	UFUNCTION(BlueprintCallable, Category = "Barrier")
 	void DeactivateBarrier();
 
@@ -59,6 +61,8 @@ protected:
 	void HandleGeneratorDisabled(ABarrierGenerator* Generator);
 
 	bool AreAllGeneratorsDisabled() const;
+
+	void DeactivateGenerators();
 
 	void BreakBarrier();
 

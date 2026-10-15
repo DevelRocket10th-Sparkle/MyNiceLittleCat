@@ -1,10 +1,10 @@
-// 작성자: 최요환
-// 작성일자: 2026-10-15
-//
-// 상호작용 기믹 베이스 액터입니다.
-// 레버, 스위치 등 플레이어가 상호작용하는 기믹은 이 클래스를 상속해서 만듭니다.
-// 상호작용하면 활성 상태(bActivated)가 바뀌고, 상태 변경 델리게이트를 브로드캐스트한 뒤
-// LinkedActors 중 IActivatableInterface 구현체에 Activate/Deactivate 신호를 보냅니다.
+/// 작성자: 최요환
+/// 작성일자: 2026-10-15
+///
+/// 상호작용 기믹 베이스 액터입니다.
+/// 레버, 스위치 등 플레이어가 상호작용하는 기믹은 이 클래스를 상속해서 만듭니다.
+/// 상호작용하면 활성 상태(bActivated)가 바뀌고, 상태 변경 델리게이트를 브로드캐스트한 뒤
+/// LinkedActors 중 IActivatableInterface 구현체에 Activate/Deactivate 신호를 보냅니다.
 
 #pragma once
 
