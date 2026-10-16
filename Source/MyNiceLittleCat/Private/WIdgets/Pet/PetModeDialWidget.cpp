@@ -58,6 +58,11 @@ bool UPetModeDialWidget::TryGetSelectedMode(EPetMode& _outMode) const
 	return true;
 }
 
+float UPetModeDialWidget::GetDialDiameter() const
+{
+    return (true == IsValid(DialData.Get())) ? FMath::Max(1.f, DialData->Diameter) : 280.f; //! 280은 그냥 기본값
+}
+
 int32 UPetModeDialWidget::NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, 
     FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
