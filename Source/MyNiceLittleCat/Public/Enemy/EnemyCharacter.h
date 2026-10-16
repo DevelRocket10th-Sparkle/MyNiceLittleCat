@@ -30,9 +30,17 @@ public:
 	AEnemyCharacter();
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent()const override;
-	
+
+	// 사망 후처리 - 사망 연출 종료 시점에 실행
+	virtual void FinishDeath();
+
 	// Getter: AttributeSet
 	inline UEnemyAttributeSet* GetAttributeSet() const { return AttributeSet; }
+
+	// Getter: bWantsToMvoe
+	bool GetWantsToMove() const { return bWantsToMove; }
+	// Setter: bWantsToMove
+	void SetWantsToMove(bool bNewWantsToMove)	{ bWantsToMove = bNewWantsToMove; }
 
 protected:
 
@@ -46,13 +54,14 @@ protected:
 	UFUNCTION(CallInEditor)
 	virtual void ApplyEnemyConfig();
 
-	// 사망 반응
+	// 사망 전처리 - 사망 판정 직후 실행
 	virtual void BeginDeath();	// 필요할 경우 EnemyTypes에 선언된 구조체 FEnemyDeathContext 받기
-	virtual void FinishDeath();
 
 	/* 델리게이트 반응 함수 */
 
 	void HandleHealthChanged(float NewHealth, float MaxHealth);
+
+	void HandleDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 protected :
 
@@ -67,5 +76,13 @@ protected :
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Life")
 	EEnemyLifeState LifeState = EEnemyLifeState::Alive;
+
+	// AnimInstance에서 플레이어 이동 애니메이션 재생 여부를 결정하기 위해 사용
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Movement")
+	bool bWantsToMove = false;
+
+	/* AnimMontage */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> DeathMontage;
 
 };

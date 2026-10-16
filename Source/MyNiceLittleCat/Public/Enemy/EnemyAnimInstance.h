@@ -1,15 +1,17 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
+/*
+* 작성자: 전선현
+* 작성 일자: 2026.10.16.
+* Enemy의 애니메이션 블루프린트에서 필요한 캐릭터 정보 갱신
+*/
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
-
-#include "EnemyTypes.h"
-
 #include "EnemyAnimInstance.generated.h"
 
-class UPawnMovementComponent;
+class AEnemyCharacter;
 
 UCLASS()
 class MYNICELITTLECAT_API UEnemyAnimInstance : public UAnimInstance
@@ -18,22 +20,15 @@ class MYNICELITTLECAT_API UEnemyAnimInstance : public UAnimInstance
 
 public :
 
-	void NativeInitializeAnimation() override;
 	void NativeUpdateAnimation(float DeltaSeconds) override;
 
 protected :
-	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
-	float MoveSpeed;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
-	bool bIsInCombat;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
-	EEnemyLifeState LifeState;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
+	bool bShouldMove = false;
 
 private :
 
-	TWeakObjectPtr<UPawnMovementComponent> OwnerMovementComponent = nullptr;
+	TObjectPtr<AEnemyCharacter> Owner = nullptr;
 	
 };

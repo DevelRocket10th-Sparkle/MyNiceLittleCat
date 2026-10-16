@@ -3,34 +3,16 @@
 
 #include "Enemy/EnemyAnimInstance.h"
 
-#include "GameFramework/PawnMovementComponent.h"
-
-void UEnemyAnimInstance::NativeInitializeAnimation()
-{
-	Super::NativeInitializeAnimation();
-
-	if (APawn* OwnerPawn = TryGetPawnOwner())
-	{
-		OwnerMovementComponent = OwnerPawn->GetMovementComponent();
-	}
-}
+#include "Enemy/EnemyCharacter.h"
 
 void UEnemyAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
 	
-	if (OwnerMovementComponent.IsValid())
+	if (!Owner)
 	{
-		MoveSpeed = OwnerMovementComponent->Velocity.Size();
+		Owner = Cast<AEnemyCharacter>(TryGetPawnOwner());
 	}
-	else
-	{
-		// NativeInitializeAnimation()에서 Owner를 못 찾았을 때를 대비한 코드
-		{
-			if (APawn* OwnerPawn = TryGetPawnOwner())
-			{
-				OwnerMovementComponent = OwnerPawn->GetMovementComponent();
-			}
-		}
-	}
+
+	bShouldMove = IsValid(Owner) && Owner->GetWantsToMove();
 }
