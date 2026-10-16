@@ -6,6 +6,7 @@
 /// 상호작용하면 활성 상태(bActivated)가 바뀌고, 상태 변경 델리게이트를 브로드캐스트한 뒤
 /// LinkedActors 중 IActivatableInterface 구현체에 Activate/Deactivate 신호를 보냅니다.
 /// AlignMode와 InteractionPoint 컴포넌트로 상호작용 전 캐릭터의 위치·방향 정렬을 지정합니다.
+/// 감지 거리 판정은 InteractionVolume 컴포넌트(없으면 메시)에서 플레이어와 가장 가까운 점 기준입니다.
 
 #pragma once
 
@@ -15,6 +16,7 @@
 #include "InteractableBase.generated.h"
 
 class UStaticMeshComponent;
+class UPrimitiveComponent;
 class AInteractableBase;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnInteractableActivationChanged, AInteractableBase*, Interactable, bool, bActivated, AActor*, ChangeInstigator);
@@ -33,6 +35,7 @@ public:
 	virtual void OnFocusBegin_Implementation(AActor* InteractInstigator) override;
 	virtual void OnFocusEnd_Implementation(AActor* InteractInstigator) override;
 	virtual FInteractAlignment GetInteractAlignment_Implementation(AActor* InteractInstigator) const override;
+	virtual FVector GetInteractFocusLocation_Implementation(AActor* InteractInstigator) const override;
 
 	// 활성 상태 변경 (같은 상태면 무시). 델리게이트 브로드캐스트 + 연결 대상에 신호 전달
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
@@ -64,6 +67,9 @@ protected:
 
 	// LinkedActors에 현재 상태 신호 전달
 	void NotifyLinkedActors();
+
+	// 프리미티브에서 From과 가장 가까운 점 (콜리전 우선, 없으면 바운드 박스)
+	static FVector GetClosestPointOn(const UPrimitiveComponent* Primitive, const FVector& From);
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")

@@ -7,6 +7,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Interfaces/ActivatableInterface.h"
 #include "Gimmicks/InteractionPointComponent.h"
+#include "Gimmicks/InteractionVolumeComponent.h"
 
 AInteractableBase::AInteractableBase()
 {
@@ -118,10 +119,58 @@ FInteractAlignment AInteractableBase::GetInteractAlignment_Implementation(AActor
 		Result.Mode = EInteractAlignMode::FaceOnly;
 	}
 
-	// FaceOnly: 제자리에서 액터 중심을 바라봄
+	// FaceOnly: 제자리에서 감지 기준점을 바라봄 (감지 영역 안에 서 있어 방향이 안 나오면 액터 중심)
+	FVector LookDir = (IInteractableInterface::Execute_GetInteractFocusLocation(this, InteractInstigator) - InstigatorLocation).GetSafeNormal2D();
+	if (LookDir.IsNearlyZero())
+	{
+		LookDir = (ActorLocation - InstigatorLocation).GetSafeNormal2D();
+	}
+
 	Result.TargetLocation = InstigatorLocation;
-	Result.TargetRotation = FRotator(0.f, (ActorLocation - InstigatorLocation).Rotation().Yaw, 0.f);
+	Result.TargetRotation = LookDir.IsNearlyZero() ? InteractInstigator->GetActorRotation() : FRotator(0.f, LookDir.Rotation().Yaw, 0.f);
 	return Result;
+}
+
+FVector AInteractableBase::GetInteractFocusLocation_Implementation(AActor* InteractInstigator) const
+{
+	if (!IsValid(InteractInstigator))
+	{
+		return GetActorLocation();
+	}
+
+	const FVector From = InteractInstigator->GetActorLocation();
+
+	// 감지 영역이 있으면 그중 가장 가까운 표면, 없으면 메시 기준
+	TInlineComponentArray<UInteractionVolumeComponent*> Volumes(this);
+	if (Volumes.Num() > 0)
+	{
+		FVector BestPoint = GetActorLocation();
+		float BestDistSq = TNumericLimits<float>::Max();
+		for (const UInteractionVolumeComponent* Volume : Volumes)
+		{
+			const FVector Point = GetClosestPointOn(Volume, From);
+			const float DistSq = FVector::DistSquared2D(Point, From);
+			if (DistSq < BestDistSq)
+			{
+				BestDistSq = DistSq;
+				BestPoint = Point;
+			}
+		}
+		return BestPoint;
+	}
+
+	return Mesh ? GetClosestPointOn(Mesh, From) : GetActorLocation();
+}
+
+FVector AInteractableBase::GetClosestPointOn(const UPrimitiveComponent* Primitive, const FVector& From)
+{
+	// 콜리전 기준 가장 가까운 점 (안쪽이면 From 그대로). 콜리전이 없으면 바운드 박스 기준
+	FVector Point;
+	if (Primitive->GetClosestPointOnCollision(From, Point) >= 0.f)
+	{
+		return Point;
+	}
+	return Primitive->Bounds.GetBox().GetClosestPointTo(From);
 }
 
 void AInteractableBase::SetActivated(bool bNewActivated, AActor* ChangeInstigator)

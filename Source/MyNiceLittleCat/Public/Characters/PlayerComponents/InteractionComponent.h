@@ -5,6 +5,7 @@
 /// 주변의 IInteractableInterface 구현 액터 중 상호작용 대상 1개를 골라 포커스하고,
 /// TryInteract() 호출 시 대상이 요청한 정렬(이동·회전)을 마친 뒤 Interact를 실행합니다.
 /// 대상 선정: 반경 + 캐릭터 정면 각도 + (선택) 시야 트레이스를 통과한 후보 중 점수가 가장 높은 액터
+/// InteractionVolume 컴포넌트가 있는 액터는 반경 대신 캐릭터 캡슐이 그 볼륨에 닿아 있어야 후보가 됩니다.
 /// 사용법: 캐릭터에 컴포넌트를 추가하고, 상호작용 입력(E, IA_Interact)에서 TryInteract()만 호출하면 됩니다.
 
 #pragma once
@@ -59,7 +60,7 @@ private:
 	// 주변 후보를 찾아 포커스 대상 갱신
 	void RefreshFocus();
 	AActor* FindBestCandidate() const;
-	bool IsVisible(const AActor* Target) const;
+	bool IsVisible(const AActor* Target, const FVector& TargetLocation) const;
 	void SetFocusedActor(AActor* NewFocus);
 
 	void BeginAlign(AActor* Target, const FInteractAlignment& Alignment);
@@ -74,7 +75,7 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Interaction|Detect", meta = (ClampMin = "0.03"))
 	float ScanInterval = 0.1f;
 
-	// 상호작용 가능 반경
+	// 상호작용 가능 반경 (InteractionVolume이 있는 액터는 볼륨 판정을 대신 사용, 탐색 범위로만 쓰임)
 	UPROPERTY(EditAnywhere, Category = "Interaction|Detect", meta = (ClampMin = "0.0"))
 	float InteractRadius = 200.f;
 
@@ -104,9 +105,21 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Interaction|Align", meta = (ClampMin = "0.1", ClampMax = "1.0"))
 	float MoveInputScale = 0.6f;
 
-	// 이동 단계 최대 시간. 막혀서 도착하지 못하면 이 시간 후 그 자리에서 회전 단계로 넘어감
-	UPROPERTY(EditAnywhere, Category = "Interaction|Align", meta = (ClampMin = "0.1"))
-	float MoveTimeout = 1.0f;
+	// 이동 단계: NavMesh 경로를 따라 장애물을 돌아감 (NavMesh가 없거나 경로가 끊기면 직선 이동)
+	UPROPERTY(EditAnywhere, Category = "Interaction|Align")
+	bool bUseNavPath = true;
+
+	// 이동 단계: 경로 중간 지점에 이만큼 가까워지면 다음 지점으로 넘어감
+	UPROPERTY(EditAnywhere, Category = "Interaction|Align", meta = (ClampMin = "1.0", EditCondition = "bUseNavPath"))
+	float PathPointAcceptRadius = 30.f;
+
+	// 이동 단계 제한 시간 = 경로 길이 / (최고 속도 × 입력 세기) + 이 여유 시간 (가속, 벽 미끄러짐 흡수)
+	UPROPERTY(EditAnywhere, Category = "Interaction|Align", meta = (ClampMin = "0.0"))
+	float MoveTimeoutPadding = 0.5f;
+
+	// 제한 시간 안에 도착하지 못하면 상호작용 취소. 끄면 그 자리에서 회전 후 상호작용 실행
+	UPROPERTY(EditAnywhere, Category = "Interaction|Align")
+	bool bCancelOnMoveFail = true;
 
 	// 회전 단계 회전 속도 (도/초)
 	UPROPERTY(EditAnywhere, Category = "Interaction|Align", meta = (ClampMin = "1.0"))
@@ -132,6 +145,9 @@ private:
 	void TickMove(float DeltaTime);
 	void TickRotate(float DeltaTime);
 
+	// 이동 경로(경유 지점 + 목표)와 제한 시간 계산
+	void BuildMovePath(const FVector& Start, const FVector& Goal);
+
 private:
 	TWeakObjectPtr<AActor> FocusedActor;
 
@@ -141,6 +157,11 @@ private:
 	EAlignPhase AlignPhase = EAlignPhase::None;
 	float PhaseElapsed = 0.f;
 	bool bMoveInputLocked = false;
+
+	// 이동 단계 경로 (마지막 점이 정렬 목표 위치)
+	TArray<FVector> MovePathPoints;
+	int32 MovePathIndex = 0;
+	float MoveTimeLimit = 0.f;
 
 	FTimerHandle ScanTimerHandle;
 };

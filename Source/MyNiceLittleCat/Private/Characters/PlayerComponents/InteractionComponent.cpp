@@ -7,6 +7,9 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PawnMovementComponent.h"
+#include "Gimmicks/InteractionVolumeComponent.h"
+#include "NavigationSystem.h"
+#include "NavigationPath.h"
 #include "Engine/World.h"
 #include "Engine/OverlapResult.h"
 #include "TimerManager.h"
@@ -87,6 +90,18 @@ void UInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 		const FVector DebugLocation(CurrentAlignment.TargetLocation.X, CurrentAlignment.TargetLocation.Y, Owner->GetActorLocation().Z);
 		DrawDebugSphere(GetWorld(), DebugLocation, MoveAcceptRadius * 2.f, 8, FColor::Cyan);
 		DrawDebugDirectionalArrow(GetWorld(), DebugLocation, DebugLocation + CurrentAlignment.TargetRotation.Vector() * 60.f, 20.f, FColor::Cyan);
+
+		// 이동 경로 (남은 구간)
+		if (AlignPhase == EAlignPhase::Move)
+		{
+			FVector Prev = Owner->GetActorLocation();
+			for (int32 Index = MovePathIndex; Index < MovePathPoints.Num(); ++Index)
+			{
+				const FVector Point(MovePathPoints[Index].X, MovePathPoints[Index].Y, Prev.Z);
+				DrawDebugLine(GetWorld(), Prev, Point, FColor::Yellow);
+				Prev = Point;
+			}
+		}
 	}
 
 	if (AlignPhase == EAlignPhase::Move)
@@ -103,30 +118,46 @@ void UInteractionComponent::TickMove(float DeltaTime)
 {
 	APawn* Pawn = Cast<APawn>(GetOwner());
 	const FVector OwnerLocation = Pawn->GetActorLocation();
-	const FVector ToTarget = (CurrentAlignment.TargetLocation - OwnerLocation) * FVector(1.f, 1.f, 0.f);
+
+	const bool bFinalPoint = MovePathIndex >= MovePathPoints.Num() - 1;
+	const FVector PointLocation = MovePathPoints.IsValidIndex(MovePathIndex) ? MovePathPoints[MovePathIndex] : CurrentAlignment.TargetLocation;
+	const FVector ToTarget = (PointLocation - OwnerLocation) * FVector(1.f, 1.f, 0.f);
 	const float Dist = ToTarget.Size();
 
 	// 이번 프레임 이동량보다 가까우면 도착 (넘어가서 왔다 갔다 하는 것 방지)
 	const float FrameStep = Pawn->GetVelocity().Size2D() * DeltaTime;
-	const bool bArrived = Dist <= FMath::Max(MoveAcceptRadius, FrameStep);
+	const bool bArrived = Dist <= FMath::Max(bFinalPoint ? MoveAcceptRadius : PathPointAcceptRadius, FrameStep);
 
-	if (bArrived || PhaseElapsed >= MoveTimeout)
+	// 경유 지점은 지나치면서 다음 지점으로
+	if (bArrived && !bFinalPoint)
 	{
-		if (bArrived)
+		++MovePathIndex;
+		return;
+	}
+
+	if (bArrived || PhaseElapsed >= MoveTimeLimit)
+	{
+		if (UPawnMovementComponent* Movement = Pawn->GetMovementComponent())
+		{
+			Movement->StopMovementImmediately();
+		}
+
+		if (!bArrived)
+		{
+			if (bCancelOnMoveFail)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[Interaction] 정렬 위치에 도착하지 못해 상호작용을 취소합니다 (제한 %.2f초)"), MoveTimeLimit);
+				FinishAlign(false);
+				return;
+			}
+			UE_LOG(LogTemp, Warning, TEXT("[Interaction] 정렬 위치에 도착하지 못해 현재 위치에서 회전합니다 (제한 %.2f초)"), MoveTimeLimit);
+		}
+		else
 		{
 			// 남은 오차는 직접 맞춤 (높이는 유지)
 			FVector FinalLocation = CurrentAlignment.TargetLocation;
 			FinalLocation.Z = OwnerLocation.Z;
 			Pawn->SetActorLocation(FinalLocation, true);
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[Interaction] 정렬 위치에 도착하지 못해 현재 위치에서 회전합니다 (남은 거리 %.1f)"), Dist);
-		}
-
-		if (UPawnMovementComponent* Movement = Pawn->GetMovementComponent())
-		{
-			Movement->StopMovementImmediately();
 		}
 
 		AlignPhase = EAlignPhase::Rotate;
@@ -136,6 +167,49 @@ void UInteractionComponent::TickMove(float DeltaTime)
 
 	// 이동 입력 잠금 중에도 들어가도록 bForce. 걷기 애니메이션과 이동 방향 회전은 무브먼트가 처리
 	Pawn->AddMovementInput(ToTarget / Dist, MoveInputScale, true);
+}
+
+void UInteractionComponent::BuildMovePath(const FVector& Start, const FVector& Goal)
+{
+	MovePathPoints.Reset();
+	MovePathIndex = 0;
+
+	// NavMesh 경로 (목표까지 이어진 경로만 사용, 첫 점은 시작 위치라 제외)
+	if (bUseNavPath)
+	{
+		if (UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()))
+		{
+			const UNavigationPath* Path = NavSys->FindPathToLocationSynchronously(GetWorld(), Start, Goal, GetOwner());
+			if (Path && Path->IsValid() && !Path->IsPartial() && Path->PathPoints.Num() > 1)
+			{
+				MovePathPoints.Append(Path->PathPoints.GetData() + 1, Path->PathPoints.Num() - 1);
+			}
+		}
+	}
+
+	// 경로가 없으면 직선. 마지막 점은 NavMesh 투영 위치 대신 정확한 목표 위치
+	if (MovePathPoints.IsEmpty())
+	{
+		MovePathPoints.Add(Goal);
+	}
+	else
+	{
+		MovePathPoints.Last() = Goal;
+	}
+
+	// 제한 시간 = 경로 길이 / 정렬 이동 속도 + 여유
+	float PathLength = 0.f;
+	FVector Prev = Start;
+	for (const FVector& Point : MovePathPoints)
+	{
+		PathLength += FVector::Dist2D(Prev, Point);
+		Prev = Point;
+	}
+
+	const APawn* Pawn = Cast<APawn>(GetOwner());
+	const UPawnMovementComponent* Movement = Pawn ? Pawn->GetMovementComponent() : nullptr;
+	const float MoveSpeed = Movement ? Movement->GetMaxSpeed() * MoveInputScale : 0.f;
+	MoveTimeLimit = (MoveSpeed > KINDA_SMALL_NUMBER ? PathLength / MoveSpeed : 0.f) + MoveTimeoutPadding;
 }
 
 void UInteractionComponent::TickRotate(float DeltaTime)
@@ -177,6 +251,10 @@ AActor* UInteractionComponent::FindBestCandidate() const
 	const FVector OwnerForward = Owner->GetActorForwardVector().GetSafeNormal2D();
 	const float MinDot = FMath::Cos(FMath::DegreesToRadians(MaxFacingAngle));
 
+	float OwnerRadius = 0.f;
+	float OwnerHalfHeight = 0.f;
+	Owner->GetSimpleCollisionCylinder(OwnerRadius, OwnerHalfHeight);
+
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(InteractionScan), false, Owner);
 	TArray<FOverlapResult> Overlaps;
 	GetWorld()->OverlapMultiByObjectType(Overlaps, OwnerLocation, FQuat::Identity,
@@ -202,9 +280,25 @@ AActor* UInteractionComponent::FindBestCandidate() const
 			continue;
 		}
 
-		const FVector ToCandidate = Candidate->GetActorLocation() - OwnerLocation;
+		// 액터 중심 대신 감지 기준점(큰 액터는 가장 가까운 표면) 기준으로 판정
+		const FVector FocusLocation = IInteractableInterface::Execute_GetInteractFocusLocation(Candidate, const_cast<AActor*>(Owner));
+		const FVector ToCandidate = FocusLocation - OwnerLocation;
 		const float Dist = ToCandidate.Size2D();
-		if (Dist > InteractRadius)
+
+		// 감지 영역(InteractionVolume)이 있는 액터는 반경 대신 캐릭터가 그 영역에 닿아 있어야 감지
+		TInlineComponentArray<UInteractionVolumeComponent*> Volumes(Candidate);
+		if (Volumes.Num() > 0)
+		{
+			const bool bTouching = Volumes.ContainsByPredicate([&](const UInteractionVolumeComponent* Volume)
+			{
+				return Volume->IsTouchingCylinder(OwnerLocation, OwnerRadius, OwnerHalfHeight);
+			});
+			if (!bTouching)
+			{
+				continue;
+			}
+		}
+		else if (Dist > InteractRadius)
 		{
 			continue;
 		}
@@ -216,12 +310,12 @@ AActor* UInteractionComponent::FindBestCandidate() const
 			continue;
 		}
 
-		if (bUseVisibilityTrace && !IsVisible(Candidate))
+		if (bUseVisibilityTrace && !IsVisible(Candidate, FocusLocation))
 		{
 			continue;
 		}
 
-		const float Closeness = InteractRadius > 0.f ? 1.f - Dist / InteractRadius : 1.f;
+		const float Closeness = InteractRadius > 0.f ? FMath::Max(0.f, 1.f - Dist / InteractRadius) : 1.f;
 		const float Score = FacingWeight * Dot + DistanceWeight * Closeness;
 		if (Score > BestScore)
 		{
@@ -233,7 +327,7 @@ AActor* UInteractionComponent::FindBestCandidate() const
 	return BestActor;
 }
 
-bool UInteractionComponent::IsVisible(const AActor* Target) const
+bool UInteractionComponent::IsVisible(const AActor* Target, const FVector& TargetLocation) const
 {
 	const AActor* Owner = GetOwner();
 
@@ -243,7 +337,7 @@ bool UInteractionComponent::IsVisible(const AActor* Target) const
 
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(InteractionVisibility), false, Owner);
 	FHitResult Hit;
-	if (!GetWorld()->LineTraceSingleByChannel(Hit, EyeLocation, Target->GetActorLocation(), VisibilityChannel, Params))
+	if (!GetWorld()->LineTraceSingleByChannel(Hit, EyeLocation, TargetLocation, VisibilityChannel, Params))
 	{
 		return true;
 	}
@@ -288,6 +382,7 @@ void UInteractionComponent::BeginAlign(AActor* Target, const FInteractAlignment&
 	if (Alignment.Mode == EInteractAlignMode::SnapToPoint && Movement)
 	{
 		// 걸어서 이동 (달리던 속도는 이어서 사용)
+		BuildMovePath(Owner->GetActorLocation(), Alignment.TargetLocation);
 		AlignPhase = EAlignPhase::Move;
 	}
 	else
