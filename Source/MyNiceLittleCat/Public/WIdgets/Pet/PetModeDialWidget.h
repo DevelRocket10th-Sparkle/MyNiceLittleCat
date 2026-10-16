@@ -24,6 +24,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "Pet|Dial")
     bool TryGetSelectedMode(EPetMode& _outMode) const;
 
+    // 위젯 크기 반환 함수
+    float GetDialDiameter() const;
+
 protected:
     // (언리얼이 이 위젯을 그릴 때 호출되는 함수, 렌더링 명령을 기록. 실제 렌더링은 Slate가 해요) 
     // 전체 배치와 그리기 순서 결졍
