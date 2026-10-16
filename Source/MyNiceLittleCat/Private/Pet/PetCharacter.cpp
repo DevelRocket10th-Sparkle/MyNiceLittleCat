@@ -18,6 +18,13 @@ APetCharacter::APetCharacter()
 	// 펫 캐릭터에 컨트롤러 세팅
 	AIControllerClass = APetAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+
+	// AI 경로 이동에도 가속을 사용해요
+	GetCharacterMovement()->GetNavMovementProperties()->bUseAccelerationForPaths = true;
+
+	// 이동 감각의 주요 설정값
+	GetCharacterMovement()->MaxAcceleration = 1200.f; // 얼마나 빠르게 속도를 올릴지
+	GetCharacterMovement()->BrakingDecelerationWalking = 1600.f; // 얼마나 빠르게 속도를 줄일지
 }
 
 void APetCharacter::BeginPlay()
