@@ -11,6 +11,8 @@
 #include "InputActionValue.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "AbilitySystemBlueprintLibrary.h"
+#include "GameplayTagContainer.h"
 
 #include "Characters/GAS/PlayerAttributeSet.h"
 #include "Characters/GAS/GA_MeleeAttack.h"
@@ -27,7 +29,7 @@ APlayerCharacter::APlayerCharacter()
 	bUseControllerRotationRoll = false;
 
 	GetCharacterMovement()->bOrientRotationToMovement = true;
-	GetCharacterMovement()->RotationRate = FRotator(0.f, 360.f, 0.f);
+	GetCharacterMovement()->RotationRate = FRotator(0.f, 1080.f, 0.f);
 
 	// 카메라 붐
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -319,11 +321,33 @@ void APlayerCharacter::OnDodgeInput(const FInputActionValue& Value)
 
 void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
 {
-    if (!AbilitySystemComponent || !MeleeAttackAbilityClass)
+    bool bIsMeleeAttackActive = false;
+
+    for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
     {
+        if (Spec.Ability &&
+            Spec.Ability->GetClass() == MeleeAttackAbilityClass &&
+            Spec.IsActive())
+        {
+            bIsMeleeAttackActive = true;
+            break;
+        }
+    }
+
+    if (bIsMeleeAttackActive)
+    {
+        const FGameplayTag ComboInputTag =
+            FGameplayTag::RequestGameplayTag(
+                FName("Event.Attack.Input"));
+
+        UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(
+            this,
+            ComboInputTag,
+            FGameplayEventData()
+        );
+
         return;
     }
 
     AbilitySystemComponent->TryActivateAbilityByClass(MeleeAttackAbilityClass);
 }
-

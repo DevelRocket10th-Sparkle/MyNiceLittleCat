@@ -250,12 +250,13 @@ bool ULockOnComponent::GetTargetScreenPosition(AActor* Target, FVector2D& OutScr
 
     int32 ViewportX = 0;
     int32 ViewportY = 0;
+	int32 Margin = 50; // 화면 가장자리에서의 마진
     PC->GetViewportSize(ViewportX, ViewportY);
 
-    return OutScreenPosition.X >= 0.0f
-        && OutScreenPosition.X <= ViewportX
-        && OutScreenPosition.Y >= 0.0f
-        && OutScreenPosition.Y <= ViewportY;
+    return OutScreenPosition.X >= Margin
+        && OutScreenPosition.X <= ViewportX - Margin
+        && OutScreenPosition.Y >= Margin
+        && OutScreenPosition.Y <= ViewportY - Margin;
 }
 
 bool ULockOnComponent::IsValidCandidate(AActor* Target) const

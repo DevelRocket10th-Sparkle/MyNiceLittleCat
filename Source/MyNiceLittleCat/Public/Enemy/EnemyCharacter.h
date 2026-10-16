@@ -13,6 +13,7 @@
 
 #include "AbilitySystemInterface.h"
 #include "EnemyTypes.h"
+#include "Interfaces/TargetableInterface.h"
 
 #include "EnemyCharacter.generated.h"
 
@@ -20,7 +21,7 @@ class UEnemyAttributeSet;
 class UEnemyConfigData;
 
 UCLASS()
-class MYNICELITTLECAT_API AEnemyCharacter : public ACharacter, public IAbilitySystemInterface
+class MYNICELITTLECAT_API AEnemyCharacter : public ACharacter, public IAbilitySystemInterface, public ITargetableInterface
 {
 	GENERATED_BODY()
 

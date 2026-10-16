@@ -29,8 +29,34 @@ protected:
 		const FGameplayEventData* TriggerEventData
 	) override;
 
+	UFUNCTION()
+	void HandleComboOpen(FGameplayEventData Payload);
+	UFUNCTION()
+	void HandleComboClose(FGameplayEventData Payload);
+	UFUNCTION()
+	void HandleComboInput(FGameplayEventData Payload);
+
+	void AdvanceCombo();
+	void StartAttackForwardMove(float Distance, float Duration);
+
+	UFUNCTION()
+	void OnMontageCompleted();
+
+	UFUNCTION()
+	void OnMontageInterrupted();
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack")
 	TObjectPtr<UAnimMontage> AttackMontage;
+
+	int32 ComboIndex = 0; 
+
+	bool bCanQueueCombo = false;
+	bool bComboInputQueued = false;
+
+	bool bIsAttackMoving = false;
+
+	FVector AttackMoveDirection = FVector::ZeroVector;
+	float AttackMoveSpeed = 0.0f;
+	float AttackMoveRemaining = 0.0f;
 };
