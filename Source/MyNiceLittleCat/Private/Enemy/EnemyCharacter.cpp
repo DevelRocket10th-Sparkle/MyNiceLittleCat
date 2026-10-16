@@ -16,6 +16,7 @@
 
 #include "AIController.h"
 #include "BrainComponent.h"
+#include "Enemy/AI/EnemyAIController.h"
 
 // Sets default values
 AEnemyCharacter::AEnemyCharacter()
@@ -53,6 +54,15 @@ void AEnemyCharacter::BeginPlay()
 	// Health 변경 델리게이트 구독
 	AttributeSet->OnHealthChange.AddUObject(this, &AEnemyCharacter::HandleHealthChanged);
 	
+	// 추후: 초기 Ability 부여
+
+	bEnemyInitialized = true;	// 초기화 완료 기록
+
+	// Controller가 먼저 빙의한 경우, 여기서 AI 시작 요청
+	if (AEnemyAIController* EnemyAI = Cast<AEnemyAIController>(GetController()))
+	{
+		EnemyAI->TryStartEnemyAI();
+	}
 }
 
 // Called every frame

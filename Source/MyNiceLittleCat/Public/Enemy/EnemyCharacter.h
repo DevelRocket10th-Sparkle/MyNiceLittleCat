@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.14.
-* 몬스터/보스 캐릭터의 기본 클래스
+* 잡몹/보스 캐릭터의 기본 클래스
 * - GAS 연결
 */
 
@@ -37,10 +37,21 @@ public:
 	// Getter: AttributeSet
 	inline UEnemyAttributeSet* GetAttributeSet() const { return AttributeSet; }
 
+	// Getter: EnemyConfig
+	// 앞 const: 반환된 포인터를 사용한 EnemyConfig 내용 수정 방지
+	// 뒤 const: EnemyCharacter의 일반 멤버 변수인 EnemyConfig 변경 방지
+	const UEnemyConfigData* GetEnemyConfig() const { return EnemyConfig; }
+
 	// Getter: bWantsToMvoe
 	bool GetWantsToMove() const { return bWantsToMove; }
 	// Setter: bWantsToMove
 	void SetWantsToMove(bool bNewWantsToMove)	{ bWantsToMove = bNewWantsToMove; }
+
+	// AI가 실행될 준비가 되었는지 확인
+	bool IsEnemyInitialized() const { return bEnemyInitialized; }
+
+	// 생존 상태 확인
+	bool IsAlive() const { return LifeState == EEnemyLifeState::Alive; }
 
 protected:
 
@@ -84,5 +95,8 @@ protected :
 	/* AnimMontage */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<UAnimMontage> DeathMontage;
+
+	// ASC, 능력치 등 초기화 완료 여부
+	bool bEnemyInitialized = false;
 
 };
