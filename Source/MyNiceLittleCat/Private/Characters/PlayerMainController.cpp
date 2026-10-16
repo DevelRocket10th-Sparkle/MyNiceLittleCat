@@ -3,6 +3,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubSystems.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Pet/PetCharacter.h"
 
 APlayerMainController::APlayerMainController()
 {
@@ -61,6 +62,12 @@ void APlayerMainController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+void APlayerMainController::SetPartnerPet(APetCharacter* _pet)
+{
+	HandleDialCanceled();
+	PartnerPet = _pet;
+}
+
 void APlayerMainController::HandleDialStarted()
 {
 	if (false == IsValid(PetModeDialComponent.Get())) return;
@@ -91,7 +98,29 @@ void APlayerMainController::HandleDialTriggered()
 void APlayerMainController::HandleDialCompleted()
 {
 	if (false == IsValid(PetModeDialComponent.Get())) return;
+	if (false == PetModeDialComponent->IsDialOpen()) return;
+
+	FVector2D PointerPosition;
+
+	// 제대로 마우스 좌표가 변환되지 않았다면
+	if (false == TryGetDialPointerPosition(PointerPosition))
+	{
+		HandleDialCanceled(); // 캔슬시켜용
+		return;
+	}
+	
+	PetModeDialComponent->UpdatePointerPosition(PointerPosition);
+	EPetMode SelectedMode = EPetMode::Basic;
+	const bool bHasSelection = PetModeDialComponent->TryGetSelectedMode(SelectedMode);
+
 	PetModeDialComponent->CloseDial();
+
+	if (true == bHasSelection)
+	{
+		// 선택한 모드로 세팅
+		if (APetCharacter* Pet = PartnerPet.Get())
+			Pet->RequestMode(SelectedMode);
+	}
 }
 
 void APlayerMainController::HandleDialCanceled()

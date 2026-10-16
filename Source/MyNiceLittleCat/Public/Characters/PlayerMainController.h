@@ -22,6 +22,10 @@ protected:
 	virtual void SetupInputComponent() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	// ========================================================================================
+
+public:
+	void SetPartnerPet(class APetCharacter* _pet);
+
 private:
 	// 펫 입력 관련 콜백 함수들
 	void HandleDialStarted();
@@ -41,4 +45,7 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pet|Input")
 	TObjectPtr<class UInputAction> IA_PetModeDial;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<class APetCharacter> PartnerPet;
 };

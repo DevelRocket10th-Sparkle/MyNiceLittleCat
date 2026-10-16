@@ -1,6 +1,7 @@
 #include "Frameworks/GameMode/TestPetGameMode.h"
 #include "Pet/PetCharacter.h"
 #include "Pet/PetAIController.h"
+#include "Characters/PlayerMainController.h"
 
 void ATestPetGameMode::RestartPlayer(AController* NewPlayer)
 {
@@ -35,4 +36,7 @@ void ATestPetGameMode::RestartPlayer(AController* NewPlayer)
 	InitData.InitialBehavior = PetInitialBehavior;
 
 	Pet->InitializePet(InitData);
+
+	if (APlayerMainController* PlayerController = Cast<APlayerMainController>(NewPlayer))
+		PlayerController->SetPartnerPet(Pet);
 }
