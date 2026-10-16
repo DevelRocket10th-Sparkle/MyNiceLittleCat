@@ -86,7 +86,7 @@ protected:
 	float BodyTurnThreshold = 20.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "LockOn")
-	float BodyTurnInterpSpeed = 4.5f;
+	float BodyTurnInterpSpeed = 13.5f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> IMC;
