@@ -25,6 +25,9 @@ public:
 	void UpdatePointerPosition(const FVector2D& _pointerInViewport);
 	bool TryGetSelectedMode(EPetMode& _outMode) const;
 
+	// 다이얼 UI 크기 반환하는 함수
+	float GetDialDiameter() const;
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	// ========================================================================================

@@ -1,5 +1,6 @@
 #include "Characters/PlayerComponents/PetModeDialComponent.h"
 #include "Widgets/Pet/PetModeDialWidget.h"
+
 UPetModeDialComponent::UPetModeDialComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
@@ -67,6 +68,23 @@ bool UPetModeDialComponent::TryGetSelectedMode(EPetMode& _outMode) const
 		return false;
 
 	return DialWidget->TryGetSelectedMode(_outMode);
+}
+
+float UPetModeDialComponent::GetDialDiameter() const
+{
+	if (true == IsValid(DialWidget))
+		return DialWidget->GetDialDiameter();
+
+	// 아직 위젯이 생성되지 않았다면 클래스 기본값을 읽어옴
+	if (nullptr != DialWidgetClass)
+	{
+		const UPetModeDialWidget* WidgetDefaults = DialWidgetClass.GetDefaultObject();
+
+		if (true == IsValid(WidgetDefaults))
+			return WidgetDefaults->GetDialDiameter();
+	}
+
+	return 280.f; // 진짜 이건 기본값
 }
 
 void UPetModeDialComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)

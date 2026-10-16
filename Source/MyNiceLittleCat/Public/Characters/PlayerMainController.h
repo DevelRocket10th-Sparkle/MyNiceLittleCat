@@ -17,6 +17,13 @@ class MYNICELITTLECAT_API APlayerMainController : public APlayerController
 public:
 	APlayerMainController();
 
+public:
+	// 플레이어가 현재 누르고 있는 모든 키의 입력을 초기화하는 함수
+	virtual void FlushPressedKeys() override;
+
+	// 게임 화면 밖일 때 현재 게임 입력 처리를 초기화 할 지 정해 반환하는 함수
+	virtual bool ShouldFlushKeysWhenViewportFocusChanges() const override;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -35,6 +42,9 @@ private:
 
 	// 마우스 위치를 다이얼 UI와 같은 좌표 단위로 가져오는 함수 
 	bool TryGetDialPointerPosition(FVector2D& _outPosition) const;
+
+	// 다이얼 UI가 게임 화면 바깥으로 벗어나려고 하는지 체크하는 함수
+	bool TryClampDialCenterToViewport(FVector2D& _outPosition) const;
 	// ========================================================================================
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pet|UI")
