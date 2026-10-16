@@ -131,17 +131,16 @@ void UGA_MeleeAttack::HandleComboClose(FGameplayEventData Payload)
     if (bComboInputQueued && ComboIndex < 2)
     {
         AdvanceCombo();
+        return;
     }
-    else
+
+    const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
+
+    UAnimInstance* AnimInstance = ActorInfo->GetAnimInstance();
+
+    if (AnimInstance && AttackMontage)
     {
-        if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
-        {
-            if (UAnimInstance* AnimInstance =
-                GetCurrentActorInfo()->GetAnimInstance())
-            {
-                AnimInstance->Montage_Stop(0.3f, AttackMontage);
-            }
-        }
+        AnimInstance->Montage_Stop(0.3f, AttackMontage);
     }
 }
 
@@ -161,12 +160,13 @@ void UGA_MeleeAttack::AdvanceCombo()
     static const FName Sections[] =
     {
         TEXT("Attack1"),
-        TEXT("Attack2")
-        //,TEXT("Attack3")
+        TEXT("Attack2"),
+        TEXT("Attack3")
     };
 
-    ACharacter* Character =
-        Cast<ACharacter>(GetAvatarActorFromActorInfo());
+    bCanQueueCombo = false;
+    bComboInputQueued = false;
+    ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
 
     if (Character)
     {

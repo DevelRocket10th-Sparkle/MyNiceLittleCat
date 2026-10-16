@@ -239,7 +239,7 @@ void APlayerCharacter::SwitchTarget(const FInputActionValue& Value)
 
 void APlayerCharacter::StartDodge()
 {
-    if (bIsDodging || !DodgeMontage) return;
+    if (bIsDodging || !DodgeMontage || !bIsAbleToDodge) return;
 
     bIsDodging = true;
 
@@ -271,6 +271,8 @@ void APlayerCharacter::StartDodge()
         MoveComp->SetMovementMode(MOVE_Falling);
         MoveComp->Velocity.Z = 300.0f;
     }
+
+    bIsAbleToAttack = false;
 
     GetWorldTimerManager().SetTimer(
         DodgeUpdateTimer,
@@ -308,6 +310,7 @@ void APlayerCharacter::UpdateDodge()
 void APlayerCharacter::EndDodge()
 {
     bIsDodging = false;
+	bIsAbleToAttack = true;
     if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
     {
         MoveComp->MaxWalkSpeed = OriginalMaxWalkSpeed;
@@ -322,6 +325,8 @@ void APlayerCharacter::OnDodgeInput(const FInputActionValue& Value)
 void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
 {
     bool bIsMeleeAttackActive = false;
+
+	if (bIsAbleToAttack == false) return;
 
     for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
     {

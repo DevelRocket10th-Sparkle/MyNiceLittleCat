@@ -33,9 +33,8 @@ public:
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
-	void BeginMeleeHitWindow();
-	void TickMeleeHitWindow();
-	void EndMeleeHitWindow();
+	void SetbIsAbleToDodge(bool bNewIsAbleToDodge) { bIsAbleToDodge = bNewIsAbleToDodge; }
+	bool GetbIsAbleToAttack() const { return bIsAbleToAttack; }
 
 	UStaticMeshComponent* GetWeaponMesh() const{ return WeaponMesh.Get(); }
 
@@ -123,6 +122,8 @@ protected:
 
 private:
 	bool bIsDodging = false;
+	bool bIsAbleToDodge = true;
+	bool bIsAbleToAttack = true;
 	float OriginalMaxWalkSpeed = 0.0f;
 	FVector DodgeDirection = FVector::ForwardVector;
 
