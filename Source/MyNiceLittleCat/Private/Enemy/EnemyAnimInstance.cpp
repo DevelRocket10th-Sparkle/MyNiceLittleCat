@@ -1,0 +1,18 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
+
+#include "Enemy/EnemyAnimInstance.h"
+
+#include "Enemy/EnemyCharacter.h"
+
+void UEnemyAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
+{
+	Super::NativeUpdateAnimation(DeltaSeconds);
+	
+	if (!Owner)
+	{
+		Owner = Cast<AEnemyCharacter>(TryGetPawnOwner());
+	}
+
+	bShouldMove = IsValid(Owner) && Owner->GetWantsToMove();
+}
