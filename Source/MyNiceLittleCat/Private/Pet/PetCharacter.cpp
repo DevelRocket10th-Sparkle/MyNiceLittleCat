@@ -143,3 +143,17 @@ void APetCharacter::DebugRequestReflectMode()
 {
 	RequestMode(EPetMode::Reflect);
 }
+
+void APetCharacter::SetAimDirection(const FVector& _direction)
+{
+	if (_direction.ContainsNaN()) return;
+
+	// 현재는 수평 방향만 사용
+	FVector HorizontalDirection(_direction.X, _direction.Y, 0.f);
+
+	// 플레이어 바로 위를 가리키는 경우에는 기존 방향을 유지
+	if (false == HorizontalDirection.Normalize())
+		return;
+
+	AimDirection = HorizontalDirection;
+}

@@ -24,6 +24,9 @@ public:
 	// 게임 화면 밖일 때 현재 게임 입력 처리를 초기화 할 지 정해 반환하는 함수
 	virtual bool ShouldFlushKeysWhenViewportFocusChanges() const override;
 
+	// PlayerController의 Tick 함수
+	virtual void PlayerTick(float DeltaTime) override;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -45,6 +48,8 @@ private:
 
 	// 다이얼 UI가 게임 화면 바깥으로 벗어나려고 하는지 체크하는 함수
 	bool TryClampDialCenterToViewport(FVector2D& _outPosition) const;
+
+	bool TryGetPetAimDirection(FVector& _outDirection) const;
 	// ========================================================================================
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pet|UI")

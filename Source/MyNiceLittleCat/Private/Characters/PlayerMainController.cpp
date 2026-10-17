@@ -23,6 +23,21 @@ bool APlayerMainController::ShouldFlushKeysWhenViewportFocusChanges() const
 	return true;
 }
 
+void APlayerMainController::PlayerTick(float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+
+	APetCharacter* Pet = PartnerPet.Get();
+
+	if (false == IsValid(Pet)) return;
+	// 다이얼 조작 중에는 마지막 조준 방향을 유지
+	if (true == IsValid(PetModeDialComponent.Get()) && true == PetModeDialComponent->IsDialOpen()) return;
+
+	FVector Direction;
+	if (true == TryGetPetAimDirection(Direction))
+		Pet->SetAimDirection(Direction);
+}
+
 void APlayerMainController::BeginPlay()
 {
 	Super::BeginPlay();
@@ -129,6 +144,47 @@ bool APlayerMainController::TryClampDialCenterToViewport(FVector2D& _outPosition
 	_outPosition.X = FMath::Clamp(_outPosition.X, Inset, ViewportSize.X - Inset);
 	_outPosition.Y = FMath::Clamp(_outPosition.Y, Inset, ViewportSize.Y - Inset);
 
+	return true;
+}
+
+bool APlayerMainController::TryGetPetAimDirection(FVector& _outDirection) const
+{
+	_outDirection = FVector::ZeroVector;
+
+	APawn* PlayerPawn = GetPawn();
+	UWorld* World = GetWorld();
+
+	if (false == IsValid(PlayerPawn) || false == IsValid(World)) return false;
+
+	FVector RayOrigin;
+	FVector RayDirection;
+
+	// 화면의 마우스 커서 위치를 3D 월드 공간의 Ray로 변환하는 함수
+	if (false == DeprojectMousePositionToWorld(RayOrigin, RayDirection))
+		return false;
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PetAim));
+
+	// 플레이어나 펫 자신에게 광선이 막히지 않도록
+	QueryParams.AddIgnoredActor(PlayerPawn);
+
+	if (APetCharacter* Pet = PartnerPet.Get())
+		QueryParams.AddIgnoredActor(Pet);
+
+	constexpr float TraceDistance = 100000.f;
+
+	FHitResult Hit;
+	const bool bHit = World->LineTraceSingleByChannel(
+		Hit, RayOrigin, RayOrigin + RayDirection * TraceDistance, ECC_Visibility, QueryParams);
+
+	if (false == bHit) return false;
+
+	FVector Direction = Hit.ImpactPoint - PlayerPawn->GetActorLocation();
+	Direction.Z = 0.f;
+
+	if (false == Direction.Normalize()) return false;
+
+	_outDirection = Direction;
 	return true;
 }
 

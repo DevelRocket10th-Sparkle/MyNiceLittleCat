@@ -70,6 +70,9 @@ public:
 	UFUNCTION(CallInEditor, Category = "Pet|Debug")
 	void DebugRequestReflectMode(); //! Mode 테스트용
 
+	void SetAimDirection(const FVector& _direction);
+	FVector GetAimDirection() const { return AimDirection; }
+
 	// =============================================================================
 public:
 	UPROPERTY(BlueprintAssignable, Category = "Pet|Mode")
@@ -95,6 +98,9 @@ protected:
 	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Pet", meta = (AllowPrivateAccess = "true"))
 	EPetMode CurrentMode = EPetMode::Basic;
 
+	// 마우스 커서 방향 저장
+	UPROPERTY(VisibleInstanceOnly, Category = "Pet|Input")
+	FVector AimDirection = FVector::ForwardVector;
 private:
 	// 초기화 됨?
 	UPROPERTY(Transient)
