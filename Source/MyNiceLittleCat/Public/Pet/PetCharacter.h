@@ -81,6 +81,8 @@ public:
 	bool TryGetModeAbilityHandle(EPetMode _mode, FGameplayAbilitySpecHandle& _outHandle) const;
 
 	void SetModeAbilityInputHeld(bool _held) { bModeAbilityInputHeld = _held;}
+
+	void RequestSpecialAction();
 private:
 	void GrantModeAbilities();
 	// =============================================================================

@@ -3,6 +3,12 @@
 #include "Pet/GAS/Task/AbilityTask_PetTick.h"
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
+//#include "Engine/World.h"
+#include "Engine/OverlapResult.h"
+#include "CollisionQueryParams.h"
+#include "CollisionShape.h"
+#include "GameplayTagContainer.h"
+#include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 
 UGameplayAbility_PetMagnet::UGameplayAbility_PetMagnet()
 {
@@ -27,6 +33,14 @@ void UGameplayAbility_PetMagnet::ActivateAbility(const FGameplayAbilitySpecHandl
         return;
     }
 
+    const FGameplayTag SpecialActionTag = FGameplayTag::RequestGameplayTag(TEXT("Pet.SpecialAction"));
+
+    UAbilityTask_WaitGameplayEvent* SpecialActionTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+            this, SpecialActionTag, nullptr, false, true);
+
+    SpecialActionTask->EventReceived.AddDynamic(this, &UGameplayAbility_PetMagnet::HandleSpecialAction);
+    SpecialActionTask->ReadyForActivation();
+
     //! EndAbility 호출 일부러 안 함
     
     UAbilityTask_PetTick* TickTask = UAbilityTask_PetTick::CreatePetTick(this);
@@ -37,6 +51,20 @@ void UGameplayAbility_PetMagnet::ActivateAbility(const FGameplayAbilitySpecHandl
 void UGameplayAbility_PetMagnet::HandleMagnetTick(float DeltaTime)
 {
     DrawMagnetDebugRange();
+
+    AActor* Target = FindNearestMagnetTarget();
+
+#if ENABLE_DRAW_DEBUG
+    if (IsValid(Target) && GetWorld())
+    {
+        FVector BoundsOrigin;
+        FVector BoundsExtent;
+        Target->GetActorBounds(false, BoundsOrigin, BoundsExtent);
+
+        const FVector MarkerPosition = BoundsOrigin + FVector(0.f, 0.f, BoundsExtent.Z + 35.f);
+        DrawDebugSphere(GetWorld(), MarkerPosition, 20.f, 16, FColor::Yellow, false, 0.f, 0, 2.f);
+    }
+#endif
 }
 
 void UGameplayAbility_PetMagnet::DrawMagnetDebugRange() const
@@ -55,7 +83,7 @@ void UGameplayAbility_PetMagnet::DrawMagnetDebugRange() const
     Origin.Z += 3.f;
 
     constexpr int32 SegmentCount = 24;
-    const FColor Color = FColor::Cyan;
+    const FColor Color = CurrentPolarity == EPetMagnetPolarity::N ? FColor::Red : FColor::Blue;
 
     FVector PreviousPoint = FVector::ZeroVector;
 
@@ -77,4 +105,92 @@ void UGameplayAbility_PetMagnet::DrawMagnetDebugRange() const
         PreviousPoint = Point;
     }
 #endif
+}
+
+AActor* UGameplayAbility_PetMagnet::FindNearestMagnetTarget() const
+{
+    const APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
+    if (false == IsValid(Pet) || nullptr == GetWorld())
+        return nullptr;
+
+    const FVector Forward = Pet->GetActorForwardVector().GetSafeNormal2D();
+    const FVector Origin = Pet->GetActorLocation() + Forward * ForwardOffset;
+
+    FCollisionObjectQueryParams ObjectTypes;
+    ObjectTypes.AddObjectTypesToQuery(ECC_WorldDynamic);
+    ObjectTypes.AddObjectTypesToQuery(ECC_PhysicsBody);
+    ObjectTypes.AddObjectTypesToQuery(ECC_Pawn);
+
+    FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PetMagnetSearch));
+    QueryParams.AddIgnoredActor(Pet);
+
+    if (APawn* Player = Pet->GetPartnerPlayer())
+        QueryParams.AddIgnoredActor(Player);
+
+    TArray<FOverlapResult> Overlaps;
+
+    GetWorld()->OverlapMultiByObjectType(Overlaps, Origin, FQuat::Identity, ObjectTypes,
+        FCollisionShape::MakeBox(FVector(RangeLength, RangeLength, TargetHeightTolerance)), QueryParams);
+
+    const float RangeSquared = FMath::Square(RangeLength);
+    const float MinimumDot = FMath::Cos(FMath::DegreesToRadians(HalfAngleDegrees));
+
+    AActor* NearestTarget = nullptr;
+    float NearestDistanceSquared = TNumericLimits<float>::Max();
+
+    TSet<AActor*> CheckedActors;
+
+    for (const FOverlapResult& Overlap : Overlaps)
+    {
+        AActor* Candidate = Overlap.GetActor();
+        if (false == IsValid(Candidate) || true == CheckedActors.Contains(Candidate))
+            continue;
+
+        CheckedActors.Add(Candidate);
+
+        if (false == IsMagnetCandidate(Candidate))
+            continue;
+
+        FVector ToTarget = Candidate->GetActorLocation() - Origin;
+
+        if (FMath::Abs(ToTarget.Z) > TargetHeightTolerance)
+            continue;
+
+        ToTarget.Z = 0.f;
+
+        // 부채꼴 길이 검사
+        const float DistanceFromOriginSquared = ToTarget.SizeSquared();
+        if (DistanceFromOriginSquared > RangeSquared)
+            continue;
+
+        // 부채꼴 각도 검사
+        if (false == ToTarget.IsNearlyZero())
+        {
+            const float Dot = FVector::DotProduct(Forward, ToTarget.GetSafeNormal());
+            if (Dot < MinimumDot)
+                continue;
+        }
+
+        // 범위 안의 후보 중 펫과 가장 가까운 액터를 고릅니다.
+        const float DistanceFromPetSquared = FVector::DistSquared2D(Pet->GetActorLocation(), Candidate->GetActorLocation());
+
+        if (DistanceFromPetSquared < NearestDistanceSquared)
+        {
+            NearestDistanceSquared = DistanceFromPetSquared;
+            NearestTarget = Candidate;
+        }
+    }
+
+    return NearestTarget;
+}
+
+bool UGameplayAbility_PetMagnet::IsMagnetCandidate(const AActor* _actor) const
+{
+    static const FName TestTargetTag(TEXT("Test.Pet.MagnetTarget"));
+    return IsValid(_actor) && _actor->ActorHasTag(TestTargetTag);
+}
+
+void UGameplayAbility_PetMagnet::HandleSpecialAction(FGameplayEventData Payload)
+{
+    CurrentPolarity = (CurrentPolarity == EPetMagnetPolarity::N) ? EPetMagnetPolarity::S: EPetMagnetPolarity::N;
 }

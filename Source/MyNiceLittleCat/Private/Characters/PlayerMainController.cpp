@@ -67,7 +67,7 @@ void APlayerMainController::SetupInputComponent()
 	Super::SetupInputComponent();
 
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
-	if ((nullptr == EnhancedInput) || (nullptr == IA_PetModeDial) || (nullptr == IA_PetModeUse)) return;
+	if ((nullptr == EnhancedInput) || (nullptr == IA_PetModeDial) || (nullptr == IA_PetModeUse) || (nullptr == IA_PetSpecialAction)) return;
 
     EnhancedInput->BindAction(IA_PetModeDial, ETriggerEvent::Started, this, &APlayerMainController::HandleDialStarted);
     EnhancedInput->BindAction(IA_PetModeDial, ETriggerEvent::Triggered, this, &APlayerMainController::HandleDialTriggered);
@@ -77,6 +77,8 @@ void APlayerMainController::SetupInputComponent()
 	EnhancedInput->BindAction(IA_PetModeUse, ETriggerEvent::Started, this, &APlayerMainController::HandleModeUseStarted);
 	EnhancedInput->BindAction(IA_PetModeUse, ETriggerEvent::Completed, this, &APlayerMainController::HandleModeUseReleased);
 	EnhancedInput->BindAction(IA_PetModeUse, ETriggerEvent::Canceled, this, &APlayerMainController::HandleModeUseReleased);
+
+	EnhancedInput->BindAction(IA_PetSpecialAction, ETriggerEvent::Started, this, &APlayerMainController::HandlePetSpecialAction);
 }
 
 void APlayerMainController::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -256,6 +258,12 @@ void APlayerMainController::HandleModeUseReleased()
 {
 	if (APetCharacter* Pet = PartnerPet.Get())
 		Pet->SetModeAbilityInputHeld(false);
+}
+
+void APlayerMainController::HandlePetSpecialAction()
+{
+	if (APetCharacter* Pet = PartnerPet.Get())
+		Pet->RequestSpecialAction();
 }
 
 bool APlayerMainController::TryGetDialPointerPosition(FVector2D& _outPosition) const

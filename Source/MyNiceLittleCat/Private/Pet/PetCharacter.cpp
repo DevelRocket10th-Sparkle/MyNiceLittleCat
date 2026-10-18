@@ -4,6 +4,8 @@
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
 #include "GameplayAbilitySpec.h"
+#include "AbilitySystemBlueprintLibrary.h"
+#include "GameplayTagContainer.h"
 
 APetCharacter::APetCharacter()
 {
@@ -181,6 +183,20 @@ bool APetCharacter::TryGetModeAbilityHandle(EPetMode _mode, FGameplayAbilitySpec
 
 	_outHandle = *Handle;
 	return true;
+}
+
+void APetCharacter::RequestSpecialAction()
+{
+	if (false == bInitialized) return;
+
+	const FGameplayTag SpecialActionTag = FGameplayTag::RequestGameplayTag(TEXT("Pet.SpecialAction"));
+
+	FGameplayEventData Payload;
+	Payload.EventTag = SpecialActionTag;
+	Payload.Instigator = GetPartnerPlayer();
+	Payload.Target = this;
+
+	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, SpecialActionTag, Payload);
 }
 
 void APetCharacter::GrantModeAbilities()

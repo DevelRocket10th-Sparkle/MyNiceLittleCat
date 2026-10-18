@@ -23,6 +23,14 @@ enum class EPetMode : uint8
     Reflect UMETA(DisplayName = "Reflect"),
 };
 
+// 펫 자성 모드에 쓸 펫의 극
+UENUM(BlueprintType)
+enum class EPetMagnetPolarity : uint8
+{
+    N UMETA(DisplayName = "N"),
+    S UMETA(DisplayName = "S")
+};
+
 // 외부에서 펫에게 전달할 펫 초기화 정보
 USTRUCT(BlueprintType)
 struct MYNICELITTLECAT_API FPetInitializationData
