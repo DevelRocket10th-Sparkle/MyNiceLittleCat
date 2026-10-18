@@ -79,6 +79,8 @@ public:
 	FVector GetAimDirection() const { return AimDirection; }
 
 	bool TryGetModeAbilityHandle(EPetMode _mode, FGameplayAbilitySpecHandle& _outHandle) const;
+
+	void SetModeAbilityInputHeld(bool _held) { bModeAbilityInputHeld = _held;}
 private:
 	void GrantModeAbilities();
 	// =============================================================================
@@ -116,6 +118,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Pet|GAS")
 	TMap<EPetMode, TSubclassOf<class UGameplayAbility>> ModeAbilities;
+
+	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Pet|Input", meta = (AllowPrivateAccess = "true"))
+	bool bModeAbilityInputHeld = false; // 입력 누르는 중?
 private:
 	// 초기화 됨?
 	UPROPERTY(Transient)

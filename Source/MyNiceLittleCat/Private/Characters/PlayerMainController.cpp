@@ -14,6 +14,7 @@ void APlayerMainController::FlushPressedKeys()
 {
 	// 입력 초기화 되기 전에 모드 변경 캔슬 내요
 	HandleDialCanceled();
+	HandleModeUseReleased();
 
 	Super::FlushPressedKeys();
 }
@@ -66,17 +67,22 @@ void APlayerMainController::SetupInputComponent()
 	Super::SetupInputComponent();
 
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
-	if ((nullptr == EnhancedInput) || (nullptr == IA_PetModeDial)) return;
+	if ((nullptr == EnhancedInput) || (nullptr == IA_PetModeDial) || (nullptr == IA_PetModeUse)) return;
 
     EnhancedInput->BindAction(IA_PetModeDial, ETriggerEvent::Started, this, &APlayerMainController::HandleDialStarted);
     EnhancedInput->BindAction(IA_PetModeDial, ETriggerEvent::Triggered, this, &APlayerMainController::HandleDialTriggered);
     EnhancedInput->BindAction(IA_PetModeDial, ETriggerEvent::Completed, this, &APlayerMainController::HandleDialCompleted);
     EnhancedInput->BindAction(IA_PetModeDial, ETriggerEvent::Canceled, this, &APlayerMainController::HandleDialCanceled);
+
+	EnhancedInput->BindAction(IA_PetModeUse, ETriggerEvent::Started, this, &APlayerMainController::HandleModeUseStarted);
+	EnhancedInput->BindAction(IA_PetModeUse, ETriggerEvent::Completed, this, &APlayerMainController::HandleModeUseReleased);
+	EnhancedInput->BindAction(IA_PetModeUse, ETriggerEvent::Canceled, this, &APlayerMainController::HandleModeUseReleased);
 }
 
 void APlayerMainController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	HandleDialCanceled();
+	HandleModeUseReleased();
 
 	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
 	{
@@ -93,6 +99,8 @@ void APlayerMainController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void APlayerMainController::SetPartnerPet(APetCharacter* _pet)
 {
 	HandleDialCanceled();
+	HandleModeUseReleased();
+
 	PartnerPet = _pet;
 }
 
@@ -236,6 +244,18 @@ void APlayerMainController::HandleDialCanceled()
 {
 	if (true == IsValid(PetModeDialComponent.Get()))
 		PetModeDialComponent->CloseDial();
+}
+
+void APlayerMainController::HandleModeUseStarted()
+{
+	if (APetCharacter* Pet = PartnerPet.Get())
+		Pet->SetModeAbilityInputHeld(true);
+}
+
+void APlayerMainController::HandleModeUseReleased()
+{
+	if (APetCharacter* Pet = PartnerPet.Get())
+		Pet->SetModeAbilityInputHeld(false);
 }
 
 bool APlayerMainController::TryGetDialPointerPosition(FVector2D& _outPosition) const
