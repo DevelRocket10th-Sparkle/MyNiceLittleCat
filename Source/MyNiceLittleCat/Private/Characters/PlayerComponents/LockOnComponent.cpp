@@ -40,7 +40,7 @@ void ULockOnComponent::ToggleTargetLock()
 
 void ULockOnComponent::SwitchTarget(float Direction)
 {
-    // íœ  ì…ë ¥ ì‹œ í›„ë³´ë¥¼ ì¦‰ì‹œ ê°±ì‹ 
+    // ÈÙ ÀÔ·Â ½Ã ÈÄº¸¸¦ Áï½Ã °»½Å
     RefreshCandidates();
 
     if (Candidates.Num() < 2) return;
@@ -53,7 +53,7 @@ void ULockOnComponent::SwitchTarget(float Direction)
     }
     AActor* PreviousTarget = CurrentCandidate.Get();
 
-    // ì–‘ìˆ˜: ë‹¤ìŒ í›„ë³´, ìŒìˆ˜: ì´ì „ í›„ë³´
+    // ¾ç¼ö: ´ÙÀ½ ÈÄº¸, À½¼ö: ÀÌÀü ÈÄº¸
     const int32 Step = Direction > 0.f ? 1 : -1;
 
     CurrentIndex = (CurrentIndex + Step + Candidates.Num())
@@ -86,7 +86,7 @@ void ULockOnComponent::BeginPlay()
         if (APlayerController* PC =
             Cast<APlayerController>(PlayerCharacter->GetController()))
         {
-           // ìœ„ì ¯ ì„¤ì •
+           // À§Á¬ ¼³Á¤
 
         }
     }
@@ -109,7 +109,7 @@ void ULockOnComponent::BeginPlay()
 
     RefreshCandidates();
 
-    // ìŠ¤ìº” íƒ€ì´ë¨¸ ì„¤ì •
+    // ½ºÄµ Å¸ÀÌ¸Ó ¼³Á¤
     if (GetWorld())
     {
         GetWorld()->GetTimerManager().SetTimer(
@@ -171,7 +171,7 @@ void ULockOnComponent::RefreshCandidates()
         NewCandidates.Add(Actor);
     }
 
-    // í”Œë ˆì´ì–´ì™€ ê°€ê¹Œìš´ ìˆœì„œë¡œ ì •ë ¬
+    // ÇÃ·¹ÀÌ¾î¿Í °¡±î¿î ¼ø¼­·Î Á¤·Ä
     NewCandidates.Sort(
         [Character](
             const TWeakObjectPtr<AActor>& A,
@@ -188,13 +188,13 @@ void ULockOnComponent::RefreshCandidates()
 
     Candidates = MoveTemp(NewCandidates);
 
-    // ë½ì˜¨ ëŒ€ìƒì´ ë” ì´ìƒ í›„ë³´ê°€ ì•„ë‹ˆë©´ ë½ì˜¨ í•´ì œ
-    if (LockedTarget.IsValid() && !Candidates.Contains(LockedTarget))
+    // ¶ô¿Â ´ë»óÀÌ ´õ ÀÌ»ó ÈÄº¸°¡ ¾Æ´Ï¸é ¶ô¿Â ÇØÁ¦
+    if (LockedTarget.IsValid() && !Candidates.Contains(LockedTarget) && !ITargetableInterface::Execute_IsTargetAlive(LockedTarget.Get()))
     {
         LockedTarget.Reset();
     }
 
-    // í˜„ì¬ ì„ íƒì´ ì‚¬ë¼ì¡Œì„ ë•Œ ê°€ì¥ ê°€ê¹Œìš´ ëŒ€ìƒìœ¼ë¡œ ë³€ê²½
+    // ÇöÀç ¼±ÅÃÀÌ »ç¶óÁ³À» ¶§ °¡Àå °¡±î¿î ´ë»óÀ¸·Î º¯°æ
     if (!CurrentCandidate.IsValid() || !Candidates.Contains(CurrentCandidate))
     {
         AActor* PreviousTarget = CurrentCandidate.Get();
@@ -220,7 +220,7 @@ void ULockOnComponent::RefreshCandidates()
         }
     }
 
-    // ë½ì˜¨ ëŒ€ìƒì´ ìˆë‹¤ë©´ í˜„ì¬ ì„ íƒê³¼ ë™ê¸°í™”
+    // ¶ô¿Â ´ë»óÀÌ ÀÖ´Ù¸é ÇöÀç ¼±ÅÃ°ú µ¿±âÈ­
     if (LockedTarget.IsValid())
     {
         CurrentCandidate = LockedTarget;
@@ -250,7 +250,7 @@ bool ULockOnComponent::GetTargetScreenPosition(AActor* Target, FVector2D& OutScr
 
     int32 ViewportX = 0;
     int32 ViewportY = 0;
-	int32 Margin = 50; // í™”ë©´ ê°€ì¥ìë¦¬ì—ì„œì˜ ë§ˆì§„
+	int32 Margin = 50; // È­¸é °¡ÀåÀÚ¸®¿¡¼­ÀÇ ¸¶Áø
     PC->GetViewportSize(ViewportX, ViewportY);
 
     return OutScreenPosition.X >= Margin
@@ -263,9 +263,8 @@ bool ULockOnComponent::IsValidCandidate(AActor* Target) const
 {
     return IsValid(Target)
         && Target != GetOwner()
-        && Target->GetClass()->ImplementsInterface(
-			UTargetableInterface::StaticClass()
-        );
+        && Target->GetClass()->ImplementsInterface(UTargetableInterface::StaticClass())
+        && ITargetableInterface::Execute_IsTargetAlive(Target);
 }
 
 void ULockOnComponent::UpdateLockOnCamera()
@@ -291,14 +290,14 @@ void ULockOnComponent::UpdateLockOnCamera()
             BoundsExtent
         );
 
-        // í”Œë ˆì´ì–´ì—ì„œ íƒ€ê²Ÿê¹Œì§€ì˜ ê±°ë¦¬ ë²¡í„°
+        // ÇÃ·¹ÀÌ¾î¿¡¼­ Å¸°Ù±îÁöÀÇ °Å¸® º¤ÅÍ
         const FVector ToTarget =
             TargetLocation - PlayerLocation;
 
-        // ë‘ ëŒ€ìƒ ì‚¬ì´ì˜ ì¤‘ê°„ ì§€ì ì„ ì¹´ë©”ë¼ ì¤‘ì‹¬ìœ¼ë¡œ ì„¤ì •
+        // µÎ ´ë»ó »çÀÌÀÇ Áß°£ ÁöÁ¡À» Ä«¸Ş¶ó Áß½ÉÀ¸·Î ¼³Á¤
         DesiredOffset += ToTarget * 0.5f;
 
-        // ê±°ë¦¬ê°€ ë©€ì–´ì§ˆìˆ˜ë¡ ì¹´ë©”ë¼ë¥¼ ë’¤ë¡œ ì´ë™
+        // °Å¸®°¡ ¸Ö¾îÁú¼ö·Ï Ä«¸Ş¶ó¸¦ µÚ·Î ÀÌµ¿
         const float HorizontalDistance = FVector(
             ToTarget.X,
             ToTarget.Y,
@@ -316,7 +315,7 @@ void ULockOnComponent::UpdateLockOnCamera()
             BaseCameraArmLength + ExtraArmLength;
     }
 
-    // ì¹´ë©”ë¼ ì¤‘ì‹¬ê³¼ ì¤Œì„ ë¶€ë“œëŸ½ê²Œ ë³´ê°„
+    // Ä«¸Ş¶ó Áß½É°ú ÁÜÀ» ºÎµå·´°Ô º¸°£
     constexpr float TimerDeltaTime = 1.0f / 60.0f;
 
     CameraBoom->TargetOffset = FMath::VInterpTo(
@@ -352,13 +351,13 @@ void ULockOnComponent::UpdateReticle()
     DrawDebugSphere(
         GetWorld(),
         Origin + FVector(0.f, 0.f, Extent.Z + 20.f),
-        20.f,        // ë°˜ì§€ë¦„
-        12,          // ì„¸ê·¸ë¨¼íŠ¸
+        20.f,        // ¹İÁö¸§
+        12,          // ¼¼±×¸ÕÆ®
         FColor::Red,
-        false,       // ì˜êµ¬ í‘œì‹œ ì—¬ë¶€
-        0.15f,       // í‘œì‹œ ì‹œê°„
-        0,           // ê¹Šì´ ìš°ì„ ìˆœìœ„
-        2.f          // ì„  ë‘ê»˜
+        false,       // ¿µ±¸ Ç¥½Ã ¿©ºÎ
+        0.15f,       // Ç¥½Ã ½Ã°£
+        0,           // ±íÀÌ ¿ì¼±¼øÀ§
+        2.f          // ¼± µÎ²²
     );
 }
 

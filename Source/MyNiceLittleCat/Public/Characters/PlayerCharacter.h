@@ -1,7 +1,7 @@
-// ì‘ì„±ì: ê°•ì§„êµ¬
-// ì‘ì„±ì¼ì: 2026-10-12
+// ÀÛ¼ºÀÚ: °­Áø±¸
+// ÀÛ¼ºÀÏÀÚ: 2026-10-12
 // 
-// í”Œë ˆì´ì–´ í´ë˜ìŠ¤ì…ë‹ˆë‹¤.
+// ÇÃ·¹ÀÌ¾î Å¬·¡½ºÀÔ´Ï´Ù.
 
 #pragma once
 
@@ -49,28 +49,68 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
+	// ¿¡µğÅÍ¿¡¼­ È£ÃâÇÏ´Â ÇÇ°İ Å×½ºÆ® ¹öÆ°
+	UFUNCTION(CallInEditor, Category = "Hit Reaction")
+	void TestReceiveHit();
+
+	UFUNCTION(BlueprintCallable, Category = "Hit Reaction")
+	void 
+		ApplyPlayerHit(float Damage, FVector HitDirection);
+
 protected:
-	// ì´ë™ í•¨ìˆ˜
+	// ÀÌµ¿ ÇÔ¼ö
 	void Move(const FInputActionValue& Value);
-	// ë½ì˜¨ í•¨ìˆ˜
+	// ¶ô¿Â ÇÔ¼ö
 	void ToggleTargetLock();
-	// ë½ì˜¨ íƒ€ê²Ÿ ë³€ê²½ í•¨ìˆ˜
+	// ¶ô¿Â Å¸°Ù º¯°æ ÇÔ¼ö
 	void SwitchTarget(const FInputActionValue& Value);
-	// êµ¬ë¥´ê¸° ì‹œì‘
+	// ±¸¸£±â ½ÃÀÛ
 	void StartDodge();
 	void UpdateDodge();
-	// êµ¬ë¥´ê¸° ì¢…ë£Œ
+	// ±¸¸£±â Á¾·á
 	void EndDodge();
 
-	// êµ¬ë¥´ê¸° ì…ë ¥ ì‹œ ì‹¤í–‰ í•¨ìˆ˜
+	// ±¸¸£±â ÀÔ·Â ½Ã ½ÇÇà ÇÔ¼ö
 	void OnDodgeInput(const FInputActionValue& Value);
 
-	// ê³µê²© ì…ë ¥ ì‹œ ì‹¤í–‰ í•¨ìˆ˜
+	// °ø°İ ÀÔ·Â ½Ã ½ÇÇà ÇÔ¼ö
 	void OnMeleeAttackInput(const FInputActionValue& Value);
 
+private:
+	void StartHitReaction(FVector HitDirection);
+	void ToggleHitFlash();
+	void EndInvincibility();
+
 protected:
+
 	FTimerHandle DodgeUpdateTimer;
 	FTimerHandle DodgeEndTimer;
+	FTimerHandle InvincibilityTimerHandle;
+	FTimerHandle BlinkTimerHandle;
+
+	UPROPERTY(EditAnywhere, Category = "Hit Reaction")
+	TSubclassOf<UGameplayEffect> DamageEffectClass;
+
+	UPROPERTY(EditAnywhere, Category = "Hit Reaction")
+	TObjectPtr<UAnimMontage> HitReactMontage;
+
+	UPROPERTY(EditAnywhere, Category = "Hit Reaction",
+		meta = (ClampMin = "0.0"))
+	float TestDamage = 10.f;
+
+	UPROPERTY(EditAnywhere, Category = "Hit Reaction",
+		meta = (ClampMin = "0.0"))
+	float InvincibilityDuration = 1.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Hit Reaction",
+		meta = (ClampMin = "0.01"))
+	float BlinkInterval = 0.08f;
+
+	UPROPERTY(EditAnywhere, Category = "Hit Reaction")
+	float KnockbackStrength = 500.f;
+
+	UPROPERTY(EditAnywhere, Category = "Hit Reaction")
+	float KnockbackUpwardStrength = 150.f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<USpringArmComponent> CameraBoom;
@@ -126,5 +166,10 @@ private:
 	bool bIsAbleToAttack = true;
 	float OriginalMaxWalkSpeed = 0.0f;
 	FVector DodgeDirection = FVector::ForwardVector;
+
+	bool bIsInvincible = false;
+	bool bMeshWasVisible = true;
+	bool bHitFlashVisible = true;
+
 
 };

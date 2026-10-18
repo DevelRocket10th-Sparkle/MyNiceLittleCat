@@ -11,6 +11,7 @@ UPlayerAttributeSet::UPlayerAttributeSet()
     InitHealth(10.0f);
     InitMaxHealth(10.0f);
     InitAttackPower(20.0f);
+    InitDamage(0.0f);
 }
 
 void UPlayerAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
@@ -43,5 +44,21 @@ void UPlayerAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCall
     {
         SetMaxHealth(FMath::Max(0.0f, GetMaxHealth()));
         SetHealth(FMath::Clamp(GetHealth(), 0.0f, GetMaxHealth()));
+    }
+    else if (Data.EvaluatedData.Attribute == GetDamageAttribute())
+    {
+        const float LocalDamage = GetDamage();
+        SetDamage(0.0f);
+
+        if (LocalDamage > 0.0f)
+        {
+            const float NewHealth = FMath::Clamp(
+                GetHealth() - LocalDamage,
+                0.0f,
+                GetMaxHealth()
+            );
+
+            SetHealth(NewHealth);
+        }
     }
 }

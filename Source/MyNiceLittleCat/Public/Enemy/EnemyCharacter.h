@@ -1,9 +1,9 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 /*
-* ì‘ì„±ì: ì „ì„ í˜„
-* ì‘ì„± ì¼ì: 2026.10.14.
-* ëª¬ìŠ¤í„°/ë³´ìŠ¤ ìºë¦­í„°ì˜ ê¸°ë³¸ í´ë˜ìŠ¤
-* - GAS ì—°ê²°
+* ÀÛ¼ºÀÚ: Àü¼±Çö
+* ÀÛ¼º ÀÏÀÚ: 2026.10.14.
+* ¸ó½ºÅÍ/º¸½º Ä³¸¯ÅÍÀÇ ±âº» Å¬·¡½º
+* - GAS ¿¬°á
 */
 
 #pragma once
@@ -32,7 +32,7 @@ public:
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent()const override;
 
-	// ì‚¬ë§ í›„ì²˜ë¦¬ - ì‚¬ë§ ì—°ì¶œ ì¢…ë£Œ ì‹œì ì— ì‹¤í–‰
+	// »ç¸Á ÈÄÃ³¸® - »ç¸Á ¿¬Ãâ Á¾·á ½ÃÁ¡¿¡ ½ÇÇà
 	virtual void FinishDeath();
 
 	// Getter: AttributeSet
@@ -43,6 +43,9 @@ public:
 	// Setter: bWantsToMove
 	void SetWantsToMove(bool bNewWantsToMove)	{ bWantsToMove = bNewWantsToMove; }
 
+	// ITargetable À¯È¿ÇÑ Å¸°ÙÀÎÁö Ã¼Å©
+	virtual bool IsTargetAlive_Implementation() const override;
+
 protected:
 
 	// Called when the game starts or when spawned
@@ -51,14 +54,14 @@ protected:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
-	// Enemy ëŠ¥ë ¥ì¹˜ ì ìš©
+	// Enemy ´É·ÂÄ¡ Àû¿ë
 	UFUNCTION(CallInEditor)
 	virtual void ApplyEnemyConfig();
 
-	// ì‚¬ë§ ì „ì²˜ë¦¬ - ì‚¬ë§ íŒì • ì§í›„ ì‹¤í–‰
-	virtual void BeginDeath();	// í•„ìš”í•  ê²½ìš° EnemyTypesì— ì„ ì–¸ëœ êµ¬ì¡°ì²´ FEnemyDeathContext ë°›ê¸°
+	// »ç¸Á ÀüÃ³¸® - »ç¸Á ÆÇÁ¤ Á÷ÈÄ ½ÇÇà
+	virtual void BeginDeath();	// ÇÊ¿äÇÒ °æ¿ì EnemyTypes¿¡ ¼±¾ğµÈ ±¸Á¶Ã¼ FEnemyDeathContext ¹Ş±â
 
-	/* ë¸ë¦¬ê²Œì´íŠ¸ ë°˜ì‘ í•¨ìˆ˜ */
+	/* µ¨¸®°ÔÀÌÆ® ¹İÀÀ ÇÔ¼ö */
 
 	void HandleHealthChanged(float NewHealth, float MaxHealth);
 
@@ -78,7 +81,7 @@ protected :
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Life")
 	EEnemyLifeState LifeState = EEnemyLifeState::Alive;
 
-	// AnimInstanceì—ì„œ í”Œë ˆì´ì–´ ì´ë™ ì• ë‹ˆë©”ì´ì…˜ ì¬ìƒ ì—¬ë¶€ë¥¼ ê²°ì •í•˜ê¸° ìœ„í•´ ì‚¬ìš©
+	// AnimInstance¿¡¼­ ÇÃ·¹ÀÌ¾î ÀÌµ¿ ¾Ö´Ï¸ŞÀÌ¼Ç Àç»ı ¿©ºÎ¸¦ °áÁ¤ÇÏ±â À§ÇØ »ç¿ë
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Movement")
 	bool bWantsToMove = false;
 

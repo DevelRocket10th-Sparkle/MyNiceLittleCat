@@ -31,7 +31,7 @@ APlayerCharacter::APlayerCharacter()
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.f, 1080.f, 0.f);
 
-	// ì¹´ë©”ë¼ ë¶
+	// Ä«¸Ş¶ó ºÕ
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(GetRootComponent());
 	CameraBoom->TargetArmLength = 700.f;
@@ -42,19 +42,19 @@ APlayerCharacter::APlayerCharacter()
     CameraBoom->bInheritYaw = false;
     CameraBoom->bInheritRoll = false;
 
-    // ìœ„ì¹˜ ì¶”ì  ë³´ê°„
+    // À§Ä¡ ÃßÀû º¸°£
     CameraBoom->bEnableCameraLag = true;
     CameraBoom->CameraLagSpeed = 8.f;
 
     //CameraBoom->bUseCameraLagSubstepping = true;
     //CameraBoom->CameraLagMaxTimeStep = 1.f / 60.f;
 
-	// íŒ”ë¡œìš° ì¹´ë©”ë¼	
+	// ÆÈ·Î¿ì Ä«¸Ş¶ó	
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-    // ë½ì˜¨ ì»´í¬ë„ŒíŠ¸
+    // ¶ô¿Â ÄÄÆ÷³ÍÆ®
     LockOnComponent = CreateDefaultSubobject<ULockOnComponent>(TEXT("LockOnComponent"));
 
     // GAS
@@ -121,7 +121,7 @@ void APlayerCharacter::Tick(float DeltaTime)
         TargetYaw
     );
 
-    // ìƒì²´ íšŒì „ í•œê³„ë¥¼ ë„˜ìœ¼ë©´ ëª¸ ì „ì²´ë¥¼ íƒ€ê²Ÿ ë°©í–¥ìœ¼ë¡œ ì •ë ¬
+    // »óÃ¼ È¸Àü ÇÑ°è¸¦ ³ÑÀ¸¸é ¸ö ÀüÃ¼¸¦ Å¸°Ù ¹æÇâÀ¸·Î Á¤·Ä
     if (FMath::Abs(DeltaYaw) > BodyTurnThreshold && !bIsDodging)
     {
         const FRotator DesiredRotation(0.0f, TargetYaw, 0.0f);
@@ -194,6 +194,80 @@ void APlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
     }
 }
 
+void APlayerCharacter::TestReceiveHit()
+{
+    const FVector TestHitDirection = -GetActorForwardVector();
+
+    ApplyPlayerHit(TestDamage, TestHitDirection);
+}
+
+void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
+{
+    if (bIsInvincible || Damage <= 0.f)
+    {
+        return;
+    }
+
+    UAbilitySystemComponent* ASC =
+        UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(this);
+
+    if (!ASC || !DamageEffectClass)
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[HitReaction] ASC ¶Ç´Â DamageEffectClass°¡ ¾ø½À´Ï´Ù."));
+        return;
+    }
+
+    const FGameplayTag DamageTag = FGameplayTag::RequestGameplayTag(FName("Data.Damage"));
+
+    FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+
+    Context.AddSourceObject(this);
+
+    FGameplayEffectSpecHandle SpecHandle =
+        ASC->MakeOutgoingSpec(
+            DamageEffectClass,
+            1.f,
+            Context);
+
+    if (!SpecHandle.IsValid()) return;
+
+    SpecHandle.Data->SetSetByCallerMagnitude(
+        DamageTag, Damage);
+
+    ASC->ApplyGameplayEffectSpecToSelf(
+        *SpecHandle.Data.Get());
+
+    bIsInvincible = true;
+
+    StartHitReaction(HitDirection);
+
+    GetWorldTimerManager().SetTimer(
+        InvincibilityTimerHandle,
+        this,
+        &APlayerCharacter::EndInvincibility,
+        InvincibilityDuration,
+        false);
+
+    if (GetMesh())
+    {
+        bMeshWasVisible = GetMesh()->IsVisible();
+        bHitFlashVisible = bMeshWasVisible;
+
+        GetWorldTimerManager().SetTimer(
+            BlinkTimerHandle,
+            this,
+            &APlayerCharacter::ToggleHitFlash,
+            BlinkInterval,
+            true);
+    }
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("[HitReaction] Damage=%.1f | Health=%.1f"),
+        Damage,
+        ASC->GetNumericAttribute(UPlayerAttributeSet::GetHealthAttribute()));
+}
+
 void APlayerCharacter::Move(const FInputActionValue& Value)
 {
     if (bIsDodging) return;
@@ -201,7 +275,7 @@ void APlayerCharacter::Move(const FInputActionValue& Value)
 
     if (Input.IsNearlyZero()) return;
 
-    // ì¹´ë©”ë¼ì˜ ìˆ˜í‰ ë°©í–¥ì„ ê¸°ì¤€ìœ¼ë¡œ ì´ë™ ë°©í–¥ ê³„ì‚°
+    // Ä«¸Ş¶óÀÇ ¼öÆò ¹æÇâÀ» ±âÁØÀ¸·Î ÀÌµ¿ ¹æÇâ °è»ê
     const FRotator CameraRotation =
         FollowCamera->GetComponentRotation();
 
@@ -303,7 +377,7 @@ void APlayerCharacter::UpdateDodge()
     Velocity.X = DodgeDirection.X * DodgeSpeed;
     Velocity.Y = DodgeDirection.Y * DodgeSpeed;
 
-    // Z ì†ë„ëŠ” ìœ ì§€í•´ì„œ ì‚´ì§ ëœ¨ëŠ” ë™ì‘ê³¼ ì¤‘ë ¥ ì ìš©
+    // Z ¼Óµµ´Â À¯ÁöÇØ¼­ »ìÂ¦ ¶ß´Â µ¿ÀÛ°ú Áß·Â Àû¿ë
     MoveComp->Velocity = Velocity;
 }
 
@@ -355,4 +429,62 @@ void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
     }
 
     AbilitySystemComponent->TryActivateAbilityByClass(MeleeAttackAbilityClass);
+}
+
+void APlayerCharacter::StartHitReaction(FVector HitDirection)
+{
+    if (HitDirection.IsNearlyZero())
+    {
+        HitDirection = -GetActorForwardVector();
+    }
+
+    HitDirection.Z = 0.f;
+    HitDirection.Normalize();
+
+    // ÇöÀç Àç»ı ÁßÀÎ ¸ùÅ¸ÁÖ Áß´Ü
+    if (UAnimInstance* AnimInstance =
+        GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+    {
+        AnimInstance->Montage_Stop(0.05f);
+
+        if (HitReactMontage)
+        {
+            AnimInstance->Montage_Play(HitReactMontage);
+        }
+    }
+
+    // ÀÌµ¿Àº À¯ÁöÇÏ¸é¼­ ÇÇ°İ ¹æÇâÀ¸·Î ³Ë¹é
+    LaunchCharacter(
+        HitDirection* KnockbackStrength
+        + FVector(0.f, 0.f, KnockbackUpwardStrength),
+        true,
+        true);
+}
+
+void APlayerCharacter::ToggleHitFlash()
+{
+    USkeletalMeshComponent* CharacterMesh = GetMesh();
+
+    if (!CharacterMesh)
+    {
+        return;
+    }
+
+    bHitFlashVisible = !bHitFlashVisible;
+    CharacterMesh->SetVisibility(bHitFlashVisible, true);
+}
+
+void APlayerCharacter::EndInvincibility()
+{
+    GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
+
+    if (GetMesh())
+    {
+        GetMesh()->SetVisibility(bMeshWasVisible, true);
+    }
+
+    bIsInvincible = false;
+
+    //UE_LOG(LogTemp, Warning,
+    //    TEXT("[HitReaction] ¹«Àû ½Ã°£ Á¾·á"));
 }
