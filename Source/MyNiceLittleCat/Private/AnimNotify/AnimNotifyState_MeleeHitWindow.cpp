@@ -69,7 +69,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
     {
         Character->AddMovementInput(
             Character->GetActorForwardVector(),
-            0.8f
+            0.6f
         );
     }
 
