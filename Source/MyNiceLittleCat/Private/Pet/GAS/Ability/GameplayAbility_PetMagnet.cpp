@@ -325,7 +325,16 @@ void UGameplayAbility_PetMagnet::UpdateHeldTarget(float DeltaTime)
     if (true == bAttachedToCarryPoint)
         return;
 
-    const FVector Destination = CarryPoint->GetComponentLocation();
+    UPrimitiveComponent* Body = HeldBody.Get();
+    if (false == IsValid(Body))
+    {
+        ReleaseHeldTarget(0.f);
+        return;
+    }
+
+    const FVector CarryOffset = CalculateCarryOffset(Body);
+    const FVector Destination = CarryPoint->GetComponentLocation() + CarryOffset;
+
     const FVector NextLocation = FMath::VInterpConstantTo(
         Target->GetActorLocation(), Destination, DeltaTime, AttractionSpeed);
     Target->SetActorLocation(NextLocation, false);
@@ -333,10 +342,27 @@ void UGameplayAbility_PetMagnet::UpdateHeldTarget(float DeltaTime)
     constexpr float AttachDistance = 10.f;
     if (FVector::DistSquared(NextLocation, Destination) <= FMath::Square(AttachDistance))
     {
-        bAttachedToCarryPoint = Target->AttachToComponent(CarryPoint, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+        // 정확한 보정 위치까지 이동한 뒤 부착
+        Target->SetActorLocation(Destination, false);
+
+        bAttachedToCarryPoint = Target->AttachToComponent(CarryPoint,
+            FAttachmentTransformRules::KeepWorldTransform);
+
         if (false == bAttachedToCarryPoint)
             ReleaseHeldTarget(0.f);
     }
+}
+
+FVector UGameplayAbility_PetMagnet::CalculateCarryOffset(const UPrimitiveComponent* Body) const
+{
+    if (false == IsValid(Body)) return FVector::ZeroVector;
+
+    // 현재 회전과 크기를 반영한 월드 바운드
+    const FBoxSphereBounds Bounds = Body->CalcBounds(Body->GetComponentTransform());
+    const FVector BottomCenter = Bounds.Origin - FVector::UpVector * Bounds.BoxExtent.Z;
+
+    // 바닥 중앙에서 물체 피벗으로 향하는 거리
+    return Body->GetComponentLocation() - BottomCenter;
 }
 
 void UGameplayAbility_PetMagnet::ReleaseHeldTarget(float ReleaseSpeed, float UpwardRatio)

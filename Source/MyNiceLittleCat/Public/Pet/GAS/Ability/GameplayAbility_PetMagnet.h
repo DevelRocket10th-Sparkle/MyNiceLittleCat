@@ -45,6 +45,7 @@ protected:
 
     void BeginAttractTarget(AActor* Target);
     void UpdateHeldTarget(float DeltaTime);
+    FVector CalculateCarryOffset(const UPrimitiveComponent* Body) const;
     void ReleaseHeldTarget(float ReleaseSpeed, float UpwardRatio = 0.f);
 
     // ========================================================================================

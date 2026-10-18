@@ -36,7 +36,7 @@ APetCharacter::APetCharacter()
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 
 	CarryPoint = CreateDefaultSubobject<USceneComponent>(TEXT("CarryPoint"));
-	CarryPoint->SetupAttachment(GetMesh());
+	CarryPoint->SetupAttachment(GetMesh(), TEXT("CarrySocket"));
 }
 
 void APetCharacter::BeginPlay()
@@ -45,6 +45,21 @@ void APetCharacter::BeginPlay()
 
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
 	GrantModeAbilities();
+
+	//UE_LOG(LogTemp, Warning,
+	//	TEXT("CarryPoint Parent=%s / Socket=%s / SocketExists=%d"),
+	//	*GetNameSafe(CarryPoint->GetAttachParent()),
+	//	*CarryPoint->GetAttachSocketName().ToString(),
+	//	GetMesh()->DoesSocketExist(TEXT("CarrySocket")) ? 1 : 0);
+
+	//const APetCharacter* NativeDefault = GetDefault<APetCharacter>();
+	//const APetCharacter* BPDefault = GetClass()->GetDefaultObject<APetCharacter>();
+
+	//UE_LOG(LogTemp, Warning,
+	//	TEXT("CarrySocket Native=%s / BP=%s / Instance=%s"),
+	//	*NativeDefault->GetCarryPoint()->GetAttachSocketName().ToString(),
+	//	*BPDefault->GetCarryPoint()->GetAttachSocketName().ToString(),
+	//	*CarryPoint->GetAttachSocketName().ToString());
 }
 
 void APetCharacter::Tick(float DeltaTime)
@@ -60,6 +75,14 @@ void APetCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 UAbilitySystemComponent* APetCharacter::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent.Get();
+}
+
+void APetCharacter::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+
+	CarryPoint->AttachToComponent(GetMesh(), 
+		FAttachmentTransformRules::KeepRelativeTransform, TEXT("CarrySocket"));
 }
 
 void APetCharacter::InitializePet(const FPetInitializationData& _data)

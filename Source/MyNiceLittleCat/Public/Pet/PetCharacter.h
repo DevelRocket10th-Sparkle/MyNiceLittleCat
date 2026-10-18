@@ -23,6 +23,7 @@ public:
 
 public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	virtual void PostInitializeComponents() override; //! CarraySocket 초기화가 안되어서 임시로 여기서..
 
 protected:
 	virtual void BeginPlay() override;
