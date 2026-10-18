@@ -350,14 +350,13 @@ void ULockOnComponent::UpdateLockOnCamera()
 
 void ULockOnComponent::UpdateReticle()
 {
-    AActor* Target = LockedTarget.IsValid()
+    const bool bIsLockedOn = LockedTarget.IsValid();
+
+    AActor* Target = bIsLockedOn
         ? LockedTarget.Get()
         : CurrentCandidate.Get();
 
-    if (!IsValid(Target))
-    {
-        return;
-    }
+    if (!IsValid(Target)) return;
 
     FVector Origin;
     FVector Extent;
@@ -366,13 +365,13 @@ void ULockOnComponent::UpdateReticle()
     DrawDebugSphere(
         GetWorld(),
         Origin + FVector(0.f, 0.f, Extent.Z + 20.f),
-        20.f,        // 반지름
-        12,          // 세그먼트
-        FColor::Red,
-        false,       // 영구 표시 여부
-        0.15f,       // 표시 시간
-        0,           // 깊이 우선순위
-        2.f          // 선 두께
+        20.f,
+        12,
+        bIsLockedOn ? FColor::Red : FColor::Green,
+        false,
+        0.15f,
+        0,
+        2.f
     );
 }
 
