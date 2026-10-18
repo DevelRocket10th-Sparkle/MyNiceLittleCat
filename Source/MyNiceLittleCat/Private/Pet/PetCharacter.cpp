@@ -1,6 +1,9 @@
 #include "Pet/PetCharacter.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Pet/PetAIController.h"
+#include "AbilitySystemComponent.h"
+#include "Abilities/GameplayAbility.h"
+#include "GameplayAbilitySpec.h"
 
 APetCharacter::APetCharacter()
 {
@@ -25,11 +28,16 @@ APetCharacter::APetCharacter()
 	// 이동 감각의 주요 설정값
 	GetCharacterMovement()->MaxAcceleration = 1200.f; // 얼마나 빠르게 속도를 올릴지
 	GetCharacterMovement()->BrakingDecelerationWalking = 1600.f; // 얼마나 빠르게 속도를 줄일지
+
+	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 }
 
 void APetCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	AbilitySystemComponent->InitAbilityActorInfo(this, this);
+	GrantModeAbilities();
 }
 
 void APetCharacter::Tick(float DeltaTime)
@@ -40,6 +48,11 @@ void APetCharacter::Tick(float DeltaTime)
 void APetCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+}
+
+UAbilitySystemComponent* APetCharacter::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent.Get();
 }
 
 void APetCharacter::InitializePet(const FPetInitializationData& _data)
@@ -156,4 +169,37 @@ void APetCharacter::SetAimDirection(const FVector& _direction)
 		return;
 
 	AimDirection = HorizontalDirection;
+}
+
+bool APetCharacter::TryGetModeAbilityHandle(EPetMode _mode, FGameplayAbilitySpecHandle& _outHandle) const
+{
+	_outHandle = FGameplayAbilitySpecHandle();
+
+	const FGameplayAbilitySpecHandle* Handle = ModeAbilityHandles.Find(_mode);
+	if (nullptr == Handle || false == Handle->IsValid())
+		return false;
+
+	_outHandle = *Handle;
+	return true;
+}
+
+void APetCharacter::GrantModeAbilities()
+{
+	if (false == IsValid(AbilitySystemComponent.Get()))
+		return;
+
+	for (const auto& Entry : ModeAbilities)
+	{
+		const EPetMode Mode = Entry.Key;
+		const TSubclassOf<UGameplayAbility> AbilityClass = Entry.Value;
+
+		if (nullptr == AbilityClass || true == ModeAbilityHandles.Contains(Mode))
+			continue;
+
+		const FGameplayAbilitySpec Spec(AbilityClass,1, INDEX_NONE, this);
+		const FGameplayAbilitySpecHandle Handle = AbilitySystemComponent->GiveAbility(Spec);
+
+		if (true == Handle.IsValid())
+			ModeAbilityHandles.Add(Mode, Handle);
+	}
 }
