@@ -6,6 +6,8 @@
 #include "GameplayAbilitySpec.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "GameplayTagContainer.h"
+#include "Components/SceneComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 
 APetCharacter::APetCharacter()
 {
@@ -32,6 +34,9 @@ APetCharacter::APetCharacter()
 	GetCharacterMovement()->BrakingDecelerationWalking = 1600.f; // 얼마나 빠르게 속도를 줄일지
 
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+
+	CarryPoint = CreateDefaultSubobject<USceneComponent>(TEXT("CarryPoint"));
+	CarryPoint->SetupAttachment(GetMesh());
 }
 
 void APetCharacter::BeginPlay()

@@ -83,6 +83,8 @@ public:
 	void SetModeAbilityInputHeld(bool _held) { bModeAbilityInputHeld = _held;}
 
 	void RequestSpecialAction();
+
+	USceneComponent* GetCarryPoint() const { return CarryPoint.Get(); }
 private:
 	void GrantModeAbilities();
 	// =============================================================================
@@ -123,6 +125,9 @@ protected:
 
 	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Pet|Input", meta = (AllowPrivateAccess = "true"))
 	bool bModeAbilityInputHeld = false; // 입력 누르는 중?
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pet|Carry")
+	TObjectPtr<class USceneComponent> CarryPoint;
 private:
 	// 초기화 됨?
 	UPROPERTY(Transient)

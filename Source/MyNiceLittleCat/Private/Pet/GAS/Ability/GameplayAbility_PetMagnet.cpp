@@ -48,23 +48,25 @@ void UGameplayAbility_PetMagnet::ActivateAbility(const FGameplayAbilitySpecHandl
     TickTask->ReadyForActivation();
 }
 
+void UGameplayAbility_PetMagnet::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
+{
+    // 우클릭 해제·모드 변경 등 모든 종료 경로에서 정리
+    ReleaseHeldTarget(100.f);
+    Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
+}
+
 void UGameplayAbility_PetMagnet::HandleMagnetTick(float DeltaTime)
 {
     DrawMagnetDebugRange();
 
-    AActor* Target = FindNearestMagnetTarget();
+    TArray<AActor*> Candidates;
+    CollectMagnetTargetsInRange(Candidates);
 
-#if ENABLE_DRAW_DEBUG
-    if (IsValid(Target) && GetWorld())
-    {
-        FVector BoundsOrigin;
-        FVector BoundsExtent;
-        Target->GetActorBounds(false, BoundsOrigin, BoundsExtent);
+    if (false == HeldTarget.IsValid())
+        BeginAttractTarget(FindNearestMagnetTarget(Candidates));
 
-        const FVector MarkerPosition = BoundsOrigin + FVector(0.f, 0.f, BoundsExtent.Z + 35.f);
-        DrawDebugSphere(GetWorld(), MarkerPosition, 20.f, 16, FColor::Yellow, false, 0.f, 0, 2.f);
-    }
-#endif
+    UpdateHeldTarget(DeltaTime);
+    ApplyNearbyRepulsion(Candidates);
 }
 
 void UGameplayAbility_PetMagnet::DrawMagnetDebugRange() const
@@ -107,11 +109,12 @@ void UGameplayAbility_PetMagnet::DrawMagnetDebugRange() const
 #endif
 }
 
-AActor* UGameplayAbility_PetMagnet::FindNearestMagnetTarget() const
+void UGameplayAbility_PetMagnet::CollectMagnetTargetsInRange(TArray<AActor*>& OutTargets) const
 {
+    OutTargets.Reset();
+
     const APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
-    if (false == IsValid(Pet) || nullptr == GetWorld())
-        return nullptr;
+    if (false == IsValid(Pet) || nullptr == GetWorld()) return;
 
     const FVector Forward = Pet->GetActorForwardVector().GetSafeNormal2D();
     const FVector Origin = Pet->GetActorLocation() + Forward * ForwardOffset;
@@ -135,16 +138,15 @@ AActor* UGameplayAbility_PetMagnet::FindNearestMagnetTarget() const
     const float RangeSquared = FMath::Square(RangeLength);
     const float MinimumDot = FMath::Cos(FMath::DegreesToRadians(HalfAngleDegrees));
 
-    AActor* NearestTarget = nullptr;
-    float NearestDistanceSquared = TNumericLimits<float>::Max();
-
     TSet<AActor*> CheckedActors;
 
     for (const FOverlapResult& Overlap : Overlaps)
     {
         AActor* Candidate = Overlap.GetActor();
-        if (false == IsValid(Candidate) || true == CheckedActors.Contains(Candidate))
+
+        if (false == IsValid(Candidate) || Candidate == HeldTarget.Get() || true == CheckedActors.Contains(Candidate))
             continue;
+
 
         CheckedActors.Add(Candidate);
 
@@ -152,36 +154,96 @@ AActor* UGameplayAbility_PetMagnet::FindNearestMagnetTarget() const
             continue;
 
         FVector ToTarget = Candidate->GetActorLocation() - Origin;
-
         if (FMath::Abs(ToTarget.Z) > TargetHeightTolerance)
             continue;
 
         ToTarget.Z = 0.f;
-
-        // 부채꼴 길이 검사
-        const float DistanceFromOriginSquared = ToTarget.SizeSquared();
-        if (DistanceFromOriginSquared > RangeSquared)
+        if (ToTarget.SizeSquared() > RangeSquared)
             continue;
 
-        // 부채꼴 각도 검사
         if (false == ToTarget.IsNearlyZero())
         {
             const float Dot = FVector::DotProduct(Forward, ToTarget.GetSafeNormal());
             if (Dot < MinimumDot)
                 continue;
         }
+        OutTargets.Add(Candidate);
+    }
+}
 
-        // 범위 안의 후보 중 펫과 가장 가까운 액터를 고릅니다.
-        const float DistanceFromPetSquared = FVector::DistSquared2D(Pet->GetActorLocation(), Candidate->GetActorLocation());
+AActor* UGameplayAbility_PetMagnet::FindNearestMagnetTarget(const TArray<AActor*>& Candidates) const
+{
+    const APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
+    if (false == IsValid(Pet) || nullptr == GetWorld())
+        return nullptr;
 
-        if (DistanceFromPetSquared < NearestDistanceSquared)
+    AActor* NearestTarget = nullptr;
+    float NearestDistanceSquared = TNumericLimits<float>::Max();
+
+    TSet<AActor*> CheckedActors;
+
+    for (AActor* Candidate : Candidates)
+    {
+        EPetMagnetPolarity TargetPolarity;
+
+        if (false == TryGetTargetPolarity(Candidate, TargetPolarity))
+            continue;
+
+        if (TargetPolarity == CurrentPolarity)
+            continue;
+
+        const float DistanceSquared = FVector::DistSquared2D(
+            Pet->GetActorLocation(), Candidate->GetActorLocation());
+
+        if (DistanceSquared < NearestDistanceSquared)
         {
-            NearestDistanceSquared = DistanceFromPetSquared;
+            NearestDistanceSquared = DistanceSquared;
             NearestTarget = Candidate;
         }
     }
-
     return NearestTarget;
+}
+
+void UGameplayAbility_PetMagnet::ApplyNearbyRepulsion(const TArray<AActor*>& Candidates)
+{
+    const AActor* Pet = GetAvatarActorFromActorInfo();
+    if (false == IsValid(Pet)) return;
+
+    for (AActor* Candidate : Candidates)
+    {
+        if (false == IsValid(Candidate) || Candidate == HeldTarget.Get())
+            continue;
+
+        EPetMagnetPolarity TargetPolarity;
+
+        if (false == TryGetTargetPolarity(Candidate, TargetPolarity))
+            continue;
+
+        if (CurrentPolarity != TargetPolarity)
+            continue;
+
+        //! 임시 물체 연결부 -> 루트 메시의 물리에 힘을 줘요
+        UPrimitiveComponent* Body = Cast<UPrimitiveComponent>(Candidate->GetRootComponent());
+
+        if (false == IsValid(Body) || false == Body->IsSimulatingPhysics())
+            continue;
+
+        FVector Direction = Candidate->GetActorLocation() - Pet->GetActorLocation();
+        Direction = Direction.GetSafeNormal2D();
+
+        if (true == Direction.IsNearlyZero())
+            Direction = Pet->GetActorForwardVector().GetSafeNormal2D();
+
+        const float OutwardSpeed = FVector::DotProduct(Body->GetPhysicsLinearVelocity(), Direction);
+        const float SpeedGap = NearbyRepelSpeed - OutwardSpeed;
+
+        // 이미 충분히 빠르게 날아가는 물체에는 추가 힘을 주지 않음
+        if (SpeedGap <= 0.f) continue;
+
+        constexpr float ResponseRate = 10.f;
+        const float Acceleration = FMath::Clamp(SpeedGap * ResponseRate, 0.f, NearbyRepelMaxAcceleration);
+        Body->AddForce(Direction * Acceleration, NAME_None, true);
+    }
 }
 
 bool UGameplayAbility_PetMagnet::IsMagnetCandidate(const AActor* _actor) const
@@ -193,4 +255,123 @@ bool UGameplayAbility_PetMagnet::IsMagnetCandidate(const AActor* _actor) const
 void UGameplayAbility_PetMagnet::HandleSpecialAction(FGameplayEventData Payload)
 {
     CurrentPolarity = (CurrentPolarity == EPetMagnetPolarity::N) ? EPetMagnetPolarity::S: EPetMagnetPolarity::N;
+}
+
+bool UGameplayAbility_PetMagnet::TryGetTargetPolarity(const AActor* Target, EPetMagnetPolarity& OutPolarity) const
+{
+    if (false == IsValid(Target)) return false;
+
+    static const FName NTag(TEXT("Test.Pet.Pole.N"));
+    static const FName STag(TEXT("Test.Pet.Pole.S"));
+
+    const bool bN = Target->ActorHasTag(NTag);
+    const bool bS = Target->ActorHasTag(STag);
+
+    // 없거나, 두 극성이 동시에 지정되어 있으면 제외
+    if (bN == bS) return false;
+
+    OutPolarity = bN ? EPetMagnetPolarity::N : EPetMagnetPolarity::S;
+    return true;
+}
+
+void UGameplayAbility_PetMagnet::BeginAttractTarget(AActor* Target)
+{
+    if (true == HeldTarget.IsValid() || false == IsValid(Target)) return;
+
+    UPrimitiveComponent* Body = Cast<UPrimitiveComponent>(Target->GetRootComponent());
+    if (false == IsValid(Body)) return;
+
+    HeldTarget = Target;
+    HeldBody = Body;
+    bAttachedToCarryPoint = false;
+
+    bSavedSimulatePhysics = Body->IsSimulatingPhysics();
+    bSavedActorCollision = Target->GetActorEnableCollision();
+
+    //! 테스트.. 직접 이동시키는 동안 물리와 충돌을 잠시 꺼버려잇
+    Body->SetSimulatePhysics(false);
+    Target->SetActorEnableCollision(false);
+}
+
+void UGameplayAbility_PetMagnet::UpdateHeldTarget(float DeltaTime)
+{
+    AActor* Target = HeldTarget.Get();
+    if (false == IsValid(Target)) return;
+
+    APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
+
+    USceneComponent* CarryPoint = (true == IsValid(Pet)) ? Pet->GetCarryPoint() : nullptr;
+
+    if (false == IsValid(CarryPoint))
+    {
+        ReleaseHeldTarget(0.f);
+        return;
+    }
+
+    EPetMagnetPolarity TargetPolarity;
+    if (false == TryGetTargetPolarity(Target, TargetPolarity))
+    {
+        ReleaseHeldTarget(100.f);
+        return;
+    }
+
+    // Q로 극성이 바뀌어서 같은 극이 되면 강하게 내팽겨쳐요
+    if (CurrentPolarity == TargetPolarity)
+    {
+        ReleaseHeldTarget(RepelSpeed, RepelUpwardRatio);
+        return;
+    }
+
+    if (true == bAttachedToCarryPoint)
+        return;
+
+    const FVector Destination = CarryPoint->GetComponentLocation();
+    const FVector NextLocation = FMath::VInterpConstantTo(
+        Target->GetActorLocation(), Destination, DeltaTime, AttractionSpeed);
+    Target->SetActorLocation(NextLocation, false);
+
+    constexpr float AttachDistance = 10.f;
+    if (FVector::DistSquared(NextLocation, Destination) <= FMath::Square(AttachDistance))
+    {
+        bAttachedToCarryPoint = Target->AttachToComponent(CarryPoint, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+        if (false == bAttachedToCarryPoint)
+            ReleaseHeldTarget(0.f);
+    }
+}
+
+void UGameplayAbility_PetMagnet::ReleaseHeldTarget(float ReleaseSpeed, float UpwardRatio)
+{
+    AActor* Target = HeldTarget.Get();
+    UPrimitiveComponent* Body = HeldBody.Get();
+
+    if (true == IsValid(Target))
+    {
+        Target->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+        Target->SetActorEnableCollision(bSavedActorCollision);
+
+        if (true == IsValid(Body))
+        {
+            Body->SetSimulatePhysics(bSavedSimulatePhysics);
+
+            if (true == bSavedSimulatePhysics && (ReleaseSpeed > 0.f))
+            {
+                const AActor* Pet = GetAvatarActorFromActorInfo();
+                /*const FVector Direction = IsValid(Pet) ? 
+                    Pet->GetActorForwardVector().GetSafeNormal2D() : FVector::ForwardVector;
+
+                Body->AddImpulse(Direction * ReleaseSpeed, NAME_None, true);*/
+
+                const FVector Forward = (true == IsValid(Pet)) ? Pet->GetActorForwardVector().GetSafeNormal2D() : FVector::ForwardVector;
+                const FVector Direction = (Forward + FVector::UpVector * UpwardRatio).GetSafeNormal();
+
+                Body->SetPhysicsLinearVelocity(FVector::ZeroVector);
+
+                Body->AddImpulse(Direction * ReleaseSpeed, NAME_None, true);
+            }
+        }
+    }
+
+    HeldTarget.Reset();
+    HeldBody.Reset();
+    bAttachedToCarryPoint = false;
 }
