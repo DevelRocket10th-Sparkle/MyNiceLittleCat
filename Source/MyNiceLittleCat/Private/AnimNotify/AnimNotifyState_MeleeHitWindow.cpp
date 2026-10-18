@@ -65,6 +65,13 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
 
     if (!WeaponMesh) return;
 
+    if (APlayerCharacter* Character = Cast<APlayerCharacter>(Attacker))
+    {
+        Character->AddMovementInput(
+            Character->GetActorForwardVector(),
+            0.8f
+        );
+    }
 
     const FVector Start = WeaponMesh->GetSocketLocation(StartSocket);
     const FVector End = WeaponMesh->GetSocketLocation(EndSocket);

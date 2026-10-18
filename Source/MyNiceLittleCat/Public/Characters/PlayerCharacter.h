@@ -55,8 +55,7 @@ public:
 	void TestReceiveHit();
 
 	UFUNCTION(BlueprintCallable, Category = "Hit Reaction")
-	void 
-		ApplyPlayerHit(float Damage, FVector HitDirection);
+	void ApplyPlayerHit(float Damage, FVector HitDirection);
 
 protected:
 	// 이동 함수
@@ -81,6 +80,9 @@ protected:
 	void OnHealthChanged(const FOnAttributeChangeData& Data);
 	// 사망
 	void Die();
+
+	UFUNCTION()
+	void OnDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 private:
 	void StartHitReaction(FVector HitDirection);

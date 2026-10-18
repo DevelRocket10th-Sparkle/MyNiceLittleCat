@@ -13,6 +13,7 @@
 #include "Animation/AnimMontage.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "GameplayTagContainer.h"
+#include "Components/CapsuleComponent.h"
 
 #include "Characters/GAS/PlayerAttributeSet.h"
 #include "Characters/GAS/GA_MeleeAttack.h"
@@ -457,26 +458,72 @@ void APlayerCharacter::OnHealthChanged(const FOnAttributeChangeData& Data)
 
 void APlayerCharacter::Die()
 {
+    if (bIsDead)
+        return;
+
     bIsDead = true;
 
-    // 이동 및 물리 처리 중단
     GetCharacterMovement()->StopMovementImmediately();
     GetCharacterMovement()->DisableMovement();
 
-    // 무적 및 깜빡임 타이머 정리
     GetWorldTimerManager().ClearTimer(InvincibilityTimerHandle);
     GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
 
-    // 피격 및 공격 애니메이션 중단
-    GetMesh()->GetAnimInstance()->StopAllMontages(0.1f);
+    UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
 
-    // 사망 애니메이션 재생
-    if (DeathMontage)
+    if (AnimInstance)
     {
-        PlayAnimMontage(DeathMontage);
+        AnimInstance->StopAllMontages(0.0f);
+
+        if (DeathMontage)
+        {
+            // 사망 몽타주 종료 시 랙돌 전환
+            FOnMontageEnded EndDelegate;
+            EndDelegate.BindUObject(
+                this,
+                &APlayerCharacter::OnDeathMontageEnded
+            );
+
+            AnimInstance->Montage_SetEndDelegate(
+                EndDelegate,
+                DeathMontage
+            );
+
+            if (PlayAnimMontage(DeathMontage) > 0.0f)
+            {
+                return; // 몽타주 재생 중에는 랙돌 전환하지 않음
+            }
+        }
     }
 
+    // 몽타주가 없거나 재생에 실패한 경우
+    OnDeathMontageEnded(nullptr, false);
     
+}
+
+void APlayerCharacter::OnDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+    if (Montage && Montage != DeathMontage)
+        return;
+
+    USkeletalMeshComponent* CharacterMesh = GetMesh();
+
+    // 애니메이션 갱신 중단
+    CharacterMesh->SetAnimInstanceClass(nullptr);
+    CharacterMesh->bPauseAnims = true;
+
+    // 캡슐 충돌 제거
+    GetCapsuleComponent()->SetCollisionEnabled(
+        ECollisionEnabled::NoCollision
+    );
+
+    // Physics Asset의 물리 바디 활성화
+    CharacterMesh->SetCollisionProfileName(TEXT("Ragdoll"));
+    CharacterMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    CharacterMesh->SetAllBodiesSimulatePhysics(true);
+    CharacterMesh->SetSimulatePhysics(true);
+    CharacterMesh->WakeAllRigidBodies();
+
 }
 
 void APlayerCharacter::StartHitReaction(FVector HitDirection)
