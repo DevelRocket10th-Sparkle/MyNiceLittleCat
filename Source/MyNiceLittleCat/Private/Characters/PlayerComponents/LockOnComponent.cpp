@@ -188,10 +188,25 @@ void ULockOnComponent::RefreshCandidates()
 
     Candidates = MoveTemp(NewCandidates);
 
-    // 락온 대상이 더 이상 후보가 아니면 락온 해제
-    if (LockedTarget.IsValid() && !Candidates.Contains(LockedTarget) && !ITargetableInterface::Execute_IsTargetAlive(LockedTarget.Get()))
+    // 락온 대상이 죽었으면 가장 가까운 후보로 전환, 후보가 없으면 해제
+    if (LockedTarget.IsValid() &&
+        !ITargetableInterface::Execute_IsTargetAlive(LockedTarget.Get()))
     {
-        LockedTarget.Reset();
+        AActor* PreviousTarget = LockedTarget.Get();
+
+        if (!Candidates.IsEmpty())
+        {
+            // Candidates는 거리순 정렬 + 살아있는 대상만 포함
+            LockedTarget = Candidates[0];
+        }
+        else
+        {
+            LockedTarget.Reset();
+        }
+
+        UE_LOG(LogTemp, Log, TEXT("LockOn Target Dead: %s -> %s"),
+            *GetNameSafe(PreviousTarget),
+            *GetNameSafe(LockedTarget.Get()));
     }
 
     // 현재 선택이 사라졌을 때 가장 가까운 대상으로 변경

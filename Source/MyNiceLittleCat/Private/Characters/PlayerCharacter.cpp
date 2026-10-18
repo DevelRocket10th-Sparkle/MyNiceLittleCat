@@ -59,7 +59,10 @@ APlayerCharacter::APlayerCharacter()
 
     // GAS
     AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
-    AttributeSet = CreateDefaultSubobject<UPlayerAttributeSet>(TEXT("AttributeSet"));
+    PlayerAttributeSet = CreateDefaultSubobject<UPlayerAttributeSet>(TEXT("AttributeSet"));
+    UE_LOG(LogTemp, Warning,
+        TEXT("[Constructor] AttributeSet=%s"),
+        *GetNameSafe(PlayerAttributeSet));
 
 }
 
@@ -73,6 +76,29 @@ void APlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+    if (AbilitySystemComponent)
+    {
+        AbilitySystemComponent->InitAbilityActorInfo(this, this);
+        AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
+            UPlayerAttributeSet::GetHealthAttribute())
+            .AddUObject(
+                this,
+                &APlayerCharacter::OnHealthChanged);
+    }
+    UE_LOG(LogTemp, Warning,
+        TEXT("AttributeSet valid: %s"),
+        IsValid(PlayerAttributeSet) ? TEXT("true") : TEXT("false"));
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("ASC valid: %s"),
+        IsValid(AbilitySystemComponent) ? TEXT("true") : TEXT("false"));
+
+    if (AbilitySystemComponent && MeleeAttackAbilityClass)
+    {
+        AbilitySystemComponent->GiveAbility(
+            FGameplayAbilitySpec(MeleeAttackAbilityClass, 1)
+        );
+    }
     APlayerController* PC = Cast<APlayerController>(GetController());
 
     if (!PC || !IMC) return;
@@ -86,17 +112,7 @@ void APlayerCharacter::BeginPlay()
         Subsystem->AddMappingContext(IMC, 0);
     }
 
-    if (AbilitySystemComponent)
-    {
-        AbilitySystemComponent->InitAbilityActorInfo(this, this);
-    }
-
-    if (AbilitySystemComponent && MeleeAttackAbilityClass)
-    {
-        AbilitySystemComponent->GiveAbility(
-            FGameplayAbilitySpec(MeleeAttackAbilityClass, 1)
-        );
-    }
+    
 
 }
 
@@ -271,6 +287,7 @@ void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
 void APlayerCharacter::Move(const FInputActionValue& Value)
 {
     if (bIsDodging) return;
+    if (!bIsAbleToMove) return;
     const FVector2D Input = Value.Get<FVector2D>();
 
     if (Input.IsNearlyZero()) return;
@@ -431,8 +448,42 @@ void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
     AbilitySystemComponent->TryActivateAbilityByClass(MeleeAttackAbilityClass);
 }
 
+void APlayerCharacter::OnHealthChanged(const FOnAttributeChangeData& Data)
+{
+    if (bIsDead || Data.NewValue > 0.f) return;
+
+    Die();
+}
+
+void APlayerCharacter::Die()
+{
+    bIsDead = true;
+
+    // 이동 및 물리 처리 중단
+    GetCharacterMovement()->StopMovementImmediately();
+    GetCharacterMovement()->DisableMovement();
+
+    // 무적 및 깜빡임 타이머 정리
+    GetWorldTimerManager().ClearTimer(InvincibilityTimerHandle);
+    GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
+
+    // 피격 및 공격 애니메이션 중단
+    GetMesh()->GetAnimInstance()->StopAllMontages(0.1f);
+
+    // 사망 애니메이션 재생
+    if (DeathMontage)
+    {
+        PlayAnimMontage(DeathMontage);
+    }
+
+    
+}
+
 void APlayerCharacter::StartHitReaction(FVector HitDirection)
 {
+    bIsAbleToAttack = false;
+    bIsAbleToDodge = false;
+    bIsAbleToMove = false;
     if (HitDirection.IsNearlyZero())
     {
         HitDirection = -GetActorForwardVector();
@@ -452,6 +503,8 @@ void APlayerCharacter::StartHitReaction(FVector HitDirection)
             AnimInstance->Montage_Play(HitReactMontage);
         }
     }
+
+    SetActorRotation(( - HitDirection).Rotation());
 
     // 이동은 유지하면서 피격 방향으로 넉백
     LaunchCharacter(
@@ -484,7 +537,9 @@ void APlayerCharacter::EndInvincibility()
     }
 
     bIsInvincible = false;
-
+    bIsAbleToAttack = true;
+    bIsAbleToDodge = true;
+    bIsAbleToMove = true;
     //UE_LOG(LogTemp, Warning,
     //    TEXT("[HitReaction] 무적 시간 종료"));
 }

@@ -35,6 +35,7 @@ public:
 
 	void SetbIsAbleToDodge(bool bNewIsAbleToDodge) { bIsAbleToDodge = bNewIsAbleToDodge; }
 	bool GetbIsAbleToAttack() const { return bIsAbleToAttack; }
+	void SetbIsAbleToMove(bool bNewIsAbleToMove) { bIsAbleToMove = bNewIsAbleToMove; }
 
 	UStaticMeshComponent* GetWeaponMesh() const{ return WeaponMesh.Get(); }
 
@@ -75,6 +76,11 @@ protected:
 
 	// 공격 입력 시 실행 함수
 	void OnMeleeAttackInput(const FInputActionValue& Value);
+
+	// 체력 변경 시 처리 함수
+	void OnHealthChanged(const FOnAttributeChangeData& Data);
+	// 사망
+	void Die();
 
 private:
 	void StartHitReaction(FVector HitDirection);
@@ -149,13 +155,16 @@ protected:
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 
 	UPROPERTY()
-	TObjectPtr<UPlayerAttributeSet> AttributeSet;
+	TObjectPtr<UPlayerAttributeSet> PlayerAttributeSet;
 
 	UPROPERTY(EditDefaultsOnly, Category = "GAS")
 	TSubclassOf<UGA_MeleeAttack> MeleeAttackAbilityClass;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Dodge|Animation")
 	TObjectPtr<UAnimMontage> DodgeMontage;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Character|Death")
+	TObjectPtr<UAnimMontage> DeathMontage;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TWeakObjectPtr<UStaticMeshComponent> WeaponMesh;
@@ -164,12 +173,14 @@ private:
 	bool bIsDodging = false;
 	bool bIsAbleToDodge = true;
 	bool bIsAbleToAttack = true;
+	bool bIsAbleToMove = true;
 	float OriginalMaxWalkSpeed = 0.0f;
 	FVector DodgeDirection = FVector::ForwardVector;
 
 	bool bIsInvincible = false;
 	bool bMeshWasVisible = true;
 	bool bHitFlashVisible = true;
+	bool bIsDead = false;
 
 
 };

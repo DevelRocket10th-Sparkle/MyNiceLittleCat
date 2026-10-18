@@ -31,6 +31,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyBegin(USkeletalMeshComponent* MeshCo
         Cast<APlayerCharacter>(MeshComp->GetOwner()))
     {
         Character->SetbIsAbleToDodge(false);
+        Character->SetbIsAbleToMove(false);
     }
 
     HitActorsByMesh.FindOrAdd(MeshComp).Empty();
@@ -143,7 +144,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
 
         const FGameplayTag DamageTag =FGameplayTag::RequestGameplayTag(FName("Data.Damage"));
 
-        UE_LOG(LogTemp, Warning, TEXT("[MeleeHit] ÌîºÍ≤©: %s"), *Target->GetName());
+        UE_LOG(LogTemp, Warning, TEXT("[MeleeHit] ««∞›: %s"), *Target->GetName());
 
         SpecHandle.Data->SetSetByCallerMagnitude(
             DamageTag,
@@ -154,7 +155,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
             *SpecHandle.Data.Get()
         );
 
-        // Ïπ¥Î©îÎùº ÏÖ∞Ïù¥ÌÅ¨
+        // ƒ´∏ﬁ∂Û ºŒ¿Ã≈©
         if (APlayerCharacter* Player = Cast<APlayerCharacter>(Attacker))
         {
             if (APlayerController* PC =
@@ -166,7 +167,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
                 );
             }
         }
-        // ÌûàÌä∏ Ïä§ÌÜ±
+        // »˜∆Æ Ω∫≈È
         ApplyMontageHitStop(Attacker, 0.2f);
         ApplyMontageHitStop(Target, 0.1f);
     }
@@ -183,6 +184,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyEnd(USkeletalMeshComponent* MeshComp
         Cast<APlayerCharacter>(MeshComp->GetOwner()))
     {
 		Character->SetbIsAbleToDodge(true);
+        Character->SetbIsAbleToMove(true);
     }
 }
 
