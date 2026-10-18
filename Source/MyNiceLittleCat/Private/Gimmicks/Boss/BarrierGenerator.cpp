@@ -78,9 +78,16 @@ void ABarrierGenerator::DisableGenerator(AActor* DisableInstigator)
 		return;
 	}
 
-	// 무력화 후에도 배리어가 끝날 때까지는 표시 유지 (부서진 연출은 BP의 On Activation Changed에서 처리)
+	// 부서진 연출은 BP의 On Activation Changed에서 처리
 	bDisabled = true;
 	SetActivated(false, DisableInstigator);
+
+	// 즉각 피드백용으로 바로 숨김 (액터는 남겨 두고 다음 페이즈에 ActivateGenerator로 다시 가동)
+	if (bHideOnDisabled)
+	{
+		SetGeneratorPresence(false);
+	}
+
 	OnGeneratorDisabled.Broadcast(this);
 }
 
