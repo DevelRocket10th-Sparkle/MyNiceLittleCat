@@ -473,9 +473,7 @@ void APlayerCharacter::OnHealthChanged(const FOnAttributeChangeData& Data)
 
 void APlayerCharacter::Die()
 {
-    if (bIsDead)
-        return;
-
+    if (bIsDead) return;
     bIsDead = true;
     bIsAbleToAttack = false;
     bIsAbleToDodge = false;
@@ -489,6 +487,8 @@ void APlayerCharacter::Die()
     GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
 
     UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+
+    OnPlayerDied.Broadcast();
 
     if (AnimInstance)
     {
