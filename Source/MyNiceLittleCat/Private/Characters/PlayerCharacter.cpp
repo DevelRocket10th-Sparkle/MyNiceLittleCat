@@ -228,7 +228,7 @@ void APlayerCharacter::TestRespawn()
 
 void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
 {
-    if (bIsDead || bIsInvincible || Damage <= 0.f)
+    if (bIsDead || bIsInvincible || bIsDodgeInvincible || Damage <= 0.f)
     {
         return;
     }

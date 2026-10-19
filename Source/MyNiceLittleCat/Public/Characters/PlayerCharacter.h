@@ -39,6 +39,7 @@ public:
 	bool GetbIsAbleToAttack() const { return bIsAbleToAttack; }
 	void SetbIsAbleToMove(bool bNewIsAbleToMove) { bIsAbleToMove = bNewIsAbleToMove; }
 	bool GetbIsDead() const { return bIsDead; }
+	void SetDodgeInvincible(bool bNewDodgeInvincible) { bIsDodgeInvincible = bNewDodgeInvincible; }
 
 	UStaticMeshComponent* GetWeaponMesh() const{ return WeaponMesh.Get(); }
 
@@ -188,6 +189,7 @@ private:
 	bool bIsAbleToDodge = true;
 	bool bIsAbleToAttack = true;
 	bool bIsAbleToMove = true;
+	bool bIsDodgeInvincible = false;
 	float OriginalMaxWalkSpeed = 0.0f;
 	FVector DodgeDirection = FVector::ForwardVector;
 
