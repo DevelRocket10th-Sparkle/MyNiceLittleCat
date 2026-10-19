@@ -3,14 +3,18 @@
 ///
 /// 보스 패턴의 자성 코인입니다.
 /// 물리 메시 + UMagneticComponent로 구성되어 펫 자석 능력에 끌리거나 밀립니다.
-/// 상태: Falling(낙하) → Landed(착지)
+/// 상태: Falling(낙하) → Landed(착지) ⇄ Held(잡힘) → Thrown(던져짐) → Landed
 /// - Falling: StartFall로 시작. 물리·자력 없이 착지 지점까지 직선으로 떨어지고, 극성 색은 표시합니다.
 ///            떨어지는 코인에 플레이어(FallDamageTargetClasses)가 닿으면 낙하 피해(UDamageType_MagneticCoinFall)를 한 번 줍니다.
 /// - Landed:  물리·자력을 켭니다. 자력을 받은 직후(MagneticForceGraceTime 이내) MinImpactSpeed 이상으로
 ///            DamageTargetClasses(기본 ABarrierGenerator)에 부딪히면 UDamageType_MagneticCoin 피해를 줍니다.
+/// - Held:    착지한 코인의 물리를 외부(펫 자석 능력의 잡기)가 끄면 잡힌 것으로 봅니다.
+/// - Thrown:  잡힌 코인의 물리가 다시 켜지면(놓거나 던짐) ThrowGraceTime 동안 던져진 상태로,
+///            이 동안 MinImpactSpeed 이상으로 부딪히면 자력 조건 없이 피해를 줍니다. 시간이 지나면 Landed로 돌아갑니다.
+///            펫 코드를 호출하지 않고 물리 상태 변화만으로 판단하므로 펫 능력 쪽 변경이 필요 없습니다.
 /// 레벨에 직접 배치하면 bFallOnBeginPlay가 false일 때 바로 Landed로 시작합니다.
 /// TODO(합의): 보스 패턴이 스폰 후 StartFall(극성)을 호출하는 방식은 보스 담당과 확정 필요
-/// TODO: 경고 데칼, 던져짐·소멸 상태는 다음 단계에서 추가
+/// TODO: 경고 데칼, 소멸 상태는 다음 단계에서 추가
 
 #pragma once
 
@@ -31,6 +35,10 @@ enum class EMagneticCoinState : uint8
 	Falling	UMETA(DisplayName = "Falling"),
 	// 바닥에 착지 (물리·자력 활성)
 	Landed	UMETA(DisplayName = "Landed"),
+	// 펫 자석 능력 등에 잡혀 물리가 꺼진 상태
+	Held	UMETA(DisplayName = "Held"),
+	// 놓이거나 던져진 직후 (ThrowGraceTime 동안 충돌 피해 유효)
+	Thrown	UMETA(DisplayName = "Thrown"),
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnMagneticCoinDamaged, AMagneticCoin*, Coin, AActor*, DamagedActor);
@@ -83,6 +91,9 @@ protected:
 	virtual void BeginPlay() override;
 
 	void TickFalling(float DeltaTime);
+
+	// 착지 후 물리 상태 변화로 잡힘·던져짐 판단
+	void UpdateHeldState();
 
 	void Land();
 
@@ -157,13 +168,17 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Damage", meta = (ClampMin = "0.0"))
 	float MinImpactSpeed = 300.f;
 
-	// true면 자력을 받은 직후에만 피해 (자석 능력으로 날린 코인만 유효)
+	// true면 자력을 받은 직후 또는 던져진 직후(Thrown)에만 피해 (자석 능력으로 날린 코인만 유효)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Damage")
 	bool bRequireMagneticForce = true;
 
 	// 마지막으로 자력을 받은 뒤 피해를 인정하는 시간 (초)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Damage", meta = (ClampMin = "0.0", EditCondition = "bRequireMagneticForce"))
 	float MagneticForceGraceTime = 0.5f;
+
+	// 잡혔다가 놓인 뒤 충돌 피해를 인정하는 시간 (초). 던져서 날아가는 시간보다 길게
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Damage", meta = (ClampMin = "0.0"))
+	float ThrowGraceTime = 1.5f;
 
 	// 피해 후 다시 피해를 줄 수 있을 때까지의 시간 (한 번 부딪힐 때 히트 이벤트가 여러 번 오는 것 방지)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Damage", meta = (ClampMin = "0.0"))
@@ -192,6 +207,9 @@ private:
 	float PreviousSpeed = 0.f;
 
 	float LastMagneticForceTime = -1.f;
+
+	// Thrown 상태가 된 시각
+	float ThrownTime = -1.f;
 
 	float LastDamageTime = -1.f;
 };
