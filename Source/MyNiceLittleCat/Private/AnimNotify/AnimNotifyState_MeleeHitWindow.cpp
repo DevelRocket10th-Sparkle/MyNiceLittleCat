@@ -176,7 +176,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
         }
         // ��Ʈ ����
         ApplyMontageHitStop(Attacker, 0.2f);
-        ApplyMontageHitStop(Target, 0.1f);
+        //ApplyMontageHitStop(Target, 0.1f);
     }
 }
 
@@ -204,31 +204,24 @@ void UAnimNotifyState_MeleeHitWindow::ApplyMontageHitStop(AActor* Actor, float D
 {
     if (!IsValid(Actor) || Duration <= 0.f) return;
 
-    USkeletalMeshComponent* Mesh =
-        Actor->FindComponentByClass<USkeletalMeshComponent>();
-
+    USkeletalMeshComponent* Mesh = Actor->FindComponentByClass<USkeletalMeshComponent>();
     if (!Mesh) return;
 
-    UWorld* World = Actor->GetWorld();
-    if (!World) return;
+    FTimerManager& TimerManager = Actor->GetWorldTimerManager();
+    FTimerHandle& Handle = HitStopTimers.FindOrAdd(Mesh);
 
-    const float OriginalRate = Mesh->GlobalAnimRateScale;
+    // Already frozen long enough: don't stack another stop
+    if (TimerManager.IsTimerActive(Handle) && TimerManager.GetTimerRemaining(Handle) >= Duration) return;
+
     Mesh->GlobalAnimRateScale = 0.f;
 
+    // Reuse the same handle so a new hit restarts the timer instead of adding one
     TWeakObjectPtr<USkeletalMeshComponent> WeakMesh = Mesh;
-
-    FTimerHandle TimerHandle;
-    World->GetTimerManager().SetTimer(
-        TimerHandle,
-        FTimerDelegate::CreateLambda(
-            [WeakMesh, OriginalRate]()
-            {
-                if (WeakMesh.IsValid())
-                {
-                    WeakMesh->GlobalAnimRateScale = OriginalRate;
-                }
-            }),
-        Duration,
-        false
-    );
+    TimerManager.SetTimer(Handle, [WeakMesh]()
+    {
+        if (WeakMesh.IsValid())
+        {
+            WeakMesh->GlobalAnimRateScale = 1.f;
+        }
+    }, Duration, false);
 }
