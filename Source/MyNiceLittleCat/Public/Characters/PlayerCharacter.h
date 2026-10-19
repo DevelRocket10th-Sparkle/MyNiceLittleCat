@@ -95,6 +95,11 @@ private:
 	void ToggleHitFlash();
 	void EndInvincibility();
 
+
+public:
+	UPROPERTY(BlueprintAssignable, Category = "Character|Death")
+	FOnPlayerDied OnPlayerDied;
+
 protected:
 
 	FTimerHandle DodgeUpdateTimer;
@@ -177,8 +182,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TWeakObjectPtr<UStaticMeshComponent> WeaponMesh;
 
-	UPROPERTY(BlueprintAssignable, Category = "Character|Death")
-	FOnPlayerDied OnPlayerDied;
+
 private:
 	bool bIsDodging = false;
 	bool bIsAbleToDodge = true;

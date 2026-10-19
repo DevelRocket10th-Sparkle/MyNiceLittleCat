@@ -473,8 +473,7 @@ void APlayerCharacter::OnHealthChanged(const FOnAttributeChangeData& Data)
 
 void APlayerCharacter::Die()
 {
-    if (bIsDead)
-        return;
+    if (bIsDead) return;
     bIsDead = true;
     bIsAbleToAttack = false;
     bIsAbleToDodge = false;
@@ -488,6 +487,8 @@ void APlayerCharacter::Die()
     GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
 
     UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+
+    OnPlayerDied.Broadcast();
 
     if (AnimInstance)
     {
@@ -513,7 +514,6 @@ void APlayerCharacter::Die()
             }
         }
     }
-    OnPlayerDied.Broadcast();
 
     // 몽타주가 없거나 재생에 실패한 경우
     OnDeathMontageEnded(nullptr, false);
