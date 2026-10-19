@@ -24,7 +24,7 @@ UCLASS()
 class MYNICELITTLECAT_API UEnemyAttributeSet : public UAttributeSet
 {
 	GENERATED_BODY()
-
+	
 public :
 	
 	UEnemyAttributeSet();

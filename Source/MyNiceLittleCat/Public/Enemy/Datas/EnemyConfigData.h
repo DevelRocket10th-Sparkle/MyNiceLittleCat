@@ -11,6 +11,9 @@
 #include "Engine/DataAsset.h"
 #include "EnemyConfigData.generated.h"
 
+class UBehaviorTree;
+class UGameplayAbility;
+
 /**
  * 
  */
@@ -29,5 +32,17 @@ public :
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement", meta = (ClampMin = "0.0"))
 	float MoveSpeed = 600.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI")
+	TObjectPtr<UBehaviorTree> BehaviorTree;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Home", meta = (ClampMin = "0.0"))
+	float HomeArrivalRadius = 100.f;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "0.0"))
+	float AttackRange = 150.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
+	TSubclassOf<UGameplayAbility> BasicAttackAbility;
 	
 };
