@@ -20,6 +20,9 @@
 class UEnemyAttributeSet;
 class UEnemyConfigData;
 
+// Test용
+class UAnimMontage;
+
 UCLASS()
 class MYNICELITTLECAT_API AEnemyCharacter : public ACharacter, public IAbilitySystemInterface
 {
@@ -28,7 +31,7 @@ class MYNICELITTLECAT_API AEnemyCharacter : public ACharacter, public IAbilitySy
 public:
 
 	// Sets default values for this character's properties
-	AEnemyCharacter();
+	AEnemyCharacter(const FObjectInitializer& ObjectInitializer);
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent()const override;
 
@@ -41,6 +44,7 @@ public:
 	// Getter: EnemyConfig
 	// 앞 const: 반환된 포인터를 사용한 EnemyConfig 내용 수정 방지
 	// 뒤 const: EnemyCharacter의 일반 멤버 변수인 EnemyConfig 변경 방지
+	UFUNCTION(BlueprintPure, Category = "Config")
 	const UEnemyConfigData* GetEnemyConfig() const { return EnemyConfig; }
 
 	// Getter: bWantsToMvoe
@@ -77,6 +81,10 @@ protected:
 	void HandleHealthChanged(float NewHealth, float MaxHealth);
 
 	void HandleDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+	// Test용
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
+	TObjectPtr<UAnimMontage> BasicAttackMontage;
 
 public :
 

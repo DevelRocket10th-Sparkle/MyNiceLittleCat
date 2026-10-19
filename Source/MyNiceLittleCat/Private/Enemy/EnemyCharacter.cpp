@@ -6,6 +6,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Enemy/EnemyCharacterMovementComponent.h"
 
 #include "AbilitySystemComponent.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
@@ -20,7 +21,8 @@
 #include "Enemy/AI/EnemyAIController.h"
 
 // Sets default values
-AEnemyCharacter::AEnemyCharacter()
+AEnemyCharacter::AEnemyCharacter(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UEnemyCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
@@ -40,6 +42,15 @@ UAbilitySystemComponent* AEnemyCharacter::GetAbilitySystemComponent() const
 void AEnemyCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	USkeletalMeshComponent* MeshComp = GetMesh();
+	if (IsValid(MeshComp))
+	{
+		// 생존 중에는 애니메이션으로만 메시 제어
+		MeshComp->SetSimulatePhysics(false);
+		MeshComp->SetAllBodiesSimulatePhysics(false);
+		MeshComp->SetAllBodiesPhysicsBlendWeight(0.f);
+	}
 
 	if (IsValid(ASC))
 	{
@@ -66,6 +77,11 @@ void AEnemyCharacter::BeginPlay()
 				this
 			)
 		);
+	}
+
+	if (UEnemyCharacterMovementComponent* Movement = Cast<UEnemyCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		Movement->InitializeHoverHeight();
 	}
 
 	bEnemyInitialized = true;	// 초기화 완료 기록
@@ -103,6 +119,7 @@ void AEnemyCharacter::ApplyEnemyConfig()
 	);
 
 	GetCharacterMovement()->MaxWalkSpeed = EnemyConfig->MoveSpeed;
+	GetCharacterMovement()->MaxFlySpeed = EnemyConfig->MoveSpeed;
 }
 
 void AEnemyCharacter::BeginDeath()

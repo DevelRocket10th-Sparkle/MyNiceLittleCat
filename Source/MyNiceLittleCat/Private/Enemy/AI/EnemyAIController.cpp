@@ -5,6 +5,7 @@
 
 #include "DrawDebugHelpers.h"
 
+#include "Navigation/PathFollowingComponent.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISenseConfig_Sight.h"
 #include "Perception/AISense_Sight.h"
@@ -27,6 +28,8 @@ namespace EnemyBlackboardKeys
 
 AEnemyAIController::AEnemyAIController()
 {
+	PrimaryActorTick.bCanEverTick = true;
+
 	// AI 로직 자동 실행 방지
 	// -> Enemy의 초기화 완료를 확인한 뒤 직접 시작
 	bStartAILogicOnPossess = false;
@@ -56,6 +59,21 @@ AEnemyAIController::AEnemyAIController()
 	EnemyPerception->OnTargetPerceptionUpdated.AddDynamic(this, &AEnemyAIController::HandleTargetPerceptionUpdated);
 }
 
+void AEnemyAIController::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	
+	AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetPawn());
+	if (!IsValid(Enemy))
+		return;
+
+	const UPathFollowingComponent* PathFollowing = GetPathFollowingComponent();
+
+	const bool bWantsToMove = Enemy->IsAlive() && IsValid(PathFollowing) && PathFollowing->GetStatus() == EPathFollowingStatus::Moving;
+
+	Enemy->SetWantsToMove(bWantsToMove);
+}
+
 void AEnemyAIController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
@@ -73,6 +91,11 @@ void AEnemyAIController::OnUnPossess()
 
 	StopMovement();			// 움직임 멈추기
 	ClearCombatTarget();	// 전투 종료
+
+	if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetPawn()))
+	{
+		Enemy->SetWantsToMove(false);
+	}
 
 	UE_LOG(LogTemp, Log, TEXT("[%s] Enemy unpossessed"), *GetPawn()->GetName());
 	Super::OnUnPossess();
