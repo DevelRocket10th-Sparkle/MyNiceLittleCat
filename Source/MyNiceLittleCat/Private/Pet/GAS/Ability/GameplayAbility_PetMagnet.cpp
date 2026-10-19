@@ -9,6 +9,7 @@
 #include "CollisionShape.h"
 #include "GameplayTagContainer.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
+#include "Gimmicks/Magnetic/MagneticComponent.h"
 
 UGameplayAbility_PetMagnet::UGameplayAbility_PetMagnet()
 {
@@ -248,8 +249,8 @@ void UGameplayAbility_PetMagnet::ApplyNearbyRepulsion(const TArray<AActor*>& Can
 
 bool UGameplayAbility_PetMagnet::IsMagnetCandidate(const AActor* _actor) const
 {
-    static const FName TestTargetTag(TEXT("Test.Pet.MagnetTarget"));
-    return IsValid(_actor) && _actor->ActorHasTag(TestTargetTag);
+    EPetMagnetPolarity TargetPolarity;
+    return TryGetTargetPolarity(_actor, TargetPolarity);
 }
 
 void UGameplayAbility_PetMagnet::HandleSpecialAction(FGameplayEventData Payload)
@@ -261,17 +262,17 @@ bool UGameplayAbility_PetMagnet::TryGetTargetPolarity(const AActor* Target, EPet
 {
     if (false == IsValid(Target)) return false;
 
-    static const FName NTag(TEXT("Test.Pet.Pole.N"));
-    static const FName STag(TEXT("Test.Pet.Pole.S"));
+    const UMagneticComponent* Magnetic = Target->FindComponentByClass<UMagneticComponent>();
 
-    const bool bN = Target->ActorHasTag(NTag);
-    const bool bS = Target->ActorHasTag(STag);
+    if (false == IsValid(Magnetic) || false == Magnetic->IsMagnetEnabled())
+        return false;
 
-    // 없거나, 두 극성이 동시에 지정되어 있으면 제외
-    if (bN == bS) return false;
-
-    OutPolarity = bN ? EPetMagnetPolarity::N : EPetMagnetPolarity::S;
-    return true;
+    switch (Magnetic->GetPolarity())
+    {
+        case EMagneticPolarity::N: OutPolarity = EPetMagnetPolarity::N; return true;
+        case EMagneticPolarity::S: OutPolarity = EPetMagnetPolarity::S; return true;
+        default: return false;
+    }
 }
 
 void UGameplayAbility_PetMagnet::BeginAttractTarget(AActor* Target)
