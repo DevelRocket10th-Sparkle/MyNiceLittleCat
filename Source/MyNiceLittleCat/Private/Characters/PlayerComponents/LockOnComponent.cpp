@@ -10,6 +10,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 
+#include "Characters/PlayerCharacter.h"
 #include "Interfaces/TargetableInterface.h"
 
 // Sets default values for this component's properties
@@ -40,7 +41,7 @@ void ULockOnComponent::ToggleTargetLock()
 
 void ULockOnComponent::SwitchTarget(float Direction)
 {
-    // 휠 입력 시 후보를 즉시 갱신
+    // �� �Է� �� �ĺ��� ��� ����
     RefreshCandidates();
 
     if (Candidates.Num() < 2) return;
@@ -53,7 +54,7 @@ void ULockOnComponent::SwitchTarget(float Direction)
     }
     AActor* PreviousTarget = CurrentCandidate.Get();
 
-    // 양수: 다음 후보, 음수: 이전 후보
+    // ���: ���� �ĺ�, ����: ���� �ĺ�
     const int32 Step = Direction > 0.f ? 1 : -1;
 
     CurrentIndex = (CurrentIndex + Step + Candidates.Num())
@@ -86,7 +87,7 @@ void ULockOnComponent::BeginPlay()
         if (APlayerController* PC =
             Cast<APlayerController>(PlayerCharacter->GetController()))
         {
-           // 위젯 설정
+           // ���� ����
 
         }
     }
@@ -109,7 +110,7 @@ void ULockOnComponent::BeginPlay()
 
     RefreshCandidates();
 
-    // 스캔 타이머 설정
+    // ��ĵ Ÿ�̸� ����
     if (GetWorld())
     {
         GetWorld()->GetTimerManager().SetTimer(
@@ -136,6 +137,15 @@ void ULockOnComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ULockOnComponent::RefreshCandidates()
 {
+    const APlayerCharacter* Player = Cast<APlayerCharacter>(GetOwner());
+    if (Player && Player->GetbIsDead())
+    {
+        Candidates.Reset();
+        CurrentCandidate.Reset();
+        LockedTarget.Reset();
+        return;
+    }
+
     ACharacter* Character = Cast<ACharacter>(GetOwner());
 
     if (!Character)
@@ -146,6 +156,8 @@ void ULockOnComponent::RefreshCandidates()
 		UpdateReticle();
         return;
     }
+
+    const APlayerCharacter* PlayerCharacter = Cast<APlayerCharacter>(GetOwner());
 
     APlayerController* PC = Cast<APlayerController>(Character->GetController());
 
@@ -171,7 +183,7 @@ void ULockOnComponent::RefreshCandidates()
         NewCandidates.Add(Actor);
     }
 
-    // 플레이어와 가까운 순서로 정렬
+    // �÷��̾�� ����� ������ ����
     NewCandidates.Sort(
         [Character](
             const TWeakObjectPtr<AActor>& A,
@@ -188,13 +200,28 @@ void ULockOnComponent::RefreshCandidates()
 
     Candidates = MoveTemp(NewCandidates);
 
-    // 락온 대상이 더 이상 후보가 아니면 락온 해제
-    if (LockedTarget.IsValid() && !Candidates.Contains(LockedTarget))
+    // ��� ����� �׾����� ���� ����� �ĺ��� ��ȯ, �ĺ��� ������ ����
+    if (LockedTarget.IsValid() &&
+        !ITargetableInterface::Execute_IsTargetAlive(LockedTarget.Get()))
     {
-        LockedTarget.Reset();
+        AActor* PreviousTarget = LockedTarget.Get();
+
+        if (!Candidates.IsEmpty())
+        {
+            // Candidates�� �Ÿ��� ���� + ����ִ� ��� ����
+            LockedTarget = Candidates[0];
+        }
+        else
+        {
+            LockedTarget.Reset();
+        }
+
+        UE_LOG(LogTemp, Log, TEXT("LockOn Target Dead: %s -> %s"),
+            *GetNameSafe(PreviousTarget),
+            *GetNameSafe(LockedTarget.Get()));
     }
 
-    // 현재 선택이 사라졌을 때 가장 가까운 대상으로 변경
+    // ���� ������ ������� �� ���� ����� ������� ����
     if (!CurrentCandidate.IsValid() || !Candidates.Contains(CurrentCandidate))
     {
         AActor* PreviousTarget = CurrentCandidate.Get();
@@ -220,7 +247,7 @@ void ULockOnComponent::RefreshCandidates()
         }
     }
 
-    // 락온 대상이 있다면 현재 선택과 동기화
+    // ��� ����� �ִٸ� ���� ���ð� ����ȭ
     if (LockedTarget.IsValid())
     {
         CurrentCandidate = LockedTarget;
@@ -250,21 +277,21 @@ bool ULockOnComponent::GetTargetScreenPosition(AActor* Target, FVector2D& OutScr
 
     int32 ViewportX = 0;
     int32 ViewportY = 0;
+	int32 Margin = 50; // ȭ�� �����ڸ������� ����
     PC->GetViewportSize(ViewportX, ViewportY);
 
-    return OutScreenPosition.X >= 0.0f
-        && OutScreenPosition.X <= ViewportX
-        && OutScreenPosition.Y >= 0.0f
-        && OutScreenPosition.Y <= ViewportY;
+    return OutScreenPosition.X >= Margin
+        && OutScreenPosition.X <= ViewportX - Margin
+        && OutScreenPosition.Y >= Margin
+        && OutScreenPosition.Y <= ViewportY - Margin;
 }
 
 bool ULockOnComponent::IsValidCandidate(AActor* Target) const
 {
     return IsValid(Target)
         && Target != GetOwner()
-        && Target->GetClass()->ImplementsInterface(
-			UTargetableInterface::StaticClass()
-        );
+        && Target->GetClass()->ImplementsInterface(UTargetableInterface::StaticClass())
+        && ITargetableInterface::Execute_IsTargetAlive(Target);
 }
 
 void ULockOnComponent::UpdateLockOnCamera()
@@ -290,14 +317,14 @@ void ULockOnComponent::UpdateLockOnCamera()
             BoundsExtent
         );
 
-        // 플레이어에서 타겟까지의 거리 벡터
+        // �÷��̾�� Ÿ�ٱ����� �Ÿ� ����
         const FVector ToTarget =
             TargetLocation - PlayerLocation;
 
-        // 두 대상 사이의 중간 지점을 카메라 중심으로 설정
+        // �� ��� ������ �߰� ������ ī�޶� �߽����� ����
         DesiredOffset += ToTarget * 0.5f;
 
-        // 거리가 멀어질수록 카메라를 뒤로 이동
+        // �Ÿ��� �־������� ī�޶� �ڷ� �̵�
         const float HorizontalDistance = FVector(
             ToTarget.X,
             ToTarget.Y,
@@ -315,7 +342,7 @@ void ULockOnComponent::UpdateLockOnCamera()
             BaseCameraArmLength + ExtraArmLength;
     }
 
-    // 카메라 중심과 줌을 부드럽게 보간
+    // ī�޶� �߽ɰ� ���� �ε巴�� ����
     constexpr float TimerDeltaTime = 1.0f / 60.0f;
 
     CameraBoom->TargetOffset = FMath::VInterpTo(
@@ -335,14 +362,13 @@ void ULockOnComponent::UpdateLockOnCamera()
 
 void ULockOnComponent::UpdateReticle()
 {
-    AActor* Target = LockedTarget.IsValid()
+    const bool bIsLockedOn = LockedTarget.IsValid();
+
+    AActor* Target = bIsLockedOn
         ? LockedTarget.Get()
         : CurrentCandidate.Get();
 
-    if (!IsValid(Target))
-    {
-        return;
-    }
+    if (!IsValid(Target)) return;
 
     FVector Origin;
     FVector Extent;
@@ -351,13 +377,13 @@ void ULockOnComponent::UpdateReticle()
     DrawDebugSphere(
         GetWorld(),
         Origin + FVector(0.f, 0.f, Extent.Z + 20.f),
-        20.f,        // 반지름
-        12,          // 세그먼트
-        FColor::Red,
-        false,       // 영구 표시 여부
-        0.15f,       // 표시 시간
-        0,           // 깊이 우선순위
-        2.f          // 선 두께
+        20.f,
+        12,
+        bIsLockedOn ? FColor::Red : FColor::Green,
+        false,
+        0.15f,
+        0,
+        2.f
     );
 }
 

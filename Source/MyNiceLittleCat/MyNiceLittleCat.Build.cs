@@ -8,7 +8,10 @@ public class MyNiceLittleCat : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayAbilities", "GameplayTags", "GameplayTasks" , "AIModule", "StateTreeModule", "GameplayStateTreeModule", "UMG", "SlateCore" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "AIModule", "StateTreeModule", "GameplayStateTreeModule",
+			"GameplayAbilities", "GameplayTags", "GameplayTasks",	// GAS 관련
+			"UMG", "Slate", "SlateCore"								// 위젯 관련
+		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "PhysicsCore", "NavigationSystem" });
 
