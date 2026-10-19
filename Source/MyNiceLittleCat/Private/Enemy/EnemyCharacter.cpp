@@ -46,16 +46,16 @@ void AEnemyCharacter::BeginPlay()
 
 	if (IsValid(ASC))
 	{
-		ASC->InitAbilityActorInfo(this, this);	// GAS ¼ÒÀ¯ÀÚ¿Í ½ÇÁ¦ Çàµ¿ ¼ÒÀ¯ÀÚ ÀÏÄ¡
+		ASC->InitAbilityActorInfo(this, this);	// GAS ï¿½ï¿½ï¿½ï¿½ï¿½Ú¿ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½àµ¿ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä¡
 		
-		// Attributes ÃÊ±âÈ­
+		// Attributes ï¿½Ê±ï¿½È­
 		if (EnemyConfig)
 		{
 			ApplyEnemyConfig();
 		}
 	}
 
-	// Health º¯°æ µ¨¸®°ÔÀÌÆ® ±¸µ¶
+	// Health ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½
 	AttributeSet->OnHealthChange.AddUObject(this, &AEnemyCharacter::HandleHealthChanged);
 	
 }
@@ -75,7 +75,7 @@ void AEnemyCharacter::ApplyEnemyConfig()
 		EnemyConfig->MaxHealth
 	);
 
-	// Health´Â MaxHealthÀÇ °ªÀ» ±×´ë·Î »ç¿ë
+	// Healthï¿½ï¿½ MaxHealthï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½×´ï¿½ï¿½ ï¿½ï¿½ï¿½
 	ASC->SetNumericAttributeBase(
 		UEnemyAttributeSet::GetHealthAttribute(),
 		EnemyConfig->MaxHealth
@@ -94,11 +94,11 @@ void AEnemyCharacter::BeginDeath()
 	if (LifeState != EEnemyLifeState::Alive)
 		return;
 
-	LifeState = EEnemyLifeState::Dying;	// Áßº¹ ¹æÁö¸¦ À§ÇØ ÃÖ¿ì¼± Ã³¸® ÇÊ¿ä
+	LifeState = EEnemyLifeState::Dying;	// ï¿½ßºï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ö¿ì¼± Ã³ï¿½ï¿½ ï¿½Ê¿ï¿½
 
 	SetWantsToMove(false);
 
-	// AI Áß´Ü
+	// AI ï¿½ß´ï¿½
 	if (AAIController* AI = Cast<AAIController>(GetController()))
 	{
 		if (UBrainComponent* Brain = AI->GetBrainComponent())
@@ -109,22 +109,22 @@ void AEnemyCharacter::BeginDeath()
 		AI->StopMovement();
 	}
 
-	// ±âÁ¸ Ability Ãë¼Ò
+	// ï¿½ï¿½ï¿½ï¿½ Ability ï¿½ï¿½ï¿½
 	if (IsValid(ASC))
 	{
 		ASC->CancelAllAbilities();
 	}
 
-	// »ç¸Á Áß ÀÌµ¿ Ãæµ¹ ¹× ¸Þ½Ã ÇÇ°Ý Ãæµ¹ ÇØÁ¦
+	// ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ìµï¿½ ï¿½æµ¹ ï¿½ï¿½ ï¿½Þ½ï¿½ ï¿½Ç°ï¿½ ï¿½æµ¹ ï¿½ï¿½ï¿½ï¿½
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-	GetCharacterMovement()->StopMovementImmediately();	// ÇöÀç ¿òÁ÷ÀÓ Á¦°Å
+	GetCharacterMovement()->StopMovementImmediately();	// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 
-	// »ç¸Á ¿¬Ãâ
+	// ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
 
-	// AnimInstance(ABP)³ª DeathMontage°¡ ¾øÀ¸¸é ¿¬Ãâ ¾øÀÌ Áï½Ã »ç¸Á Ã³¸®
+	// AnimInstance(ABP)ï¿½ï¿½ DeathMontageï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ Ã³ï¿½ï¿½
 	if (!IsValid(AnimInstance) || !IsValid(DeathMontage))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[%s] Death animation unavailable"), *GetName());
@@ -135,7 +135,7 @@ void AEnemyCharacter::BeginDeath()
 
 	const float Result = AnimInstance->Montage_Play(DeathMontage);
 
-	// Àç»ý ½ÇÆÐ ½Ã ¿¬Ãâ ¾øÀÌ Áï½Ã »ç¸Á Ã³¸®
+	// ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ Ã³ï¿½ï¿½
 	if (Result <= 0.f)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[%s] Death montage failed to start"), *GetName());
@@ -144,11 +144,11 @@ void AEnemyCharacter::BeginDeath()
 		return;
 	}
 
-	// ¸ùÅ¸ÁÖ Á¾·á µ¨¸®°ÔÀÌÆ® ±¸µ¶
-	// »ç¸Á ¿¬Ãâ Á¾·á Ã³¸®¸¦ Notify ¹æ½ÄÀ¸·Î º¯°æÇßÁö¸¸, È¤½Ã ¸ð¸¦ Áß´Ü/´©¶ô ¹æ¾î¿ëÀ¸·Î µ¨¸®°ÔÀÌÆ® ±¸µ¶ À¯Áö
+	// ï¿½ï¿½Å¸ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½
+	// ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ Ã³ï¿½ï¿½ï¿½ï¿½ Notify ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, È¤ï¿½ï¿½ ï¿½ï¿½ ï¿½ß´ï¿½/ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	FOnMontageEnded OnDeathMontageEnd;
 	OnDeathMontageEnd.BindUObject(this, &AEnemyCharacter::HandleDeathMontageEnded);
-	// Àç»ý¿¡ ¼º°øÇÑ »ç¸Á ¸ùÅ¸ÁÖÀÇ Á¾·á µ¨¸®°ÔÀÌÆ®¸¦ AnimInstance¿¡ ¿¬°á
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½Å¸ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½ï¿½ AnimInstanceï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	AnimInstance->Montage_SetEndDelegate(OnDeathMontageEnd, DeathMontage);
 
 	UE_LOG(LogTemp, Log, TEXT("[%s] BeginDeath"), *GetName());
@@ -165,22 +165,22 @@ void AEnemyCharacter::FinishDeath()
 	// Capture root-motion/character velocity before stopping CharacterMovement.
 	const FVector RagdollVelocity = GetVelocity();
 
-	GetCharacterMovement()->StopMovementImmediately();	// ÇöÀç ¿òÁ÷ÀÓ Á¦°Å
-	GetCharacterMovement()->DisableMovement();	// ¿òÁ÷ÀÓ Á¦ÇÑ ¼³Á¤
+	GetCharacterMovement()->StopMovementImmediately();	// ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+	GetCharacterMovement()->DisableMovement();	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 
-	// Ä¸½¶ Ãæµ¹ ¹«½Ã
+	// Ä¸ï¿½ï¿½ ï¿½æµ¹ ï¿½ï¿½ï¿½ï¿½
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	USkeletalMeshComponent* MeshComp = GetMesh();
 
-	// MeshComp Ãæµ¹ Ragdoll ¼³Á¤
+	// MeshComp ï¿½æµ¹ Ragdoll ï¿½ï¿½ï¿½ï¿½
 	MeshComp->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
 	MeshComp->SetCollisionProfileName(TEXT("Ragdoll"));
 
-	// MeshComp Ãæµ¹ÀÌ ÇÃ·¹ÀÌ¾î, Enemy´Â ¹«½ÃÇÏµµ·Ï ¼³Á¤
+	// MeshComp ï¿½æµ¹ï¿½ï¿½ ï¿½Ã·ï¿½ï¿½Ì¾ï¿½, Enemyï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ïµï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	MeshComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 
-	// MeshComp ¹°¸® ¼³Á¤ (°øÁß¿¡¼­ Á×¾úÀ¸¸é ¶¥¿¡ ¶³¾îÁ®¾ß ÇÏ±â ¶§¹®)
+	// MeshComp ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ß¿ï¿½ï¿½ï¿½ ï¿½×¾ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ï±ï¿½ ï¿½ï¿½ï¿½ï¿½)
 	MeshComp->SetEnableGravity(true);
 	MeshComp->SetSimulatePhysics(true);
 	MeshComp->SetAllPhysicsLinearVelocity(RagdollVelocity);
@@ -188,7 +188,7 @@ void AEnemyCharacter::FinishDeath()
 
 	UE_LOG(LogTemp, Log, TEXT("[%s] FinishDeath"), *GetName());
 
-	// ½ÃÃ¼ Á¦°Å À¯¿¹ (ÃÊ´ÜÀ§)
+	// ï¿½ï¿½Ã¼ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½Ê´ï¿½ï¿½ï¿½)
 	SetLifeSpan(3.f);
 }
 
