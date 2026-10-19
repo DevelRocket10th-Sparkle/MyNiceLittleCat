@@ -10,6 +10,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 
+#include "Characters/PlayerCharacter.h"
 #include "Interfaces/TargetableInterface.h"
 
 // Sets default values for this component's properties
@@ -40,7 +41,7 @@ void ULockOnComponent::ToggleTargetLock()
 
 void ULockOnComponent::SwitchTarget(float Direction)
 {
-    // ÈÙ ÀÔ·Â ½Ã ÈÄº¸¸¦ Áï½Ã °»½Å
+    // ï¿½ï¿½ ï¿½Ô·ï¿½ ï¿½ï¿½ ï¿½Äºï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
     RefreshCandidates();
 
     if (Candidates.Num() < 2) return;
@@ -53,7 +54,7 @@ void ULockOnComponent::SwitchTarget(float Direction)
     }
     AActor* PreviousTarget = CurrentCandidate.Get();
 
-    // ¾ç¼ö: ´ÙÀ½ ÈÄº¸, À½¼ö: ÀÌÀü ÈÄº¸
+    // ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½ ï¿½Äºï¿½, ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½ ï¿½Äºï¿½
     const int32 Step = Direction > 0.f ? 1 : -1;
 
     CurrentIndex = (CurrentIndex + Step + Candidates.Num())
@@ -86,7 +87,7 @@ void ULockOnComponent::BeginPlay()
         if (APlayerController* PC =
             Cast<APlayerController>(PlayerCharacter->GetController()))
         {
-           // À§Á¬ ¼³Á¤
+           // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 
         }
     }
@@ -109,7 +110,7 @@ void ULockOnComponent::BeginPlay()
 
     RefreshCandidates();
 
-    // ½ºÄµ Å¸ÀÌ¸Ó ¼³Á¤
+    // ï¿½ï¿½Äµ Å¸ï¿½Ì¸ï¿½ ï¿½ï¿½ï¿½ï¿½
     if (GetWorld())
     {
         GetWorld()->GetTimerManager().SetTimer(
@@ -136,6 +137,15 @@ void ULockOnComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ULockOnComponent::RefreshCandidates()
 {
+    const APlayerCharacter* Player = Cast<APlayerCharacter>(GetOwner());
+    if (Player && Player->GetbIsDead())
+    {
+        Candidates.Reset();
+        CurrentCandidate.Reset();
+        LockedTarget.Reset();
+        return;
+    }
+
     ACharacter* Character = Cast<ACharacter>(GetOwner());
 
     if (!Character)
@@ -146,6 +156,8 @@ void ULockOnComponent::RefreshCandidates()
 		UpdateReticle();
         return;
     }
+
+    const APlayerCharacter* PlayerCharacter = Cast<APlayerCharacter>(GetOwner());
 
     APlayerController* PC = Cast<APlayerController>(Character->GetController());
 
@@ -171,7 +183,7 @@ void ULockOnComponent::RefreshCandidates()
         NewCandidates.Add(Actor);
     }
 
-    // ÇÃ·¹ÀÌ¾î¿Í °¡±î¿î ¼ø¼­·Î Á¤·Ä
+    // ï¿½Ã·ï¿½ï¿½Ì¾ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
     NewCandidates.Sort(
         [Character](
             const TWeakObjectPtr<AActor>& A,
@@ -188,7 +200,7 @@ void ULockOnComponent::RefreshCandidates()
 
     Candidates = MoveTemp(NewCandidates);
 
-    // ¶ô¿Â ´ë»óÀÌ Á×¾úÀ¸¸é °¡Àå °¡±î¿î ÈÄº¸·Î ÀüÈ¯, ÈÄº¸°¡ ¾øÀ¸¸é ÇØÁ¦
+    // ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½×¾ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Äºï¿½ï¿½ï¿½ ï¿½ï¿½È¯, ï¿½Äºï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
     if (LockedTarget.IsValid() &&
         !ITargetableInterface::Execute_IsTargetAlive(LockedTarget.Get()))
     {
@@ -196,7 +208,7 @@ void ULockOnComponent::RefreshCandidates()
 
         if (!Candidates.IsEmpty())
         {
-            // Candidates´Â °Å¸®¼ø Á¤·Ä + »ì¾ÆÀÖ´Â ´ë»ó¸¸ Æ÷ÇÔ
+            // Candidatesï¿½ï¿½ ï¿½Å¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ + ï¿½ï¿½ï¿½ï¿½Ö´ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
             LockedTarget = Candidates[0];
         }
         else
@@ -209,7 +221,7 @@ void ULockOnComponent::RefreshCandidates()
             *GetNameSafe(LockedTarget.Get()));
     }
 
-    // ÇöÀç ¼±ÅÃÀÌ »ç¶óÁ³À» ¶§ °¡Àå °¡±î¿î ´ë»óÀ¸·Î º¯°æ
+    // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
     if (!CurrentCandidate.IsValid() || !Candidates.Contains(CurrentCandidate))
     {
         AActor* PreviousTarget = CurrentCandidate.Get();
@@ -235,7 +247,7 @@ void ULockOnComponent::RefreshCandidates()
         }
     }
 
-    // ¶ô¿Â ´ë»óÀÌ ÀÖ´Ù¸é ÇöÀç ¼±ÅÃ°ú µ¿±âÈ­
+    // ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ö´Ù¸ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ã°ï¿½ ï¿½ï¿½ï¿½ï¿½È­
     if (LockedTarget.IsValid())
     {
         CurrentCandidate = LockedTarget;
@@ -265,7 +277,7 @@ bool ULockOnComponent::GetTargetScreenPosition(AActor* Target, FVector2D& OutScr
 
     int32 ViewportX = 0;
     int32 ViewportY = 0;
-	int32 Margin = 50; // È­¸é °¡ÀåÀÚ¸®¿¡¼­ÀÇ ¸¶Áø
+	int32 Margin = 50; // È­ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ú¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
     PC->GetViewportSize(ViewportX, ViewportY);
 
     return OutScreenPosition.X >= Margin
@@ -305,14 +317,14 @@ void ULockOnComponent::UpdateLockOnCamera()
             BoundsExtent
         );
 
-        // ÇÃ·¹ÀÌ¾î¿¡¼­ Å¸°Ù±îÁöÀÇ °Å¸® º¤ÅÍ
+        // ï¿½Ã·ï¿½ï¿½Ì¾î¿¡ï¿½ï¿½ Å¸ï¿½Ù±ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Å¸ï¿½ ï¿½ï¿½ï¿½ï¿½
         const FVector ToTarget =
             TargetLocation - PlayerLocation;
 
-        // µÎ ´ë»ó »çÀÌÀÇ Áß°£ ÁöÁ¡À» Ä«¸Þ¶ó Áß½ÉÀ¸·Î ¼³Á¤
+        // ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ß°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Ä«ï¿½Þ¶ï¿½ ï¿½ß½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
         DesiredOffset += ToTarget * 0.5f;
 
-        // °Å¸®°¡ ¸Ö¾îÁú¼ö·Ï Ä«¸Þ¶ó¸¦ µÚ·Î ÀÌµ¿
+        // ï¿½Å¸ï¿½ï¿½ï¿½ ï¿½Ö¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Ä«ï¿½Þ¶ï¿½ ï¿½Ú·ï¿½ ï¿½Ìµï¿½
         const float HorizontalDistance = FVector(
             ToTarget.X,
             ToTarget.Y,
@@ -330,7 +342,7 @@ void ULockOnComponent::UpdateLockOnCamera()
             BaseCameraArmLength + ExtraArmLength;
     }
 
-    // Ä«¸Þ¶ó Áß½É°ú ÁÜÀ» ºÎµå·´°Ô º¸°£
+    // Ä«ï¿½Þ¶ï¿½ ï¿½ß½É°ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Îµå·´ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
     constexpr float TimerDeltaTime = 1.0f / 60.0f;
 
     CameraBoom->TargetOffset = FMath::VInterpTo(

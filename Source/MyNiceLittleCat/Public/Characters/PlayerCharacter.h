@@ -1,7 +1,7 @@
-// ÀÛ¼ºÀÚ: °­Áø±¸
-// ÀÛ¼ºÀÏÀÚ: 2026-10-12
+// ï¿½Û¼ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+// ï¿½Û¼ï¿½ï¿½ï¿½ï¿½ï¿½: 2026-10-12
 // 
-// ÇÃ·¹ÀÌ¾î Å¬·¡½ºÀÔ´Ï´Ù.
+// ï¿½Ã·ï¿½ï¿½Ì¾ï¿½ Å¬ï¿½ï¿½ï¿½ï¿½ï¿½Ô´Ï´ï¿½.
 
 #pragma once
 
@@ -36,6 +36,7 @@ public:
 	void SetbIsAbleToDodge(bool bNewIsAbleToDodge) { bIsAbleToDodge = bNewIsAbleToDodge; }
 	bool GetbIsAbleToAttack() const { return bIsAbleToAttack; }
 	void SetbIsAbleToMove(bool bNewIsAbleToMove) { bIsAbleToMove = bNewIsAbleToMove; }
+	bool GetbIsDead() const { return bIsDead; }
 
 	UStaticMeshComponent* GetWeaponMesh() const{ return WeaponMesh.Get(); }
 
@@ -50,35 +51,38 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-	// ¿¡µðÅÍ¿¡¼­ È£ÃâÇÏ´Â ÇÇ°Ý Å×½ºÆ® ¹öÆ°
+	// ï¿½ï¿½ï¿½ï¿½ï¿½Í¿ï¿½ï¿½ï¿½ È£ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½Ç°ï¿½ ï¿½×½ï¿½Æ® ï¿½ï¿½Æ°
 	UFUNCTION(CallInEditor, Category = "Hit Reaction")
 	void TestReceiveHit();
+
+	UFUNCTION(CallInEditor, Category = "Hit Reaction")
+	void TestRespawn();
 
 	UFUNCTION(BlueprintCallable, Category = "Hit Reaction")
 	void ApplyPlayerHit(float Damage, FVector HitDirection);
 
 protected:
-	// ÀÌµ¿ ÇÔ¼ö
+	// ï¿½Ìµï¿½ ï¿½Ô¼ï¿½
 	void Move(const FInputActionValue& Value);
-	// ¶ô¿Â ÇÔ¼ö
+	// ï¿½ï¿½ï¿½ ï¿½Ô¼ï¿½
 	void ToggleTargetLock();
-	// ¶ô¿Â Å¸°Ù º¯°æ ÇÔ¼ö
+	// ï¿½ï¿½ï¿½ Å¸ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ô¼ï¿½
 	void SwitchTarget(const FInputActionValue& Value);
-	// ±¸¸£±â ½ÃÀÛ
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	void StartDodge();
 	void UpdateDodge();
-	// ±¸¸£±â Á¾·á
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	void EndDodge();
 
-	// ±¸¸£±â ÀÔ·Â ½Ã ½ÇÇà ÇÔ¼ö
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ô·ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ô¼ï¿½
 	void OnDodgeInput(const FInputActionValue& Value);
 
-	// °ø°Ý ÀÔ·Â ½Ã ½ÇÇà ÇÔ¼ö
+	// ï¿½ï¿½ï¿½ï¿½ ï¿½Ô·ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ô¼ï¿½
 	void OnMeleeAttackInput(const FInputActionValue& Value);
 
-	// Ã¼·Â º¯°æ ½Ã Ã³¸® ÇÔ¼ö
+	// Ã¼ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ Ã³ï¿½ï¿½ ï¿½Ô¼ï¿½
 	void OnHealthChanged(const FOnAttributeChangeData& Data);
-	// »ç¸Á
+	// ï¿½ï¿½ï¿½
 	void Die();
 
 	UFUNCTION()

@@ -151,7 +151,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
 
         const FGameplayTag DamageTag =FGameplayTag::RequestGameplayTag(FName("Data.Damage"));
 
-        UE_LOG(LogTemp, Warning, TEXT("[MeleeHit] ÇÇ°Ý: %s"), *Target->GetName());
+        UE_LOG(LogTemp, Warning, TEXT("[MeleeHit] ï¿½Ç°ï¿½: %s"), *Target->GetName());
 
         SpecHandle.Data->SetSetByCallerMagnitude(
             DamageTag,
@@ -162,7 +162,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
             *SpecHandle.Data.Get()
         );
 
-        // Ä«¸Þ¶ó ¼ÎÀÌÅ©
+        // Ä«ï¿½Þ¶ï¿½ ï¿½ï¿½ï¿½ï¿½Å©
         if (APlayerCharacter* Player = Cast<APlayerCharacter>(Attacker))
         {
             if (APlayerController* PC =
@@ -174,7 +174,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
                 );
             }
         }
-        // È÷Æ® ½ºÅé
+        // ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½
         ApplyMontageHitStop(Attacker, 0.2f);
         ApplyMontageHitStop(Target, 0.1f);
     }

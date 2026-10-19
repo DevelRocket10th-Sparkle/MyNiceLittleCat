@@ -1,9 +1,9 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 /*
-* ÀÛ¼ºÀÚ: Àü¼±Çö
-* ÀÛ¼º ÀÏÀÚ: 2026.10.14.
-* ¸ó½ºÅÍ/º¸½º Ä³¸¯ÅÍÀÇ ±âº» Å¬·¡½º
-* - GAS ¿¬°á
+* ï¿½Û¼ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+* ï¿½Û¼ï¿½ ï¿½ï¿½ï¿½ï¿½: 2026.10.14.
+* ï¿½ï¿½ï¿½ï¿½/ï¿½ï¿½ï¿½ï¿½ Ä³ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½âº» Å¬ï¿½ï¿½ï¿½ï¿½
+* - GAS ï¿½ï¿½ï¿½ï¿½
 */
 
 #pragma once
@@ -32,7 +32,7 @@ public:
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent()const override;
 
-	// »ç¸Á ÈÄÃ³¸® - »ç¸Á ¿¬Ãâ Á¾·á ½ÃÁ¡¿¡ ½ÇÇà
+	// ï¿½ï¿½ï¿½ ï¿½ï¿½Ã³ï¿½ï¿½ - ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
 	virtual void FinishDeath();
 
 	// Getter: AttributeSet
@@ -43,7 +43,7 @@ public:
 	// Setter: bWantsToMove
 	void SetWantsToMove(bool bNewWantsToMove)	{ bWantsToMove = bNewWantsToMove; }
 
-	// ITargetable À¯È¿ÇÑ Å¸°ÙÀÎÁö Ã¼Å©
+	// ITargetable ï¿½ï¿½È¿ï¿½ï¿½ Å¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Ã¼Å©
 	virtual bool IsTargetAlive_Implementation() const override;
 
 protected:
@@ -54,14 +54,14 @@ protected:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
-	// Enemy ´É·ÂÄ¡ Àû¿ë
+	// Enemy ï¿½É·ï¿½Ä¡ ï¿½ï¿½ï¿½ï¿½
 	UFUNCTION(CallInEditor)
 	virtual void ApplyEnemyConfig();
 
-	// »ç¸Á ÀüÃ³¸® - »ç¸Á ÆÇÁ¤ Á÷ÈÄ ½ÇÇà
-	virtual void BeginDeath();	// ÇÊ¿äÇÒ °æ¿ì EnemyTypes¿¡ ¼±¾ðµÈ ±¸Á¶Ã¼ FEnemyDeathContext ¹Þ±â
+	// ï¿½ï¿½ï¿½ ï¿½ï¿½Ã³ï¿½ï¿½ - ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
+	virtual void BeginDeath();	// ï¿½Ê¿ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ EnemyTypesï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ã¼ FEnemyDeathContext ï¿½Þ±ï¿½
 
-	/* µ¨¸®°ÔÀÌÆ® ¹ÝÀÀ ÇÔ¼ö */
+	/* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½ ï¿½Ô¼ï¿½ */
 
 	void HandleHealthChanged(float NewHealth, float MaxHealth);
 
@@ -81,7 +81,7 @@ protected :
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Life")
 	EEnemyLifeState LifeState = EEnemyLifeState::Alive;
 
-	// AnimInstance¿¡¼­ ÇÃ·¹ÀÌ¾î ÀÌµ¿ ¾Ö´Ï¸ÞÀÌ¼Ç Àç»ý ¿©ºÎ¸¦ °áÁ¤ÇÏ±â À§ÇØ »ç¿ë
+	// AnimInstanceï¿½ï¿½ï¿½ï¿½ ï¿½Ã·ï¿½ï¿½Ì¾ï¿½ ï¿½Ìµï¿½ ï¿½Ö´Ï¸ï¿½ï¿½Ì¼ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Î¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï±ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Movement")
 	bool bWantsToMove = false;
 

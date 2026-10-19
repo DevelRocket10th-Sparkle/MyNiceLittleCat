@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+ï»¿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Characters/PlayerCharacter.h"
@@ -9,6 +9,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
+#include "GameFramework/GameModeBase.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "AbilitySystemBlueprintLibrary.h"
@@ -32,7 +33,7 @@ APlayerCharacter::APlayerCharacter()
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.f, 1080.f, 0.f);
 
-	// Ä«¸Ş¶ó ºÕ
+	// ì¹´ë©”ë¼ ë¶
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(GetRootComponent());
 	CameraBoom->TargetArmLength = 700.f;
@@ -43,19 +44,19 @@ APlayerCharacter::APlayerCharacter()
     CameraBoom->bInheritYaw = false;
     CameraBoom->bInheritRoll = false;
 
-    // À§Ä¡ ÃßÀû º¸°£
+    // ìœ„ì¹˜ ì¶”ì  ë³´ê°„
     CameraBoom->bEnableCameraLag = true;
     CameraBoom->CameraLagSpeed = 8.f;
 
     //CameraBoom->bUseCameraLagSubstepping = true;
     //CameraBoom->CameraLagMaxTimeStep = 1.f / 60.f;
 
-	// ÆÈ·Î¿ì Ä«¸Ş¶ó	
+	// íŒ”ë¡œìš° ì¹´ë©”ë¼	
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-    // ¶ô¿Â ÄÄÆ÷³ÍÆ®
+    // ë½ì˜¨ ì»´í¬ë„ŒíŠ¸
     LockOnComponent = CreateDefaultSubobject<ULockOnComponent>(TEXT("LockOnComponent"));
 
     // GAS
@@ -138,7 +139,7 @@ void APlayerCharacter::Tick(float DeltaTime)
         TargetYaw
     );
 
-    // »óÃ¼ È¸Àü ÇÑ°è¸¦ ³ÑÀ¸¸é ¸ö ÀüÃ¼¸¦ Å¸°Ù ¹æÇâÀ¸·Î Á¤·Ä
+    // ìƒì²´ íšŒì „ í•œê³„ë¥¼ ë„˜ìœ¼ë©´ ëª¸ ì „ì²´ë¥¼ íƒ€ê²Ÿ ë°©í–¥ìœ¼ë¡œ ì •ë ¬
     if (FMath::Abs(DeltaYaw) > BodyTurnThreshold && !bIsDodging)
     {
         const FRotator DesiredRotation(0.0f, TargetYaw, 0.0f);
@@ -218,9 +219,16 @@ void APlayerCharacter::TestReceiveHit()
     ApplyPlayerHit(TestDamage, TestHitDirection);
 }
 
+void APlayerCharacter::TestRespawn()
+{
+    AController* PC = GetController();
+    Destroy();
+    GetWorld()->GetAuthGameMode()->RestartPlayer(PC);
+}
+
 void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
 {
-    if (bIsInvincible || Damage <= 0.f)
+    if (bIsDead || bIsInvincible || Damage <= 0.f)
     {
         return;
     }
@@ -231,7 +239,7 @@ void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
     if (!ASC || !DamageEffectClass)
     {
         UE_LOG(LogTemp, Warning,
-            TEXT("[HitReaction] ASC ¶Ç´Â DamageEffectClass°¡ ¾ø½À´Ï´Ù."));
+            TEXT("[HitReaction] ASC ë˜ëŠ” DamageEffectClassê°€ ì—†ìŠµë‹ˆë‹¤."));
         return;
     }
 
@@ -254,6 +262,12 @@ void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
 
     ASC->ApplyGameplayEffectSpecToSelf(
         *SpecHandle.Data.Get());
+
+    // This hit killed the player: Die() already played DeathMontage, so skip hit reaction (it would stop the montage)
+    if (bIsDead)
+    {
+        return;
+    }
 
     bIsInvincible = true;
 
@@ -287,13 +301,14 @@ void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
 
 void APlayerCharacter::Move(const FInputActionValue& Value)
 {
+    if (bIsDead) return;
     if (bIsDodging) return;
     if (!bIsAbleToMove) return;
     const FVector2D Input = Value.Get<FVector2D>();
 
     if (Input.IsNearlyZero()) return;
 
-    // Ä«¸Ş¶óÀÇ ¼öÆò ¹æÇâÀ» ±âÁØÀ¸·Î ÀÌµ¿ ¹æÇâ °è»ê
+    // ì¹´ë©”ë¼ì˜ ìˆ˜í‰ ë°©í–¥ì„ ê¸°ì¤€ìœ¼ë¡œ ì´ë™ ë°©í–¥ ê³„ì‚°
     const FRotator CameraRotation =
         FollowCamera->GetComponentRotation();
 
@@ -331,7 +346,7 @@ void APlayerCharacter::SwitchTarget(const FInputActionValue& Value)
 
 void APlayerCharacter::StartDodge()
 {
-    if (bIsDodging || !DodgeMontage || !bIsAbleToDodge) return;
+    if (bIsDead || bIsDodging || !DodgeMontage || !bIsAbleToDodge) return;
 
     bIsDodging = true;
 
@@ -395,7 +410,7 @@ void APlayerCharacter::UpdateDodge()
     Velocity.X = DodgeDirection.X * DodgeSpeed;
     Velocity.Y = DodgeDirection.Y * DodgeSpeed;
 
-    // Z ¼Óµµ´Â À¯ÁöÇØ¼­ »ìÂ¦ ¶ß´Â µ¿ÀÛ°ú Áß·Â Àû¿ë
+    // Z ì†ë„ëŠ” ìœ ì§€í•´ì„œ ì‚´ì§ ëœ¨ëŠ” ë™ì‘ê³¼ ì¤‘ë ¥ ì ìš©
     MoveComp->Velocity = Velocity;
 }
 
@@ -418,7 +433,7 @@ void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
 {
     bool bIsMeleeAttackActive = false;
 
-	if (bIsAbleToAttack == false) return;
+	if (bIsDead || bIsAbleToAttack == false) return;
 
     for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
     {
@@ -462,6 +477,10 @@ void APlayerCharacter::Die()
         return;
 
     bIsDead = true;
+    bIsAbleToAttack = false;
+    bIsAbleToDodge = false;
+    bIsAbleToMove = false;
+    bIsDodging = false;
 
     GetCharacterMovement()->StopMovementImmediately();
     GetCharacterMovement()->DisableMovement();
@@ -477,26 +496,26 @@ void APlayerCharacter::Die()
 
         if (DeathMontage)
         {
-            // »ç¸Á ¸ùÅ¸ÁÖ Á¾·á ½Ã ·¢µ¹ ÀüÈ¯
-            FOnMontageEnded EndDelegate;
-            EndDelegate.BindUObject(
-                this,
-                &APlayerCharacter::OnDeathMontageEnded
-            );
-
-            AnimInstance->Montage_SetEndDelegate(
-                EndDelegate,
-                DeathMontage
-            );
-
             if (PlayAnimMontage(DeathMontage) > 0.0f)
             {
-                return; // ¸ùÅ¸ÁÖ Àç»ı Áß¿¡´Â ·¢µ¹ ÀüÈ¯ÇÏÁö ¾ÊÀ½
+                // Bind the end delegate only after the montage is playing (no active instance before that)
+                FOnMontageEnded EndDelegate;
+                EndDelegate.BindUObject(
+                    this,
+                    &APlayerCharacter::OnDeathMontageEnded
+                );
+
+                AnimInstance->Montage_SetEndDelegate(
+                    EndDelegate,
+                    DeathMontage
+                );
+
+                return;
             }
         }
     }
 
-    // ¸ùÅ¸ÁÖ°¡ ¾ø°Å³ª Àç»ı¿¡ ½ÇÆĞÇÑ °æ¿ì
+    // ëª½íƒ€ì£¼ê°€ ì—†ê±°ë‚˜ ì¬ìƒì— ì‹¤íŒ¨í•œ ê²½ìš°
     OnDeathMontageEnded(nullptr, false);
     
 }
@@ -508,16 +527,16 @@ void APlayerCharacter::OnDeathMontageEnded(UAnimMontage* Montage, bool bInterrup
 
     USkeletalMeshComponent* CharacterMesh = GetMesh();
 
-    // ¾Ö´Ï¸ŞÀÌ¼Ç °»½Å Áß´Ü
+    // ì• ë‹ˆë©”ì´ì…˜ ê°±ì‹  ì¤‘ë‹¨
     CharacterMesh->SetAnimInstanceClass(nullptr);
     CharacterMesh->bPauseAnims = true;
 
-    // Ä¸½¶ Ãæµ¹ Á¦°Å
+    // ìº¡ìŠ ì¶©ëŒ ì œê±°
     GetCapsuleComponent()->SetCollisionEnabled(
         ECollisionEnabled::NoCollision
     );
 
-    // Physics AssetÀÇ ¹°¸® ¹Ùµğ È°¼ºÈ­
+    // Physics Assetì˜ ë¬¼ë¦¬ ë°”ë”” í™œì„±í™”
     CharacterMesh->SetCollisionProfileName(TEXT("Ragdoll"));
     CharacterMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
     CharacterMesh->SetAllBodiesSimulatePhysics(true);
@@ -539,7 +558,7 @@ void APlayerCharacter::StartHitReaction(FVector HitDirection)
     HitDirection.Z = 0.f;
     HitDirection.Normalize();
 
-    // ÇöÀç Àç»ı ÁßÀÎ ¸ùÅ¸ÁÖ Áß´Ü
+    // í˜„ì¬ ì¬ìƒ ì¤‘ì¸ ëª½íƒ€ì£¼ ì¤‘ë‹¨
     if (UAnimInstance* AnimInstance =
         GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
     {
@@ -553,7 +572,7 @@ void APlayerCharacter::StartHitReaction(FVector HitDirection)
 
     SetActorRotation(( - HitDirection).Rotation());
 
-    // ÀÌµ¿Àº À¯ÁöÇÏ¸é¼­ ÇÇ°İ ¹æÇâÀ¸·Î ³Ë¹é
+    // ì´ë™ì€ ìœ ì§€í•˜ë©´ì„œ í”¼ê²© ë°©í–¥ìœ¼ë¡œ ë„‰ë°±
     LaunchCharacter(
         HitDirection* KnockbackStrength
         + FVector(0.f, 0.f, KnockbackUpwardStrength),
@@ -588,5 +607,5 @@ void APlayerCharacter::EndInvincibility()
     bIsAbleToDodge = true;
     bIsAbleToMove = true;
     //UE_LOG(LogTemp, Warning,
-    //    TEXT("[HitReaction] ¹«Àû ½Ã°£ Á¾·á"));
+    //    TEXT("[HitReaction] ë¬´ì  ì‹œê°„ ì¢…ë£Œ"));
 }
