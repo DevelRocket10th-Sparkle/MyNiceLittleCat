@@ -14,6 +14,7 @@ void APlayerMainController::FlushPressedKeys()
 {
 	// 입력 초기화 되기 전에 모드 변경 캔슬 내요
 	HandleDialCanceled();
+	HandleModeUseCanceled();
 
 	Super::FlushPressedKeys();
 }
@@ -21,6 +22,21 @@ void APlayerMainController::FlushPressedKeys()
 bool APlayerMainController::ShouldFlushKeysWhenViewportFocusChanges() const
 {
 	return true;
+}
+
+void APlayerMainController::PlayerTick(float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+
+	APetCharacter* Pet = PartnerPet.Get();
+
+	if (false == IsValid(Pet)) return;
+	// 다이얼 조작 중에는 마지막 조준 방향을 유지
+	if (true == IsValid(PetModeDialComponent.Get()) && true == PetModeDialComponent->IsDialOpen()) return;
+
+	FVector Direction;
+	if (true == TryGetPetAimDirection(Direction))
+		Pet->SetAimDirection(Direction);
 }
 
 void APlayerMainController::BeginPlay()
@@ -51,17 +67,24 @@ void APlayerMainController::SetupInputComponent()
 	Super::SetupInputComponent();
 
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
-	if ((nullptr == EnhancedInput) || (nullptr == IA_PetModeDial)) return;
+	if ((nullptr == EnhancedInput) || (nullptr == IA_PetModeDial) || (nullptr == IA_PetModeUse) || (nullptr == IA_PetSpecialAction)) return;
 
     EnhancedInput->BindAction(IA_PetModeDial, ETriggerEvent::Started, this, &APlayerMainController::HandleDialStarted);
     EnhancedInput->BindAction(IA_PetModeDial, ETriggerEvent::Triggered, this, &APlayerMainController::HandleDialTriggered);
     EnhancedInput->BindAction(IA_PetModeDial, ETriggerEvent::Completed, this, &APlayerMainController::HandleDialCompleted);
     EnhancedInput->BindAction(IA_PetModeDial, ETriggerEvent::Canceled, this, &APlayerMainController::HandleDialCanceled);
+
+	EnhancedInput->BindAction(IA_PetModeUse, ETriggerEvent::Started, this, &APlayerMainController::HandleModeUseStarted);
+	EnhancedInput->BindAction(IA_PetModeUse, ETriggerEvent::Completed, this, &APlayerMainController::HandleModeUseReleased);
+	EnhancedInput->BindAction(IA_PetModeUse, ETriggerEvent::Canceled, this, &APlayerMainController::HandleModeUseCanceled);
+
+	EnhancedInput->BindAction(IA_PetSpecialAction, ETriggerEvent::Started, this, &APlayerMainController::HandlePetSpecialAction);
 }
 
 void APlayerMainController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	HandleDialCanceled();
+	HandleModeUseCanceled();
 
 	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
 	{
@@ -78,6 +101,8 @@ void APlayerMainController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void APlayerMainController::SetPartnerPet(APetCharacter* _pet)
 {
 	HandleDialCanceled();
+	HandleModeUseCanceled();
+
 	PartnerPet = _pet;
 }
 
@@ -132,6 +157,55 @@ bool APlayerMainController::TryClampDialCenterToViewport(FVector2D& _outPosition
 	return true;
 }
 
+bool APlayerMainController::TryGetPetAimDirection(FVector& _outDirection) const
+{
+	_outDirection = FVector::ZeroVector;
+
+	APawn* PlayerPawn = GetPawn();
+	if (false == IsValid(PlayerPawn)) return false;
+
+	FHitResult Hit;
+	if (false == TryGetPetCursorHit(Hit)) return false;
+
+	FVector Direction = Hit.ImpactPoint - PlayerPawn->GetActorLocation();
+	Direction.Z = 0.f;
+
+	if (false == Direction.Normalize()) return false;
+
+	_outDirection = Direction;
+	return true;
+}
+
+bool APlayerMainController::TryGetPetCursorHit(FHitResult& _outHit) const
+{
+	_outHit = FHitResult();
+
+	APawn* PlayerPawn = GetPawn();
+	UWorld* World = GetWorld();
+
+	if (false == IsValid(PlayerPawn) || false == IsValid(World)) return false;
+
+	FVector RayOrigin;
+	FVector RayDirection;
+
+	// 화면의 마우스 커서 위치를 3D 월드 공간의 Ray로 변환하는 함수
+	if (false == DeprojectMousePositionToWorld(RayOrigin, RayDirection))
+		return false;
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PetAim));
+
+	// 플레이어나 펫 자신에게 광선이 막히지 않도록
+	QueryParams.AddIgnoredActor(PlayerPawn);
+
+	if (APetCharacter* Pet = PartnerPet.Get())
+		QueryParams.AddIgnoredActor(Pet);
+
+	constexpr float TraceDistance = 100000.f;
+
+	return World->LineTraceSingleByChannel(
+		_outHit, RayOrigin, RayOrigin + RayDirection * TraceDistance, ECC_Visibility, QueryParams);
+}
+
 void APlayerMainController::HandleDialTriggered()
 {
 	if ((false == IsValid(PetModeDialComponent.Get())) || (false == PetModeDialComponent->IsDialOpen())) return;
@@ -181,6 +255,31 @@ void APlayerMainController::HandleDialCanceled()
 	if (true == IsValid(PetModeDialComponent.Get()))
 		PetModeDialComponent->CloseDial();
 }
+
+void APlayerMainController::HandleModeUseStarted()
+{
+	if (APetCharacter* Pet = PartnerPet.Get())
+		Pet->RequestModeUseInput(EPetModeUseInputPhase::Pressed);
+}
+
+void APlayerMainController::HandleModeUseReleased()
+{
+	if (APetCharacter* Pet = PartnerPet.Get())
+		Pet->RequestModeUseInput(EPetModeUseInputPhase::Released);
+}
+
+void APlayerMainController::HandleModeUseCanceled()
+{
+	if(APetCharacter* Pet = PartnerPet.Get())
+		Pet->RequestModeUseInput(EPetModeUseInputPhase::Canceled);
+}
+
+void APlayerMainController::HandlePetSpecialAction()
+{
+	if (APetCharacter* Pet = PartnerPet.Get())
+		Pet->RequestSpecialAction();
+}
+
 
 bool APlayerMainController::TryGetDialPointerPosition(FVector2D& _outPosition) const
 {

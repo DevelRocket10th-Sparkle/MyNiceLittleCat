@@ -6,18 +6,25 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Pet/PetTypes.h"
+#include "AbilitySystemInterface.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "PetCharacter.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPetModeChanged, EPetMode, PreviousMode, EPetMode, NewMode);
-
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPetModeUseInput, EPetModeUseInputPhase, Phase);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPetAbilityMoveFinished, FGuid, RequestId, bool, bSucceeded);
 // 괴냥이 클래스
 UCLASS()
-class MYNICELITTLECAT_API APetCharacter : public ACharacter
+class MYNICELITTLECAT_API APetCharacter : public ACharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
 
 public:
 	APetCharacter();
+
+public:
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	virtual void PostInitializeComponents() override; //! CarraySocket 초기화가 안되어서 임시로 여기서..
 
 protected:
 	virtual void BeginPlay() override;
@@ -70,11 +77,37 @@ public:
 	UFUNCTION(CallInEditor, Category = "Pet|Debug")
 	void DebugRequestReflectMode(); //! Mode 테스트용
 
+	void SetAimDirection(const FVector& _direction);
+	FVector GetAimDirection() const { return AimDirection; }
+
+	bool TryGetModeAbilityHandle(EPetMode _mode, FGameplayAbilitySpecHandle& _outHandle) const;
+
+	//void SetModeAbilityInputHeld(bool _held) { bModeAbilityInputHeld = _held;}
+	void RequestModeUseInput(EPetModeUseInputPhase Phase);
+
+	void RequestSpecialAction();
+
+	USceneComponent* GetCarryPoint() const { return CarryPoint.Get(); }
+
+	FGuid RequestAbilityMoveTo(const FVector& Destination);
+
+	void CompleteAbilityMove(const FGuid& RequestId, bool bSucceeded);
+
+	void CancelAbilityMove(const FGuid& RequestId);
+
+	FGuid GetActiveAbilityMoveRequestId() const { return ActiveAbilityMoveRequestId; }
+private:
+	void GrantModeAbilities();
 	// =============================================================================
 public:
 	UPROPERTY(BlueprintAssignable, Category = "Pet|Mode")
 	FOnPetModeChanged OnPetModeChanged;
 
+	UPROPERTY(BlueprintAssignable, Category = "Pet|Input")
+	FOnPetModeUseInput OnPetModeUseInput;
+
+	UPROPERTY(BlueprintAssignable, Category = "Pet|Behavior")
+	FOnPetAbilityMoveFinished OnPetAbilityMoveFinished;
 protected:
 	// 펫 초기화 데이터
 	UPROPERTY(Transient)
@@ -95,8 +128,32 @@ protected:
 	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Pet", meta = (AllowPrivateAccess = "true"))
 	EPetMode CurrentMode = EPetMode::Basic;
 
+	// 마우스 커서 방향 저장
+	UPROPERTY(VisibleInstanceOnly, Category = "Pet|Input")
+	FVector AimDirection = FVector::ForwardVector;
+
+	// GAS!!
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pet|GAS")
+	TObjectPtr<class UAbilitySystemComponent> AbilitySystemComponent;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Pet|GAS")
+	TMap<EPetMode, TSubclassOf<class UGameplayAbility>> ModeAbilities;
+
+	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Pet|Input", meta = (AllowPrivateAccess = "true"))
+	bool bModeAbilityInputHeld = false; // 입력 누르는 중?
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pet|Carry")
+	TObjectPtr<class USceneComponent> CarryPoint;
 private:
 	// 초기화 됨?
 	UPROPERTY(Transient)
 	bool bInitialized = false;
+
+	// 등록한 능력을 나중에 정확히 실행, 취소하기 위한
+	UPROPERTY(Transient)
+	TMap<EPetMode, FGameplayAbilitySpecHandle> ModeAbilityHandles;
+
+	// 요청 벊로
+	UPROPERTY(Transient, VisibleInstanceOnly, Category = "Pet|Behavior")
+	FGuid ActiveAbilityMoveRequestId;
 };
