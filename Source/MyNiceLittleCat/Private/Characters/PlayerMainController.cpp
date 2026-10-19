@@ -162,6 +162,25 @@ bool APlayerMainController::TryGetPetAimDirection(FVector& _outDirection) const
 	_outDirection = FVector::ZeroVector;
 
 	APawn* PlayerPawn = GetPawn();
+	if (false == IsValid(PlayerPawn)) return false;
+
+	FHitResult Hit;
+	if (false == TryGetPetCursorHit(Hit)) return false;
+
+	FVector Direction = Hit.ImpactPoint - PlayerPawn->GetActorLocation();
+	Direction.Z = 0.f;
+
+	if (false == Direction.Normalize()) return false;
+
+	_outDirection = Direction;
+	return true;
+}
+
+bool APlayerMainController::TryGetPetCursorHit(FHitResult& _outHit) const
+{
+	_outHit = FHitResult();
+
+	APawn* PlayerPawn = GetPawn();
 	UWorld* World = GetWorld();
 
 	if (false == IsValid(PlayerPawn) || false == IsValid(World)) return false;
@@ -183,19 +202,8 @@ bool APlayerMainController::TryGetPetAimDirection(FVector& _outDirection) const
 
 	constexpr float TraceDistance = 100000.f;
 
-	FHitResult Hit;
-	const bool bHit = World->LineTraceSingleByChannel(
-		Hit, RayOrigin, RayOrigin + RayDirection * TraceDistance, ECC_Visibility, QueryParams);
-
-	if (false == bHit) return false;
-
-	FVector Direction = Hit.ImpactPoint - PlayerPawn->GetActorLocation();
-	Direction.Z = 0.f;
-
-	if (false == Direction.Normalize()) return false;
-
-	_outDirection = Direction;
-	return true;
+	return World->LineTraceSingleByChannel(
+		_outHit, RayOrigin, RayOrigin + RayDirection * TraceDistance, ECC_Visibility, QueryParams);
 }
 
 void APlayerMainController::HandleDialTriggered()

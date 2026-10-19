@@ -31,6 +31,15 @@ enum class EPetMagnetPolarity : uint8
     S UMETA(DisplayName = "S")
 };
 
+// 펫 모드의 사용 입력에 대한
+UENUM(BlueprintType)
+enum class EPetModeUseInputPhase : uint8
+{
+    Pressed,
+    Released,
+    Canceled
+};
+
 // 외부에서 펫에게 전달할 펫 초기화 정보
 USTRUCT(BlueprintType)
 struct MYNICELITTLECAT_API FPetInitializationData

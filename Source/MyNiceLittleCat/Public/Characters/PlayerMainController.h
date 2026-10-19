@@ -36,6 +36,8 @@ protected:
 public:
 	void SetPartnerPet(class APetCharacter* _pet);
 
+	bool TryGetPetCursorHit(FHitResult& _outHit) const;
+
 private:
 	// 펫 입력 관련 콜백 함수들
 	void HandleDialStarted();
