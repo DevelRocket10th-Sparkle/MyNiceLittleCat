@@ -68,11 +68,7 @@ void UJellyComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActor
 
 void UJellyComponent::OnHealthChanged(const FOnAttributeChangeData& Data)
 {
-	if (Data.NewValue <= 0.f)
-	{
-		StopJelly();
-	}
-	else if (Data.NewValue < Data.OldValue)
+	if (Data.NewValue < Data.OldValue)
 	{
 		StartJelly();
 	}
