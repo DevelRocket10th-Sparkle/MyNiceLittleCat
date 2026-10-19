@@ -82,7 +82,8 @@ public:
 
 	bool TryGetModeAbilityHandle(EPetMode _mode, FGameplayAbilitySpecHandle& _outHandle) const;
 
-	void SetModeAbilityInputHeld(bool _held) { bModeAbilityInputHeld = _held;}
+	//void SetModeAbilityInputHeld(bool _held) { bModeAbilityInputHeld = _held;}
+	void RequestModeUseInput(EPetModeUseInputPhase Phase);
 
 	void RequestSpecialAction();
 
@@ -94,6 +95,8 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Pet|Mode")
 	FOnPetModeChanged OnPetModeChanged;
 
+	UPROPERTY(BlueprintAssignable, Category = "Pet|Input")
+	FOnPetModeUseInput OnPetModeUseInput;
 protected:
 	// 펫 초기화 데이터
 	UPROPERTY(Transient)

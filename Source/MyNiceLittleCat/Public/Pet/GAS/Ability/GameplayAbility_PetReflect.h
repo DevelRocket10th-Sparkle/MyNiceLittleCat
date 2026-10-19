@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbility.h"
+#include "pet/PetTypes.h"
 #include "GameplayAbility_PetReflect.generated.h"
 
 UCLASS()
@@ -27,6 +28,13 @@ protected:
     void HandleReflectTick(float DeltaTime);
 
     bool CanPlaceReflector(const FHitResult& Hit, const FRotator& Rotation) const;
+
+    UFUNCTION()
+    void HandleModeUseInput(EPetModeUseInputPhase Phase);
+
+    class APlayerMainController* GetPartnerPlayerController() const;
+
+    bool UpdateDragRotation();
     // =============================================================================
 protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reflect")
@@ -59,4 +67,21 @@ protected:
     UPROPERTY(Transient, VisibleInstanceOnly, Category = "Reflect|Placement")
     bool bCanPlaceReflector = false;
 
+    UPROPERTY(Transient)
+    bool bDraggingPlacement = false;
+
+    UPROPERTY(Transient)
+    FHitResult DragStartHit;
+
+    UPROPERTY(Transient)
+    FRotator PlacementRotation = FRotator::ZeroRotator;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Reflect|Placement", meta = (ClampMin = "1.0", Units = "cm"))
+    float MinDragDistance = 15.f;
+
+    UPROPERTY(Transient, VisibleInstanceOnly, Category = "Reflect|Placement")
+    bool bHasPendingPlacement = false;
+
+    UPROPERTY(Transient, VisibleInstanceOnly, Category = "Reflect|Placement")
+    FTransform PendingPlacementTransform = FTransform::Identity;
 };

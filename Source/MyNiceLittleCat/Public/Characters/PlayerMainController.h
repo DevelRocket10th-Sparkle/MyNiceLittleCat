@@ -47,6 +47,7 @@ private:
 	void HandleModeUseStarted();
 	void HandleModeUseReleased();
 	void HandlePetSpecialAction();
+	void HandleModeUseCanceled();
 
 	// 마우스 위치를 다이얼 UI와 같은 좌표 단위로 가져오는 함수 
 	bool TryGetDialPointerPosition(FVector2D& _outPosition) const;

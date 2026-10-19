@@ -213,6 +213,33 @@ bool APetCharacter::TryGetModeAbilityHandle(EPetMode _mode, FGameplayAbilitySpec
 	return true;
 }
 
+void APetCharacter::RequestModeUseInput(EPetModeUseInputPhase Phase)
+{
+	if (false == bInitialized) return;
+
+	// 누르는중 ? + 누름/놓음/취소 전달
+	switch (Phase)
+	{
+	case EPetModeUseInputPhase::Pressed:
+		if (true == bModeAbilityInputHeld) return;
+
+		bModeAbilityInputHeld = true;
+		break;
+
+	case EPetModeUseInputPhase::Released:
+	case EPetModeUseInputPhase::Canceled:
+		if (false == bModeAbilityInputHeld) return;
+
+		bModeAbilityInputHeld = false;
+		break;
+
+	default:
+		return;
+	}
+
+	OnPetModeUseInput.Broadcast(Phase);
+}
+
 void APetCharacter::RequestSpecialAction()
 {
 	if (false == bInitialized) return;
