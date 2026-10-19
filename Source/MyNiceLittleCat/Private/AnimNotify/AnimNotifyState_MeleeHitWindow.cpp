@@ -19,6 +19,7 @@
 #include "Animation/AnimMontage.h"
 #include "TimerManager.h"
 
+#include "Pet/PetCharacter.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
 
 void UAnimNotifyState_MeleeHitWindow::NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, float TotalDuration, const FAnimNotifyEventReference& EventReference)
@@ -125,7 +126,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
     {
         AActor* Target = Hit.GetActor();
 
-        if (!Target || HitActors.Contains(Target)) continue;
+        if (!Target || Target->IsA<APetCharacter>() || HitActors.Contains(Target)) continue;
 
         HitActors.Add(Target);
 
