@@ -7,13 +7,20 @@
 /// 대상 선정: 반경 + 캐릭터 정면 각도 + (선택) 시야 트레이스를 통과한 후보 중 점수가 가장 높은 액터
 /// InteractionVolume 컴포넌트가 있는 액터는 반경 대신 캐릭터 캡슐이 그 볼륨에 닿아 있어야 후보가 됩니다.
 /// 사용법: 캐릭터에 컴포넌트를 추가하고, 상호작용 입력(E, IA_Interact)에서 TryInteract()만 호출하면 됩니다.
+/// 테스트·프로토타입용으로 bBindInteractKey를 켜면 컴포넌트가 InteractKey를 직접 받아 TryInteract를 호출합니다 (기본 꺼짐).
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "InputCoreTypes.h"
 #include "Interfaces/InteractableInterface.h"
 #include "InteractionComponent.generated.h"
+
+class APawn;
+class AController;
+class APlayerController;
+class UInputComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnInteractFocusChanged, AActor*, NewFocus, AActor*, OldFocus);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInteractExecuted, AActor*, Target);
@@ -70,7 +77,21 @@ private:
 	// 정렬 중 이동 입력 잠금/해제
 	void SetMoveInputLocked(bool bLocked);
 
+	// 테스트용 키 입력: 소유 폰의 플레이어 컨트롤러에 입력 컴포넌트를 넣고 뺌
+	UFUNCTION()
+	void HandleOwnerControllerChanged(APawn* Pawn, AController* OldController, AController* NewController);
+	void PushKeyInput(AController* Controller);
+	void PopKeyInput();
+	void HandleInteractKey();
+
 protected:
+	// 테스트·프로토타입용: 켜면 InteractKey로 직접 TryInteract (실제 캐릭터는 플레이어 담당이 입력에서 TryInteract 호출)
+	UPROPERTY(EditAnywhere, Category = "Interaction|Input")
+	bool bBindInteractKey = false;
+
+	UPROPERTY(EditAnywhere, Category = "Interaction|Input", meta = (EditCondition = "bBindInteractKey"))
+	FKey InteractKey = EKeys::E;
+
 	// 대상 탐색 간격
 	UPROPERTY(EditAnywhere, Category = "Interaction|Detect", meta = (ClampMin = "0.03"))
 	float ScanInterval = 0.1f;
@@ -164,4 +185,10 @@ private:
 	float MoveTimeLimit = 0.f;
 
 	FTimerHandle ScanTimerHandle;
+
+	// 테스트용 키 입력 컴포넌트와 넣어 둔 플레이어 컨트롤러
+	UPROPERTY(Transient)
+	TObjectPtr<UInputComponent> KeyInputComponent;
+
+	TWeakObjectPtr<APlayerController> KeyInputController;
 };
