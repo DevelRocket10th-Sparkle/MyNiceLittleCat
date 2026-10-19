@@ -20,7 +20,7 @@ class MYNICELITTLECAT_API UEnemyAnimInstance : public UAnimInstance
 
 public :
 
-	void NativeUpdateAnimation(float DeltaSeconds) override;
+	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
 protected :
 
