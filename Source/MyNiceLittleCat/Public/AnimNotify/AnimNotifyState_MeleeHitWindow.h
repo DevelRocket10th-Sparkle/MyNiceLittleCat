@@ -4,8 +4,12 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
+#include "GameplayEffectTypes.h"
 #include "AnimNotifyState_MeleeHitWindow.generated.h"
 
+
+class UGameplayEffect;
+class UCameraShakeBase;
 /**
  * 
  */
@@ -37,4 +41,33 @@ public:
 
     virtual FString GetNotifyName_Implementation()
         const override;
+protected:
+    void ApplyMontageHitStop(AActor* Actor, float Duration);
+
+protected:
+    UPROPERTY(EditAnywhere, Category = "Melee Hit")
+    FName StartSocket = TEXT("Weapon_Start");
+
+    UPROPERTY(EditAnywhere, Category = "Melee Hit")
+    FName EndSocket = TEXT("Weapon_Tip");
+
+    UPROPERTY(EditAnywhere, Category = "Melee Hit",
+        meta = (ClampMin = "1.0"))
+    float HitRadius = 20.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Melee Hit")
+    float Damage = 10.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Melee Hit")
+    bool bDrawDebug = false;
+
+    UPROPERTY(EditAnywhere, Category = "Melee Hit")
+    TSubclassOf<UGameplayEffect> DamageEffectClass;
+
+    UPROPERTY(EditAnywhere, Category = "Melee Hit")
+    TSubclassOf<UCameraShakeBase> HitCameraShakeClass;
+
+private:
+    TMap<TWeakObjectPtr<USkeletalMeshComponent>, TSet<TWeakObjectPtr<AActor>>> HitActorsByMesh;
+    TMap<TWeakObjectPtr<USkeletalMeshComponent>, FTimerHandle> HitStopTimers;
 };

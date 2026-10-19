@@ -13,6 +13,11 @@ void UAnimNotify_SendGamePlayEvent::Notify(USkeletalMeshComponent* MeshComp, UAn
 
     AActor* Owner = MeshComp->GetOwner();
 
+    UAbilitySystemComponent* ASC =
+        UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Owner);
+
+    if (!ASC) return;
+
     FGameplayEventData Payload;
     Payload.Instigator = Owner;
     Payload.Target = Owner;

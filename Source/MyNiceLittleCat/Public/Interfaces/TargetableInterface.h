@@ -1,7 +1,7 @@
-// ì‘ì„±ì: ê°•ì§„êµ¬
-// ì‘ì„±ì¼ì: 2026-10-12
+// ÀÛ¼ºÀÚ: °­Áø±¸
+// ÀÛ¼ºÀÏÀÚ: 2026-10-12
 // 
-// í”Œë ˆì´ì–´ê°€ ë½ì˜¨ ê°€ëŠ¥í•œ ì˜¤ë¸Œì íŠ¸ê°€ êµ¬í˜„í•˜ëŠ” ì¸í„°í˜ì´ìŠ¤ì…ë‹ˆë‹¤.
+// ÇÃ·¹ÀÌ¾î°¡ ¶ô¿Â °¡´ÉÇÑ ¿ÀºêÁ§Æ®°¡ ±¸ÇöÇÏ´Â ÀÎÅÍÆäÀÌ½ºÀÔ´Ï´Ù.
 
 #pragma once
 
@@ -25,4 +25,7 @@ class MYNICELITTLECAT_API ITargetableInterface
 
 	// Add interface functions to this class. This is the class that will be inherited to implement this interface.
 public:
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Targeting")
+	bool IsTargetAlive() const;
 };

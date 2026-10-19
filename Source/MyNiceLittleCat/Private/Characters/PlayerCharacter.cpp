@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Characters/PlayerCharacter.h"
@@ -9,8 +9,12 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
+#include "GameFramework/GameModeBase.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "AbilitySystemBlueprintLibrary.h"
+#include "GameplayTagContainer.h"
+#include "Components/CapsuleComponent.h"
 
 #include "Characters/GAS/PlayerAttributeSet.h"
 #include "Characters/GAS/GA_MeleeAttack.h"
@@ -27,7 +31,7 @@ APlayerCharacter::APlayerCharacter()
 	bUseControllerRotationRoll = false;
 
 	GetCharacterMovement()->bOrientRotationToMovement = true;
-	GetCharacterMovement()->RotationRate = FRotator(0.f, 360.f, 0.f);
+	GetCharacterMovement()->RotationRate = FRotator(0.f, 1080.f, 0.f);
 
 	// 카메라 붐
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -57,7 +61,10 @@ APlayerCharacter::APlayerCharacter()
 
     // GAS
     AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
-    AttributeSet = CreateDefaultSubobject<UPlayerAttributeSet>(TEXT("AttributeSet"));
+    PlayerAttributeSet = CreateDefaultSubobject<UPlayerAttributeSet>(TEXT("AttributeSet"));
+    UE_LOG(LogTemp, Warning,
+        TEXT("[Constructor] AttributeSet=%s"),
+        *GetNameSafe(PlayerAttributeSet));
 
 }
 
@@ -71,6 +78,29 @@ void APlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+    if (AbilitySystemComponent)
+    {
+        AbilitySystemComponent->InitAbilityActorInfo(this, this);
+        AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
+            UPlayerAttributeSet::GetHealthAttribute())
+            .AddUObject(
+                this,
+                &APlayerCharacter::OnHealthChanged);
+    }
+    UE_LOG(LogTemp, Warning,
+        TEXT("AttributeSet valid: %s"),
+        IsValid(PlayerAttributeSet) ? TEXT("true") : TEXT("false"));
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("ASC valid: %s"),
+        IsValid(AbilitySystemComponent) ? TEXT("true") : TEXT("false"));
+
+    if (AbilitySystemComponent && MeleeAttackAbilityClass)
+    {
+        AbilitySystemComponent->GiveAbility(
+            FGameplayAbilitySpec(MeleeAttackAbilityClass, 1)
+        );
+    }
     APlayerController* PC = Cast<APlayerController>(GetController());
 
     if (!PC || !IMC) return;
@@ -84,17 +114,7 @@ void APlayerCharacter::BeginPlay()
         Subsystem->AddMappingContext(IMC, 0);
     }
 
-    if (AbilitySystemComponent)
-    {
-        AbilitySystemComponent->InitAbilityActorInfo(this, this);
-    }
-
-    if (AbilitySystemComponent && MeleeAttackAbilityClass)
-    {
-        AbilitySystemComponent->GiveAbility(
-            FGameplayAbilitySpec(MeleeAttackAbilityClass, 1)
-        );
-    }
+    
 
 }
 
@@ -192,9 +212,98 @@ void APlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
     }
 }
 
+void APlayerCharacter::TestReceiveHit()
+{
+    const FVector TestHitDirection = -GetActorForwardVector();
+
+    ApplyPlayerHit(TestDamage, TestHitDirection);
+}
+
+void APlayerCharacter::TestRespawn()
+{
+    AController* PC = GetController();
+    Destroy();
+    GetWorld()->GetAuthGameMode()->RestartPlayer(PC);
+}
+
+void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
+{
+    if (bIsDead || bIsInvincible || Damage <= 0.f)
+    {
+        return;
+    }
+
+    UAbilitySystemComponent* ASC =
+        UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(this);
+
+    if (!ASC || !DamageEffectClass)
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[HitReaction] ASC 또는 DamageEffectClass가 없습니다."));
+        return;
+    }
+
+    const FGameplayTag DamageTag = FGameplayTag::RequestGameplayTag(FName("Data.Damage"));
+
+    FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+
+    Context.AddSourceObject(this);
+
+    FGameplayEffectSpecHandle SpecHandle =
+        ASC->MakeOutgoingSpec(
+            DamageEffectClass,
+            1.f,
+            Context);
+
+    if (!SpecHandle.IsValid()) return;
+
+    SpecHandle.Data->SetSetByCallerMagnitude(
+        DamageTag, Damage);
+
+    ASC->ApplyGameplayEffectSpecToSelf(
+        *SpecHandle.Data.Get());
+
+    // This hit killed the player: Die() already played DeathMontage, so skip hit reaction (it would stop the montage)
+    if (bIsDead)
+    {
+        return;
+    }
+
+    bIsInvincible = true;
+
+    StartHitReaction(HitDirection);
+
+    GetWorldTimerManager().SetTimer(
+        InvincibilityTimerHandle,
+        this,
+        &APlayerCharacter::EndInvincibility,
+        InvincibilityDuration,
+        false);
+
+    if (GetMesh())
+    {
+        bMeshWasVisible = GetMesh()->IsVisible();
+        bHitFlashVisible = bMeshWasVisible;
+
+        GetWorldTimerManager().SetTimer(
+            BlinkTimerHandle,
+            this,
+            &APlayerCharacter::ToggleHitFlash,
+            BlinkInterval,
+            true);
+    }
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("[HitReaction] Damage=%.1f | Health=%.1f"),
+        Damage,
+        ASC->GetNumericAttribute(UPlayerAttributeSet::GetHealthAttribute()));
+}
+
 void APlayerCharacter::Move(const FInputActionValue& Value)
 {
+    if (bIsDead) return;
     if (bIsDodging) return;
+    if (!bIsAbleToMove) return;
     const FVector2D Input = Value.Get<FVector2D>();
 
     if (Input.IsNearlyZero()) return;
@@ -237,7 +346,7 @@ void APlayerCharacter::SwitchTarget(const FInputActionValue& Value)
 
 void APlayerCharacter::StartDodge()
 {
-    if (bIsDodging || !DodgeMontage) return;
+    if (bIsDead || bIsDodging || !DodgeMontage || !bIsAbleToDodge) return;
 
     bIsDodging = true;
 
@@ -269,6 +378,8 @@ void APlayerCharacter::StartDodge()
         MoveComp->SetMovementMode(MOVE_Falling);
         MoveComp->Velocity.Z = 300.0f;
     }
+
+    bIsAbleToAttack = false;
 
     GetWorldTimerManager().SetTimer(
         DodgeUpdateTimer,
@@ -306,6 +417,7 @@ void APlayerCharacter::UpdateDodge()
 void APlayerCharacter::EndDodge()
 {
     bIsDodging = false;
+	bIsAbleToAttack = true;
     if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
     {
         MoveComp->MaxWalkSpeed = OriginalMaxWalkSpeed;
@@ -319,11 +431,181 @@ void APlayerCharacter::OnDodgeInput(const FInputActionValue& Value)
 
 void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
 {
-    if (!AbilitySystemComponent || !MeleeAttackAbilityClass)
+    bool bIsMeleeAttackActive = false;
+
+	if (bIsDead || bIsAbleToAttack == false) return;
+
+    for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
     {
+        if (Spec.Ability &&
+            Spec.Ability->GetClass() == MeleeAttackAbilityClass &&
+            Spec.IsActive())
+        {
+            bIsMeleeAttackActive = true;
+            break;
+        }
+    }
+
+    if (bIsMeleeAttackActive)
+    {
+        const FGameplayTag ComboInputTag =
+            FGameplayTag::RequestGameplayTag(
+                FName("Event.Attack.Input"));
+
+        UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(
+            this,
+            ComboInputTag,
+            FGameplayEventData()
+        );
+
         return;
     }
 
     AbilitySystemComponent->TryActivateAbilityByClass(MeleeAttackAbilityClass);
 }
 
+void APlayerCharacter::OnHealthChanged(const FOnAttributeChangeData& Data)
+{
+    if (bIsDead || Data.NewValue > 0.f) return;
+
+    Die();
+}
+
+void APlayerCharacter::Die()
+{
+    if (bIsDead) return;
+    bIsDead = true;
+    bIsAbleToAttack = false;
+    bIsAbleToDodge = false;
+    bIsAbleToMove = false;
+    bIsDodging = false;
+
+    GetCharacterMovement()->StopMovementImmediately();
+    GetCharacterMovement()->DisableMovement();
+
+    GetWorldTimerManager().ClearTimer(InvincibilityTimerHandle);
+    GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
+
+    UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+
+    OnPlayerDied.Broadcast();
+
+    if (AnimInstance)
+    {
+        AnimInstance->StopAllMontages(0.0f);
+
+        if (DeathMontage)
+        {
+            if (PlayAnimMontage(DeathMontage) > 0.0f)
+            {
+                // Bind the end delegate only after the montage is playing (no active instance before that)
+                FOnMontageEnded EndDelegate;
+                EndDelegate.BindUObject(
+                    this,
+                    &APlayerCharacter::OnDeathMontageEnded
+                );
+
+                AnimInstance->Montage_SetEndDelegate(
+                    EndDelegate,
+                    DeathMontage
+                );
+
+                return;
+            }
+        }
+    }
+
+    // 몽타주가 없거나 재생에 실패한 경우
+    OnDeathMontageEnded(nullptr, false);
+    
+}
+
+void APlayerCharacter::OnDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+    if (Montage && Montage != DeathMontage)
+        return;
+
+    USkeletalMeshComponent* CharacterMesh = GetMesh();
+
+    // 애니메이션 갱신 중단
+    CharacterMesh->SetAnimInstanceClass(nullptr);
+    CharacterMesh->bPauseAnims = true;
+
+    // 캡슐 충돌 제거
+    GetCapsuleComponent()->SetCollisionEnabled(
+        ECollisionEnabled::NoCollision
+    );
+
+    // Physics Asset의 물리 바디 활성화
+    CharacterMesh->SetCollisionProfileName(TEXT("Ragdoll"));
+    CharacterMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    CharacterMesh->SetAllBodiesSimulatePhysics(true);
+    CharacterMesh->SetSimulatePhysics(true);
+    CharacterMesh->WakeAllRigidBodies();
+
+}
+
+void APlayerCharacter::StartHitReaction(FVector HitDirection)
+{
+    bIsAbleToAttack = false;
+    bIsAbleToDodge = false;
+    bIsAbleToMove = false;
+    if (HitDirection.IsNearlyZero())
+    {
+        HitDirection = -GetActorForwardVector();
+    }
+
+    HitDirection.Z = 0.f;
+    HitDirection.Normalize();
+
+    // 현재 재생 중인 몽타주 중단
+    if (UAnimInstance* AnimInstance =
+        GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+    {
+        AnimInstance->Montage_Stop(0.05f);
+
+        if (HitReactMontage)
+        {
+            AnimInstance->Montage_Play(HitReactMontage);
+        }
+    }
+
+    SetActorRotation(( - HitDirection).Rotation());
+
+    // 이동은 유지하면서 피격 방향으로 넉백
+    LaunchCharacter(
+        HitDirection* KnockbackStrength
+        + FVector(0.f, 0.f, KnockbackUpwardStrength),
+        true,
+        true);
+}
+
+void APlayerCharacter::ToggleHitFlash()
+{
+    USkeletalMeshComponent* CharacterMesh = GetMesh();
+
+    if (!CharacterMesh)
+    {
+        return;
+    }
+
+    bHitFlashVisible = !bHitFlashVisible;
+    CharacterMesh->SetVisibility(bHitFlashVisible, true);
+}
+
+void APlayerCharacter::EndInvincibility()
+{
+    GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
+
+    if (GetMesh())
+    {
+        GetMesh()->SetVisibility(bMeshWasVisible, true);
+    }
+
+    bIsInvincible = false;
+    bIsAbleToAttack = true;
+    bIsAbleToDodge = true;
+    bIsAbleToMove = true;
+    //UE_LOG(LogTemp, Warning,
+    //    TEXT("[HitReaction] 무적 시간 종료"));
+}

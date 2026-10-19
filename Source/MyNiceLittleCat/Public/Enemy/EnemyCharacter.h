@@ -14,6 +14,7 @@
 #include "AbilitySystemInterface.h"
 #include "EnemyTypes.h"
 #include "GameplayAbilitySpec.h"
+#include "Interfaces/TargetableInterface.h"
 
 #include "EnemyCharacter.generated.h"
 
@@ -24,7 +25,7 @@ class UEnemyConfigData;
 class UAnimMontage;
 
 UCLASS()
-class MYNICELITTLECAT_API AEnemyCharacter : public ACharacter, public IAbilitySystemInterface
+class MYNICELITTLECAT_API AEnemyCharacter : public ACharacter, public IAbilitySystemInterface, public ITargetableInterface
 {
 	GENERATED_BODY()
 
@@ -60,6 +61,9 @@ public:
 
 	// 생존 상태 확인
 	bool IsAlive() const { return LifeState == EEnemyLifeState::Alive; }
+
+	// ITargetable 유효한 타깃인지 체크
+	virtual bool IsTargetAlive_Implementation() const override;
 
 protected:
 

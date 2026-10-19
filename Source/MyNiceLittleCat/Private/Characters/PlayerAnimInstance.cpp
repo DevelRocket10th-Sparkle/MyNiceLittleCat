@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Projecttings.
 
 #include "Characters/PlayerAnimInstance.h"
 #include "GameFramework/Pawn.h"
@@ -76,8 +76,8 @@ void UPlayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 
     AimYaw = FMath::FInterpTo(
-        AimYaw, TargetAimYaw, DeltaSeconds, 10.0f);
+        AimYaw, TargetAimYaw, DeltaSeconds, 20.0f);
 
     AimPitch = FMath::FInterpTo(
-        AimPitch, TargetAimPitch, DeltaSeconds, 10.0f);
+        AimPitch, TargetAimPitch, DeltaSeconds, 20.0f);
 }

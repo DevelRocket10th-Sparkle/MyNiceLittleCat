@@ -38,6 +38,11 @@ UAbilitySystemComponent* AEnemyCharacter::GetAbilitySystemComponent() const
 	return ASC;
 }
 
+bool AEnemyCharacter::IsTargetAlive_Implementation() const
+{
+	return LifeState == EEnemyLifeState::Alive;
+}
+
 // Called when the game starts or when spawned
 void AEnemyCharacter::BeginPlay()
 {

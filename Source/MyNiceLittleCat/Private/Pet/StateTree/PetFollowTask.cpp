@@ -3,6 +3,7 @@
 #include "AIController.h"
 #include "StateTreeExecutionContext.h"
 #include "Navigation/PathFollowingComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 EStateTreeRunStatus FPetFollowTask::EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
 {
@@ -13,6 +14,7 @@ EStateTreeRunStatus FPetFollowTask::EnterState(FStateTreeExecutionContext& Conte
     Data.Controller.Reset();
     Data.MoveTarget.Reset();
     Data.TimeUntilNextCheck = 0.f;
+    Data.bHasSavedMoveSpeed = false;
 
     // 펫이 없다 : Task 실패
     if (false == IsValid(Data.Pet.Get()))
@@ -29,6 +31,14 @@ EStateTreeRunStatus FPetFollowTask::EnterState(FStateTreeExecutionContext& Conte
         return EStateTreeRunStatus::Failed;
 
     Data.Controller = Controller;
+
+    UCharacterMovementComponent* Movement = Data.Pet->GetCharacterMovement();
+    if (false == IsValid(Movement))
+        return EStateTreeRunStatus::Failed;
+
+    // 추종 전의 속도를 기억해요
+    Data.OriginalMaxWalkSpeed = Movement->MaxWalkSpeed;
+    Data.bHasSavedMoveSpeed = true;
 
     // Target에게로 이동 요청 실패 : Task 실패
     // MoveToActor(따라갈 대상, 도착 허용 거리, 펫 반경을 허용 거리에 추가할지)
@@ -50,7 +60,16 @@ void FPetFollowTask::ExitState(FStateTreeExecutionContext& Context, const FState
     if (AAIController* Controller = Data.Controller.Get())
         Controller->StopMovement();
 
+    if (true == Data.bHasSavedMoveSpeed && true == IsValid(Data.Pet.Get()))
+    {
+        if(UCharacterMovementComponent* Movement = Data.Pet->GetCharacterMovement())
+            Movement->MaxWalkSpeed = Data.OriginalMaxWalkSpeed;
+    }
+
+
+    Data.bHasSavedMoveSpeed = false;
     Data.Controller.Reset();
+    Data.MoveTarget.Reset();
     Data.TimeUntilNextCheck = 0.f;
 }
 
@@ -58,16 +77,7 @@ EStateTreeRunStatus FPetFollowTask::Tick(FStateTreeExecutionContext& Context, co
 {
     FInstanceDataType& Data = Context.GetInstanceData(*this);
 
-    Data.TimeUntilNextCheck -= DeltaTime;
-
-    if (0.f < Data.TimeUntilNextCheck)
-        return EStateTreeRunStatus::Running;
-
-    Data.TimeUntilNextCheck = 0.2f; //! 이동명령 주기 임시값
-
     AAIController* Controller = Data.Controller.Get();
-
-    // 대상이 없으면 : Task 실패
     if (false == IsValid(Data.Pet.Get()) || false == IsValid(Controller))
         return EStateTreeRunStatus::Failed;
 
@@ -77,6 +87,31 @@ EStateTreeRunStatus FPetFollowTask::Tick(FStateTreeExecutionContext& Context, co
         Controller->StopMovement();
         return EStateTreeRunStatus::Failed;
     }
+
+    UCharacterMovementComponent* Movement = Data.Pet->GetCharacterMovement();
+    if (false == IsValid(Movement))
+        return EStateTreeRunStatus::Failed;
+
+    //! 뒤쳐진 거리를 가속/감속으로 따라잡기
+    // 높이 차이를 제외한 거리, 플레이어 속도
+    const float Distance = FVector::Dist2D(Data.Pet->GetActorLocation(), Target->GetActorLocation());
+    const float PlayerSpeed = Target->GetVelocity().Size2D();
+
+    // 추종을 유지하려는 거리보다 펫이 얼마나 뒤쳐진건지 계산
+    const float ExcessDistance = FMath::Max(0.f, Distance - Data.FollowDistance);
+    const float DesiredSpeed = PlayerSpeed * Data.PlayerSpeedMultiplier + ExcessDistance * Data.CatchUpSpeedPerCm;
+
+    // 기본 이동 속도보다는 낮아지지 않도록 해요
+    const float SpeedLimit = FMath::Max(Data.OriginalMaxWalkSpeed, Data.MaxFollowSpeed);
+    Movement->MaxWalkSpeed = FMath::Clamp(DesiredSpeed, Data.OriginalMaxWalkSpeed, SpeedLimit);
+
+    //! 이동 재요청
+    Data.TimeUntilNextCheck -= DeltaTime;
+
+    if (0.f < Data.TimeUntilNextCheck)
+        return EStateTreeRunStatus::Running;
+
+    Data.TimeUntilNextCheck = 0.2f; //! 이동명령 주기 임시값
 
     const bool bTargetChanged = Data.MoveTarget.Get() != Target;
 
