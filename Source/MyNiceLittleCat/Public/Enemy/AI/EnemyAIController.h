@@ -13,6 +13,10 @@
 #include "AIController.h"
 #include "EnemyAIController.generated.h"
 
+class UAIPerceptionComponent;
+class UAISenseConfig_Sight;
+struct FAIStimulus;
+
 /**
  * 
  */
@@ -40,5 +44,16 @@ protected :
 
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void OnUnPossess() override;
+
+	UFUNCTION()
+	void HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
 	
+protected :
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Perception")
+	TObjectPtr<UAIPerceptionComponent> EnemyPerception;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Perception")
+	TObjectPtr<UAISenseConfig_Sight> SightConfig;
+
 };

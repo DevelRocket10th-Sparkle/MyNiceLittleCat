@@ -10,6 +10,7 @@
 #include "AbilitySystemComponent.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
 #include "Enemy/Datas/EnemyConfigData.h"
+#include "Abilities/GameplayAbility.h"
 
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -50,11 +51,22 @@ void AEnemyCharacter::BeginPlay()
 			ApplyEnemyConfig();
 		}
 	}
-
+	
 	// Health 변경 델리게이트 구독
 	AttributeSet->OnHealthChange.AddUObject(this, &AEnemyCharacter::HandleHealthChanged);
 	
-	// 추후: 초기 Ability 부여
+	// 초기 Ability 부여
+	if (IsValid(ASC) && IsValid(EnemyConfig) && EnemyConfig->BasicAttackAbility)
+	{
+		BasicAttackHandle =ASC->GiveAbility(
+			FGameplayAbilitySpec(
+				EnemyConfig->BasicAttackAbility,
+				1,
+				INDEX_NONE,
+				this
+			)
+		);
+	}
 
 	bEnemyInitialized = true;	// 초기화 완료 기록
 
@@ -74,7 +86,6 @@ void AEnemyCharacter::Tick(float DeltaTime)
 
 void AEnemyCharacter::ApplyEnemyConfig()
 {
-
 	ASC->SetNumericAttributeBase(
 		UEnemyAttributeSet::GetMaxHealthAttribute(),
 		EnemyConfig->MaxHealth

@@ -13,6 +13,7 @@
 
 #include "AbilitySystemInterface.h"
 #include "EnemyTypes.h"
+#include "GameplayAbilitySpec.h"
 
 #include "EnemyCharacter.generated.h"
 
@@ -47,6 +48,9 @@ public:
 	// Setter: bWantsToMove
 	void SetWantsToMove(bool bNewWantsToMove)	{ bWantsToMove = bNewWantsToMove; }
 
+	// Getter: BasicAttackHandle
+	FGameplayAbilitySpecHandle GetBasicAttackHandle() const { return BasicAttackHandle; }
+
 	// AI가 실행될 준비가 되었는지 확인
 	bool IsEnemyInitialized() const { return bEnemyInitialized; }
 
@@ -74,6 +78,11 @@ protected:
 
 	void HandleDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
+public :
+
+	// 기본 공격 능력
+	TSubclassOf<UGameplayAbility> BasicAttackAbility;
+
 protected :
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS")
@@ -98,5 +107,8 @@ protected :
 
 	// ASC, 능력치 등 초기화 완료 여부
 	bool bEnemyInitialized = false;
+
+	// ASC에 부여된 기본 공격 식별
+	FGameplayAbilitySpecHandle BasicAttackHandle;
 
 };
