@@ -22,6 +22,8 @@ class UPlayerAttributeSet;
 class UGA_MeleeAttack;
 struct FInputActionValue;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPlayerDied);
+
 UCLASS()
 class MYNICELITTLECAT_API APlayerCharacter : public ACharacter, public IAbilitySystemInterface
 {
@@ -92,6 +94,11 @@ private:
 	void StartHitReaction(FVector HitDirection);
 	void ToggleHitFlash();
 	void EndInvincibility();
+
+
+public:
+	UPROPERTY(BlueprintAssignable, Category = "Character|Death")
+	FOnPlayerDied OnPlayerDied;
 
 protected:
 
@@ -174,6 +181,7 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TWeakObjectPtr<UStaticMeshComponent> WeaponMesh;
+
 
 private:
 	bool bIsDodging = false;

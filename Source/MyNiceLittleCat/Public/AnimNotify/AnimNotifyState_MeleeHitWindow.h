@@ -42,7 +42,7 @@ public:
     virtual FString GetNotifyName_Implementation()
         const override;
 protected:
-    static void ApplyMontageHitStop(AActor* Actor, float Duration);
+    void ApplyMontageHitStop(AActor* Actor, float Duration);
 
 protected:
     UPROPERTY(EditAnywhere, Category = "Melee Hit")
@@ -69,4 +69,5 @@ protected:
 
 private:
     TMap<TWeakObjectPtr<USkeletalMeshComponent>, TSet<TWeakObjectPtr<AActor>>> HitActorsByMesh;
+    TMap<TWeakObjectPtr<USkeletalMeshComponent>, FTimerHandle> HitStopTimers;
 };

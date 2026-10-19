@@ -65,6 +65,9 @@ void UGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
     MontageTask->OnCancelled.AddDynamic(
         this, &UGA_MeleeAttack::OnMontageInterrupted);
 
+    MontageTask->OnBlendOut.AddDynamic(
+        this, &UGA_MeleeAttack::OnMontageCompleted);
+
     // 콤보 상태 초기화
     ComboIndex = 0;
     bCanQueueCombo = false;
