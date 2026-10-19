@@ -1,9 +1,9 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 /*
-* 작성자: 전선현
-* 작성 일자: 2026.10.14.
-* 몬스터/보스 캐릭터의 기본 클래스
-* - GAS 연결
+* �ۼ���: ������
+* �ۼ� ����: 2026.10.14.
+* ����/���� ĳ������ �⺻ Ŭ����
+* - GAS ����
 */
 
 #pragma once
@@ -32,7 +32,7 @@ public:
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent()const override;
 
-	// 사망 후처리 - 사망 연출 종료 시점에 실행
+	// ��� ��ó�� - ��� ���� ���� ������ ����
 	virtual void FinishDeath();
 
 	// Getter: AttributeSet
@@ -43,6 +43,9 @@ public:
 	// Setter: bWantsToMove
 	void SetWantsToMove(bool bNewWantsToMove)	{ bWantsToMove = bNewWantsToMove; }
 
+	// ITargetable ��ȿ�� Ÿ������ üũ
+	virtual bool IsTargetAlive_Implementation() const override;
+
 protected:
 
 	// Called when the game starts or when spawned
@@ -51,14 +54,14 @@ protected:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
-	// Enemy 능력치 적용
+	// Enemy �ɷ�ġ ����
 	UFUNCTION(CallInEditor)
 	virtual void ApplyEnemyConfig();
 
-	// 사망 전처리 - 사망 판정 직후 실행
-	virtual void BeginDeath();	// 필요할 경우 EnemyTypes에 선언된 구조체 FEnemyDeathContext 받기
+	// ��� ��ó�� - ��� ���� ���� ����
+	virtual void BeginDeath();	// �ʿ��� ��� EnemyTypes�� ����� ����ü FEnemyDeathContext �ޱ�
 
-	/* 델리게이트 반응 함수 */
+	/* ��������Ʈ ���� �Լ� */
 
 	void HandleHealthChanged(float NewHealth, float MaxHealth);
 
@@ -78,7 +81,7 @@ protected :
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Life")
 	EEnemyLifeState LifeState = EEnemyLifeState::Alive;
 
-	// AnimInstance에서 플레이어 이동 애니메이션 재생 여부를 결정하기 위해 사용
+	// AnimInstance���� �÷��̾� �̵� �ִϸ��̼� ��� ���θ� �����ϱ� ���� ���
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Movement")
 	bool bWantsToMove = false;
 
