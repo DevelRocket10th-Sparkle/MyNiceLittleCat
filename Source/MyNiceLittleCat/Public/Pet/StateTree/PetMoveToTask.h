@@ -24,6 +24,9 @@ struct MYNICELITTLECAT_API FPetMoveToTaskInstanceData
 
     FAIRequestID MoveId = FAIRequestID::InvalidRequest;
     FDelegateHandle FinishedHandle;
+
+    UPROPERTY()
+    FGuid AbilityMoveRequestId;
 };
 
 // MoveTo Task
@@ -38,4 +41,7 @@ struct MYNICELITTLECAT_API FPetMoveToTask
 
     virtual EStateTreeRunStatus EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const override;
     virtual void ExitState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const override;
+
+private:
+    static void ReportAbilityMoveResult(class APetCharacter* Pet, const FGuid& RequestId, bool bSucceeded);
 };
