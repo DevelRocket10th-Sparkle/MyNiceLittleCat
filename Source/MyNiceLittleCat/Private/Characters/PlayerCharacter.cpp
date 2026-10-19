@@ -402,7 +402,7 @@ void APlayerCharacter::UpdateDodge()
 {
     if (!bIsDodging) return;
 
-    constexpr float DodgeSpeed = 1100.0f;
+    constexpr float DodgeSpeed = 1000.0f;
 
     UCharacterMovementComponent* MoveComp = GetCharacterMovement();
     FVector Velocity = MoveComp->Velocity;

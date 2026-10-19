@@ -38,7 +38,12 @@ UAbilitySystemComponent* AEnemyCharacter::GetAbilitySystemComponent() const
 	return ASC;
 }
 
-// Called when the game starts or when spawned
+bool AEnemyCharacter::IsTargetAlive_Implementation() const
+{
+	return IsAlive();
+}
+
+// Called when the game starts or when spawnedsa
 void AEnemyCharacter::BeginPlay()
 {
 	Super::BeginPlay();
