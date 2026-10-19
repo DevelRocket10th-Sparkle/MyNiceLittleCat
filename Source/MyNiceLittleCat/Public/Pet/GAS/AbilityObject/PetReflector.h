@@ -30,4 +30,7 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Reflector")
 	TObjectPtr<UStaticMeshComponent> ReflectorMesh;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reflector", meta = (ClampMin = "0.1", Units = "s"))
+	float ReflectorLifeSpan = 10.f;
 };

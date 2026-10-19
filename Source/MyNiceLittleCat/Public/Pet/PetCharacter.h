@@ -12,7 +12,7 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPetModeChanged, EPetMode, PreviousMode, EPetMode, NewMode);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPetModeUseInput, EPetModeUseInputPhase, Phase);
-
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPetAbilityMoveFinished, FGuid, RequestId, bool, bSucceeded);
 // 괴냥이 클래스
 UCLASS()
 class MYNICELITTLECAT_API APetCharacter : public ACharacter, public IAbilitySystemInterface
@@ -88,6 +88,14 @@ public:
 	void RequestSpecialAction();
 
 	USceneComponent* GetCarryPoint() const { return CarryPoint.Get(); }
+
+	FGuid RequestAbilityMoveTo(const FVector& Destination);
+
+	void CompleteAbilityMove(const FGuid& RequestId, bool bSucceeded);
+
+	void CancelAbilityMove(const FGuid& RequestId);
+
+	FGuid GetActiveAbilityMoveRequestId() const { return ActiveAbilityMoveRequestId; }
 private:
 	void GrantModeAbilities();
 	// =============================================================================
@@ -97,6 +105,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Pet|Input")
 	FOnPetModeUseInput OnPetModeUseInput;
+
+	UPROPERTY(BlueprintAssignable, Category = "Pet|Behavior")
+	FOnPetAbilityMoveFinished OnPetAbilityMoveFinished;
 protected:
 	// 펫 초기화 데이터
 	UPROPERTY(Transient)
@@ -141,4 +152,8 @@ private:
 	// 등록한 능력을 나중에 정확히 실행, 취소하기 위한
 	UPROPERTY(Transient)
 	TMap<EPetMode, FGameplayAbilitySpecHandle> ModeAbilityHandles;
+
+	// 요청 벊로
+	UPROPERTY(Transient, VisibleInstanceOnly, Category = "Pet|Behavior")
+	FGuid ActiveAbilityMoveRequestId;
 };

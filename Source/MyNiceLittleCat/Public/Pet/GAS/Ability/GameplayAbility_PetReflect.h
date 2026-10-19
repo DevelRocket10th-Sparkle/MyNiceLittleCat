@@ -35,6 +35,17 @@ protected:
     class APlayerMainController* GetPartnerPlayerController() const;
 
     bool UpdateDragRotation();
+
+    bool BeginPlacementMove();
+
+    UFUNCTION()
+    void HandlePlacementMoveFinished(FGuid RequestId, bool bSucceeded);
+
+    int32 GetActiveReflectorCount() const;
+
+    bool CanPlaceReflectorAtTransform(const FTransform& PlacementTransform) const;
+
+    bool TryPlaceReflector();
     // =============================================================================
 protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reflect")
@@ -84,4 +95,17 @@ protected:
 
     UPROPERTY(Transient, VisibleInstanceOnly, Category = "Reflect|Placement")
     FTransform PendingPlacementTransform = FTransform::Identity;
+
+    UPROPERTY(Transient)
+    FGuid PlacementMoveRequestId;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Reflect|Placement",
+        meta = (ClampMin = "0.0", Units = "cm"))
+    float PlacementStandOffDistance = 60.f; // 반사판과 펫 몸체 사이에 추가로 둘 여유
+
+    UPROPERTY(EditDefaultsOnly, Category = "Reflect|Placement", meta = (ClampMin = "1"))
+    int32 MaxReflectorCount = 3;
+
+    UPROPERTY(Transient)
+    TArray<TWeakObjectPtr<class APetReflector>> PlacedReflectors;
 };

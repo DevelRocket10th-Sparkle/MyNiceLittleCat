@@ -27,6 +27,12 @@ APetReflector::APetReflector()
 void APetReflector::BeginPlay()
 {
 	Super::BeginPlay();
+
+    // 실제 설치된 반사판은 이동을 막음
+    CollisionBox->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+
+    // 설치된 시점부터 수명 시작
+    SetLifeSpan(ReflectorLifeSpan);
 }
 
 void APetReflector::Tick(float DeltaTime)

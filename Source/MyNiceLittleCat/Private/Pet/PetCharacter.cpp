@@ -110,14 +110,14 @@ bool APetCharacter::RequestBehavior(EPetBehavior NewBehavior)
 
 	//! 테스트용
 	//! MoveTo는 RequestMoveTo(_destination)로 호출 
-	if ((EPetBehavior::MoveTo == NewBehavior)) return false;
+	if ((NewBehavior == EPetBehavior::MoveTo) || (NewBehavior == EPetBehavior::AbilityMoveTo)) return false;
 
 	if((EPetBehavior::Follow == NewBehavior) && (false == IsValid(GetPartnerPlayer())))
 		return false;
 
-
-		RequestedBehavior = NewBehavior;
-		return true;
+	CancelAbilityMove(ActiveAbilityMoveRequestId);
+	RequestedBehavior = NewBehavior;
+	return true;
 }
 
 void APetCharacter::DebugRequestIdle()
@@ -139,6 +139,8 @@ bool APetCharacter::RequestMoveTo(const FVector& _destination)
 {
 	if (false == bInitialized) return false;
 	if (true == _destination.ContainsNaN()) return false;
+
+	CancelAbilityMove(ActiveAbilityMoveRequestId);
 
 	MoveDestination = _destination;
 	RequestedBehavior = EPetBehavior::MoveTo;
@@ -252,6 +254,40 @@ void APetCharacter::RequestSpecialAction()
 	Payload.Target = this;
 
 	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, SpecialActionTag, Payload);
+}
+
+FGuid APetCharacter::RequestAbilityMoveTo(const FVector& Destination)
+{
+	if (false == bInitialized || true == Destination.ContainsNaN() || true == ActiveAbilityMoveRequestId.IsValid())
+		return FGuid();
+
+	ActiveAbilityMoveRequestId = FGuid::NewGuid();
+
+	// 기존 이동 Task에서 읽는 목적지 재사용
+	MoveDestination = Destination;
+	RequestedBehavior = EPetBehavior::AbilityMoveTo;
+
+	return ActiveAbilityMoveRequestId;
+}
+
+void APetCharacter::CompleteAbilityMove(const FGuid& RequestId, bool bSucceeded)
+{
+	if (false == ActiveAbilityMoveRequestId.IsValid() ||  ActiveAbilityMoveRequestId != RequestId)
+		return;
+
+	const FGuid FinishedRequestId = ActiveAbilityMoveRequestId;
+	ActiveAbilityMoveRequestId.Invalidate();
+
+	// 다른 행동으로 이미 바뀌었다면 그 행동을 유지
+	if (RequestedBehavior == EPetBehavior::AbilityMoveTo)
+		RequestedBehavior = (true == IsValid(GetPartnerPlayer())) ? EPetBehavior::Follow : EPetBehavior::Idle;
+
+	OnPetAbilityMoveFinished.Broadcast(FinishedRequestId, bSucceeded);
+}
+
+void APetCharacter::CancelAbilityMove(const FGuid& RequestId)
+{
+	CompleteAbilityMove(RequestId, false);
 }
 
 void APetCharacter::GrantModeAbilities()
