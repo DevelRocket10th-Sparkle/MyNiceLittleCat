@@ -475,7 +475,6 @@ void APlayerCharacter::Die()
 {
     if (bIsDead)
         return;
-
     bIsDead = true;
     bIsAbleToAttack = false;
     bIsAbleToDodge = false;
@@ -514,6 +513,7 @@ void APlayerCharacter::Die()
             }
         }
     }
+    OnPlayerDied.Broadcast();
 
     // 몽타주가 없거나 재생에 실패한 경우
     OnDeathMontageEnded(nullptr, false);
