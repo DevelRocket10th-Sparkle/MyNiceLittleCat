@@ -29,6 +29,22 @@ struct MYNICELITTLECAT_API FPetFollowTaskInstanceData
 
     UPROPERTY()
     float TimeUntilNextCheck = 0.f; // 다음 추종 판단까지 남은 시간 (추종을 매 틱마다 진행하지 않음)
+
+    UPROPERTY(EditAnywhere, Category = "Parameter", meta = (ClampMin = "0.0"))
+    float PlayerSpeedMultiplier = 1.f;  // 플레이어 속도를 얼마나 반영할지
+
+    UPROPERTY(EditAnywhere, Category = "Parameter", meta = (ClampMin = "0.0"))
+    float CatchUpSpeedPerCm = 1.f;  // 추종 거리보다 1cm 뒤처질 때 추가할 속도
+
+   
+    UPROPERTY(EditAnywhere, Category = "Parameter", meta = (ClampMin = "0.0", Units = "cm/s"))
+    float MaxFollowSpeed = 1400.f;  // 추종 중 허용할 최대 속도
+
+    UPROPERTY()
+    float OriginalMaxWalkSpeed = 0.f;  // 추종 종료 시 복원할 기존 속도
+
+    UPROPERTY()
+    bool bHasSavedMoveSpeed = false;
 };
 
 // 추종 Task (StateTree에서 실행하는 Task)
