@@ -5,10 +5,6 @@
 
 #include "Frameworks/Save/GameProgressSubsystem.h"
 #include "Kismet/GameplayStatics.h"
-#include "GameFramework/Character.h"
-#include "GameFramework/Controller.h"
-#include "GameFramework/GameModeBase.h"
-#include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
 
 void UGameProgressSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -58,59 +54,6 @@ bool UGameProgressSubsystem::GetRespawnTransform(const UObject* WorldContextObje
 	}
 
 	OutTransform = Data.RespawnTransform;
-	return true;
-}
-
-bool UGameProgressSubsystem::RespawnPlayer(AController* Controller)
-{
-	if (!IsValid(Controller))
-	{
-		return false;
-	}
-
-	UWorld* World = Controller->GetWorld();
-	AGameModeBase* GameMode = World ? World->GetAuthGameMode() : nullptr;
-	if (!GameMode)
-	{
-		return false;
-	}
-
-	// 기존 폰이 남아 있으면 RestartPlayer가 새로 스폰하지 않으므로 먼저 제거
-	if (APawn* OldPawn = Controller->GetPawn())
-	{
-		OldPawn->DetachFromControllerPendingDestroy();
-		OldPawn->Destroy();
-	}
-
-	// 게임 모드별 처리(펫 재연결 등)를 그대로 쓰기 위해 RestartPlayer 사용 → PlayerStart에 스폰됨
-	GameMode->RestartPlayer(Controller);
-
-	APawn* NewPawn = Controller->GetPawn();
-	if (!NewPawn)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[GameProgress] RespawnPlayer: RestartPlayer did not spawn a pawn"));
-		return false;
-	}
-
-	// 체크포인트가 있으면 그 위치로 이동 (부활 지점은 발 위치 → 캡슐 절반 높이만큼 올림)
-	FTransform RespawnTransform;
-	if (GetRespawnTransform(Controller, RespawnTransform))
-	{
-		FVector Location = RespawnTransform.GetLocation();
-		if (const ACharacter* Character = Cast<ACharacter>(NewPawn))
-		{
-			Location.Z += Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
-		}
-		const FRotator Rotation(0.f, RespawnTransform.Rotator().Yaw, 0.f);
-
-		if (!NewPawn->TeleportTo(Location, Rotation))
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[GameProgress] RespawnPlayer: teleport to checkpoint %s failed"), *CurrentSave->LastCheckpoint.CheckpointId.ToString());
-		}
-		Controller->SetControlRotation(Rotation);
-	}
-
-	OnPlayerRespawned.Broadcast(Controller, NewPawn);
 	return true;
 }
 

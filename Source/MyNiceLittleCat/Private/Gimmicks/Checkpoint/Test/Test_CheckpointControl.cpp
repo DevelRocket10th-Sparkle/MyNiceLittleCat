@@ -5,6 +5,7 @@
 
 #include "Gimmicks/Checkpoint/Test/Test_CheckpointControl.h"
 #include "Frameworks/Save/GameProgressSubsystem.h"
+#include "Frameworks/GameMode/MainGameMode.h"
 #include "Components/InputComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/Engine.h"
@@ -52,7 +53,7 @@ void ATest_CheckpointControl::Tick(float DeltaTime)
 	}
 
 	const FCheckpointSaveData& Data = Progress->GetCheckpointData();
-	const FString Text = FString::Printf(TEXT("[Checkpoint Test] %s: Respawn  %s: Reset save\nCheckpoint: %s / %s  |  Save slot: %s"),
+	const FString Text = FString::Printf(TEXT("[Checkpoint Test] %s: Die -> Respawn  %s: Reset save\nCheckpoint: %s / %s  |  Save slot: %s"),
 		*RespawnKey.GetDisplayName().ToString(), *ResetProgressKey.GetDisplayName().ToString(),
 		Data.bValid ? *Data.LevelName : TEXT("-"), Data.bValid ? *Data.CheckpointId.ToString() : TEXT("-"),
 		Progress->HasSaveSlot() ? TEXT("exists") : TEXT("none"));
@@ -67,10 +68,14 @@ void ATest_CheckpointControl::RespawnPlayer()
 		return;
 	}
 
-	if (UGameProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UGameProgressSubsystem>())
+	// 사망 흉내: 게임 모드의 사망 처리 → RespawnDelay 뒤 리스폰
+	AMainGameMode* GameMode = World->GetAuthGameMode<AMainGameMode>();
+	if (!GameMode)
 	{
-		Progress->RespawnPlayer(World->GetFirstPlayerController());
+		UE_LOG(LogTemp, Warning, TEXT("[Checkpoint Test] GameMode is not AMainGameMode"));
+		return;
 	}
+	GameMode->OnPlayerDeath(World->GetFirstPlayerController());
 }
 
 void ATest_CheckpointControl::ResetProgress()
