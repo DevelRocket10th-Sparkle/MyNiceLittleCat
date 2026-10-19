@@ -4,9 +4,8 @@
 /// 실제 게임용 게임 모드입니다.
 /// 플레이어 스폰·리스폰 규칙과 펫 스폰(ATestPetGameMode에서 이식)을 담당합니다.
 /// 스폰 위치: 현재 맵에 등록된 체크포인트(UGameProgressSubsystem)가 있으면 그 RespawnPoint, 없으면 PlayerStart.
-/// 리스폰: 사망 알림(OnPlayerDeath) → RespawnDelay 뒤 RespawnPlayer → 기존 폰 제거 후 RestartPlayer.
+/// 리스폰: APlayerCharacter::OnPlayerDied 구독 → OnPlayerDeath → RespawnDelay 뒤 RespawnPlayer → 기존 폰 제거 후 RestartPlayer.
 /// 체크포인트 데이터·저장은 UGameProgressSubsystem, 이 클래스는 언제·어디서 다시 스폰할지만 정합니다.
-/// TODO(합의): APlayerCharacter::OnPlayerDied 구독 연결 (플레이어 담당 PR 수정 머지 후)
 /// TODO: 사망~부활 연출(페이드 등)과 UI 알림은 추후 보완
 
 #pragma once
@@ -50,6 +49,10 @@ protected:
 	// 펫이 없으면 스폰하고, 새 플레이어 폰과 다시 연결
 	void SetupPet(AController* Controller);
 
+	// APlayerCharacter::OnPlayerDied 수신
+	UFUNCTION()
+	void HandlePlayerDied();
+
 protected:
 	// 사망 후 자동 리스폰
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Respawn")
@@ -75,6 +78,9 @@ private:
 	TObjectPtr<APetCharacter> Pet;
 
 	FTimerHandle RespawnTimerHandle;
+
+	// 사망 알림을 구독한 플레이어의 컨트롤러
+	TWeakObjectPtr<AController> RespawnController;
 
 	// RespawnPlayer 중인지 (첫 스폰과 리스폰 구분)
 	bool bRespawning = false;

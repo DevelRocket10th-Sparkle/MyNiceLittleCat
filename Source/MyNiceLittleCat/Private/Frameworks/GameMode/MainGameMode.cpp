@@ -7,6 +7,7 @@
 #include "Frameworks/Save/GameProgressSubsystem.h"
 #include "Pet/PetCharacter.h"
 #include "Characters/PlayerMainController.h"
+#include "Characters/PlayerCharacter.h"
 #include "GameFramework/Character.h"
 #include "Components/CapsuleComponent.h"
 #include "Engine/GameInstance.h"
@@ -36,7 +37,18 @@ void AMainGameMode::RestartPlayer(AController* NewPlayer)
 
 	SetupPet(NewPlayer);
 
-	// TODO(합의): 새 폰의 APlayerCharacter::OnPlayerDied 구독 → OnPlayerDeath(NewPlayer)
+	// 새 폰의 사망 알림 구독 (이전 폰은 리스폰 때 제거되므로 해제 불필요)
+	if (APlayerCharacter* PlayerCharacter = Cast<APlayerCharacter>(NewPlayer->GetPawn()))
+	{
+		RespawnController = NewPlayer;
+		PlayerCharacter->OnPlayerDied.AddUniqueDynamic(this, &AMainGameMode::HandlePlayerDied);
+	}
+}
+
+void AMainGameMode::HandlePlayerDied()
+{
+	// OnPlayerDied는 파라미터가 없어 구독할 때 저장한 컨트롤러 사용 (싱글 플레이어 기준)
+	OnPlayerDeath(RespawnController.Get());
 }
 
 void AMainGameMode::OnPlayerDeath(AController* DeadController)
