@@ -26,11 +26,13 @@ void UAnimNotifyState_MeleeHitWindow::NotifyBegin(USkeletalMeshComponent* MeshCo
     Super::NotifyBegin(MeshComp, Animation, TotalDuration, EventReference);
 
     if (!MeshComp) return;
-    UE_LOG(LogTemp, Warning,
-        TEXT("[MeleeHit] Begin | Mesh=%s | Animation=%s | Duration=%.3f"),
-        *MeshComp->GetName(),
-        *GetNameSafe(Animation),
-        TotalDuration);
+
+    if (APlayerCharacter* Character =
+        Cast<APlayerCharacter>(MeshComp->GetOwner()))
+    {
+        Character->SetbIsAbleToDodge(false);
+        Character->SetbIsAbleToMove(false);
+    }
 
     HitActorsByMesh.FindOrAdd(MeshComp).Empty();
 
@@ -63,6 +65,13 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
 
     if (!WeaponMesh) return;
 
+    if (APlayerCharacter* Character = Cast<APlayerCharacter>(Attacker))
+    {
+        Character->AddMovementInput(
+            Character->GetActorForwardVector(),
+            0.6f
+        );
+    }
 
     const FVector Start = WeaponMesh->GetSocketLocation(StartSocket);
     const FVector End = WeaponMesh->GetSocketLocation(EndSocket);
@@ -142,7 +151,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
 
         const FGameplayTag DamageTag =FGameplayTag::RequestGameplayTag(FName("Data.Damage"));
 
-        UE_LOG(LogTemp, Warning, TEXT("[MeleeHit] 피격: %s"), *Target->GetName());
+        UE_LOG(LogTemp, Warning, TEXT("[MeleeHit] �ǰ�: %s"), *Target->GetName());
 
         SpecHandle.Data->SetSetByCallerMagnitude(
             DamageTag,
@@ -153,7 +162,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
             *SpecHandle.Data.Get()
         );
 
-        // 카메라 셰이크
+        // ī�޶� ����ũ
         if (APlayerCharacter* Player = Cast<APlayerCharacter>(Attacker))
         {
             if (APlayerController* PC =
@@ -165,9 +174,9 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
                 );
             }
         }
-        // 히트 스톱
-        /*ApplyMontageHitStop(Attacker, 0.07f);
-        ApplyMontageHitStop(Target, 0.03f);*/
+        // ��Ʈ ����
+        ApplyMontageHitStop(Attacker, 0.2f);
+        ApplyMontageHitStop(Target, 0.1f);
     }
 }
 
@@ -181,7 +190,8 @@ void UAnimNotifyState_MeleeHitWindow::NotifyEnd(USkeletalMeshComponent* MeshComp
     if (APlayerCharacter* Character =
         Cast<APlayerCharacter>(MeshComp->GetOwner()))
     {
-        //Character->EndMeleeHitWindow();
+		Character->SetbIsAbleToDodge(true);
+        Character->SetbIsAbleToMove(true);
     }
 }
 
@@ -194,33 +204,30 @@ void UAnimNotifyState_MeleeHitWindow::ApplyMontageHitStop(AActor* Actor, float D
 {
     if (!IsValid(Actor) || Duration <= 0.f) return;
 
-    USkeletalMeshComponent* Mesh = Actor->FindComponentByClass<USkeletalMeshComponent>();
+    USkeletalMeshComponent* Mesh =
+        Actor->FindComponentByClass<USkeletalMeshComponent>();
+
     if (!Mesh) return;
 
-    UAnimInstance* AnimInstance = Mesh->GetAnimInstance();
-    if (!AnimInstance) return;
+    UWorld* World = Actor->GetWorld();
+    if (!World) return;
 
-    UAnimMontage* Montage = AnimInstance->GetCurrentActiveMontage();
-    if (!Montage) return;
+    const float OriginalRate = Mesh->GlobalAnimRateScale;
+    Mesh->GlobalAnimRateScale = 0.f;
 
-    AnimInstance->Montage_Pause(Montage);
-
-    TWeakObjectPtr<UAnimInstance> WeakAnimInstance = AnimInstance;
-    TWeakObjectPtr<UAnimMontage> WeakMontage = Montage;
+    TWeakObjectPtr<USkeletalMeshComponent> WeakMesh = Mesh;
 
     FTimerHandle TimerHandle;
-
-    Actor->GetWorldTimerManager().SetTimer(
+    World->GetTimerManager().SetTimer(
         TimerHandle,
         FTimerDelegate::CreateLambda(
-            [WeakAnimInstance, WeakMontage]()
+            [WeakMesh, OriginalRate]()
             {
-                if (WeakAnimInstance.IsValid() && WeakMontage.IsValid())
+                if (WeakMesh.IsValid())
                 {
-                    WeakAnimInstance->Montage_Resume(WeakMontage.Get());
+                    WeakMesh->GlobalAnimRateScale = OriginalRate;
                 }
-            }
-        ),
+            }),
         Duration,
         false
     );

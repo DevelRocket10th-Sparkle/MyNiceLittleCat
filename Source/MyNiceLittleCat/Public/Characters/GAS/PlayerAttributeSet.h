@@ -1,7 +1,7 @@
-// ì‘ì„±ì: ê°•ì§„êµ¬
-// ì‘ì„±ì¼ì: 2026-10-15
+// ÀÛ¼ºÀÚ: °­Áø±¸
+// ÀÛ¼ºÀÏÀÚ: 2026-10-15
 // 
-// í”Œë ˆì´ì–´ GAS ì–´íŠ¸ë¦¬ë·°íŠ¸ ì…‹ ì…ë‹ˆë‹¤.
+// ÇÃ·¹ÀÌ¾î GAS ¾îÆ®¸®ºäÆ® ¼Â ÀÔ´Ï´Ù.
 
 #pragma once
 
@@ -40,5 +40,9 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Attributes")
     FGameplayAttributeData AttackPower;
     PLAYER_ATTRIBUTE_ACCESSORS(UPlayerAttributeSet, AttackPower)
+
+    UPROPERTY(BlueprintReadOnly, Category = "Attributes")
+    FGameplayAttributeData Damage;
+    PLAYER_ATTRIBUTE_ACCESSORS(UPlayerAttributeSet, Damage)
 
 };
