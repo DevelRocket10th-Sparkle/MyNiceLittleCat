@@ -19,6 +19,7 @@
 #include "AIController.h"
 #include "BrainComponent.h"
 #include "Enemy/AI/EnemyAIController.h"
+#include "Enemy/Components/EnemyPatternComponent.h"
 
 // Sets default values
 AEnemyCharacter::AEnemyCharacter(const FObjectInitializer& ObjectInitializer)
@@ -30,9 +31,11 @@ AEnemyCharacter::AEnemyCharacter(const FObjectInitializer& ObjectInitializer)
 	ASC = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("ASC"));
 
 	AttributeSet = CreateDefaultSubobject<UEnemyAttributeSet>(TEXT("Stat"));
+	PatternComponent = CreateDefaultSubobject<UEnemyPatternComponent>(TEXT("PatternComponent"));
 
 }
 
+// Getter: 이 캐릭터의 능력 실행 컴포넌트
 UAbilitySystemComponent* AEnemyCharacter::GetAbilitySystemComponent() const
 {
 	return ASC;
@@ -43,6 +46,7 @@ bool AEnemyCharacter::IsTargetAlive_Implementation() const
 	return LifeState == EEnemyLifeState::Alive;
 }
 
+// Health 변경 전에 무적 및 페이즈 체력 하한을 반영
 float AEnemyCharacter::CalculateHealthAfterDamage(float CurrentHealth, float MaxHealth, float Damage) const
 {
 	if (!IsAlive())
@@ -54,6 +58,7 @@ float AEnemyCharacter::CalculateHealthAfterDamage(float CurrentHealth, float Max
 }
 
 // Called when the game starts or when spawned
+// 컴포넌트 초기화 후 실행 준비
 void AEnemyCharacter::BeginPlay()
 {
 	Super::BeginPlay();
@@ -69,6 +74,8 @@ void AEnemyCharacter::BeginPlay()
 
 	if (IsValid(ASC))
 	{
+		// 컴포넌트 초기화 순서와 무관하게 능력치 적용 전에 AttributeSet 등록 보장
+		ASC->AddAttributeSetSubobject(AttributeSet.Get());
 		ASC->InitAbilityActorInfo(this, this);	// GAS 소유자와 실제 행동 소유자 일치
 		
 		// Attributes 초기화
@@ -82,7 +89,7 @@ void AEnemyCharacter::BeginPlay()
 	AttributeSet->OnHealthChange.AddUObject(this, &AEnemyCharacter::HandleHealthChanged);
 	
 	// 초기 Ability 부여
-	if (IsValid(ASC) && IsValid(EnemyConfig) && EnemyConfig->BasicAttackAbility)
+	if (HasAuthority() && IsValid(ASC) && IsValid(EnemyConfig) && !EnemyConfig->PatternSet && EnemyConfig->BasicAttackAbility)
 	{
 		BasicAttackHandle =ASC->GiveAbility(
 			FGameplayAbilitySpec(
@@ -99,6 +106,14 @@ void AEnemyCharacter::BeginPlay()
 		Movement->InitializeHoverHeight();
 	}
 
+	// PatternSet을 지정한 Enemy만 새 패턴 경로를 사용하여 기존 테스트 BP와 공존
+	if (HasAuthority() && EnemyConfig && EnemyConfig->PatternSet
+		&& !PatternComponent->InitializePatterns(ASC, EnemyConfig->PatternSet))
+	{
+		UE_LOG(LogTemp, Error, TEXT("%s: pattern initialization failed"), *GetName());
+		return;
+	}
+	if (!HasAuthority() || !InitializeEnemyExtensions()) return;
 	bEnemyInitialized = true;	// 초기화 완료 기록
 
 	// Controller가 먼저 빙의한 경우, 여기서 AI 시작 요청
@@ -109,12 +124,14 @@ void AEnemyCharacter::BeginPlay()
 }
 
 // Called every frame
+// 활성 상태의 매 프레임 처리
 void AEnemyCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
 }
 
+// 설정 데이터의 능력치 및 이동 속도를 캐릭터에 적용
 void AEnemyCharacter::ApplyEnemyConfig()
 {
 	ASC->SetNumericAttributeBase(
@@ -137,12 +154,14 @@ void AEnemyCharacter::ApplyEnemyConfig()
 	GetCharacterMovement()->MaxFlySpeed = EnemyConfig->MoveSpeed;
 }
 
+// 중복 사망을 막고 공격과 AI를 정리한 뒤 사망 연출 시작
 void AEnemyCharacter::BeginDeath()
 {
 	if (LifeState != EEnemyLifeState::Alive)
 		return;
 
 	LifeState = EEnemyLifeState::Dying;	// 중복 방지를 위해 최우선 처리 필요
+	PatternComponent->StopAndInvalidate();
 
 	SetWantsToMove(false);
 
@@ -240,6 +259,7 @@ void AEnemyCharacter::FinishDeath()
 	SetLifeSpan(3.f);
 }
 
+// 체력 변경 시 사망 판정을 먼저 수행한 뒤 추가 상태 처리
 void AEnemyCharacter::HandleHealthChanged(float NewHealth, float MaxHealth)
 {
 	UE_LOG(LogTemp, Log, TEXT("[%s] Health Changed: %.1f / %.1f"), *GetName(), NewHealth, MaxHealth);
@@ -258,4 +278,37 @@ void AEnemyCharacter::HandleDeathMontageEnded(UAnimMontage* Montage, bool bInter
 	UE_LOG(LogTemp, Log, TEXT("[%s] Death montage ended. Interrupted=%d"), *GetName(), bInterrupted);
 
 	FinishDeath();
+}
+
+// Getter: 캐릭터별 패턴 실행 컴포넌트
+UEnemyPatternComponent* AEnemyCharacter::GetPatternComponent() const
+{
+	return PatternComponent;
+}
+
+// 초기화와 생존 및 보스방 전투 상태를 포함한 AI 실행 가능 여부 확인
+bool AEnemyCharacter::CanRunEnemyAI() const
+{
+	return bEnemyInitialized && IsAlive();
+}
+
+// 기본 초기화 뒤 파생 캐릭터의 추가 설정 준비
+bool AEnemyCharacter::InitializeEnemyExtensions()
+{
+	return IsValid(ASC) && IsValid(AttributeSet) && IsValid(EnemyConfig);
+}
+
+// 공격 중 회전 제한을 존중하여 Controller 방향 반영
+void AEnemyCharacter::FaceRotation(FRotator NewControlRotation, float DeltaTime)
+{
+	if (!IsRotationLocked()) Super::FaceRotation(NewControlRotation, DeltaTime);
+}
+
+// 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출
+void AEnemyCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	bEnemyInitialized = false;
+	PatternComponent->StopAndInvalidate();
+	if (AttributeSet) AttributeSet->OnHealthChange.RemoveAll(this);
+	Super::EndPlay(EndPlayReason);
 }

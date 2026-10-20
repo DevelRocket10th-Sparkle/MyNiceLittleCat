@@ -42,6 +42,11 @@ public :
 
 	virtual bool ShouldRemainVertical() const override;
 
+	// 공격 회전 제한을 실제 이동 처리에 적용하여 루트 모션 회전도 차단
+	// 위치 이동과 충돌 해결을 유지하면서 공격 중 회전만 제한
+	virtual bool MoveUpdatedComponentImpl(const FVector& Delta, const FQuat& NewRotation,
+		bool bSweep, FHitResult* OutHit = nullptr, ETeleportType Teleport = ETeleportType::None) override;
+
 protected :
 
 	// 평평한 지면 위 일정 높이 비행에 사용

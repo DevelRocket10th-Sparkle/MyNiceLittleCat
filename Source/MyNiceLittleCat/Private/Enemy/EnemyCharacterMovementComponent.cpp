@@ -17,6 +17,9 @@
 
 bool UEnemyCharacterMovementComponent::CanStartPathFollowing() const
 {
+	// 새 공격 경로에서는 명시적인 이동 제한 상태를 먼저 검사
+	const AEnemyCharacter* OwnerEnemy = Cast<AEnemyCharacter>(CharacterOwner);
+	if (OwnerEnemy && OwnerEnemy->IsAttackMovementLocked()) return false;
 	// 지상 경로를 이용하는 비행형에만 예외 적용: 루트모션 때문에
 	if (!bUseGroundPathForFlight || !IsFlying())
 		return Super::CanStartPathFollowing();
@@ -184,4 +187,14 @@ bool UEnemyCharacterMovementComponent::ShouldRemainVertical() const
 	}
 
 	return Super::ShouldRemainVertical();
+}
+
+// 위치 이동과 충돌 해결을 유지하면서 공격 중 회전만 제한
+bool UEnemyCharacterMovementComponent::MoveUpdatedComponentImpl(const FVector& Delta, const FQuat& NewRotation,
+	bool bSweep, FHitResult* OutHit, ETeleportType Teleport)
+{
+	// 회전 제한은 위치 이동 및 충돌 해결을 유지하면서 회전값에만 적용
+	const AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(CharacterOwner);
+	const FQuat Rotation = Enemy && Enemy->IsRotationLocked() ? Enemy->GetActorQuat() : NewRotation;
+	return Super::MoveUpdatedComponentImpl(Delta, Rotation, bSweep, OutHit, Teleport);
 }
