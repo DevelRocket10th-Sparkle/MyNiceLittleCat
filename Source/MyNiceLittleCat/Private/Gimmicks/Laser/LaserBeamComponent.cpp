@@ -75,6 +75,7 @@ void ULaserBeamComponent::StopLaser()
 
 	bLaserActive = false;
 	HitActor.Reset();
+	LastHit = FHitResult();
 	SetComponentTickEnabled(false);
 
 	OnLaserStopped.Broadcast(this);
@@ -146,6 +147,7 @@ void ULaserBeamComponent::UpdateBeam()
 	BeamStart = GetComponentLocation();
 	BeamEnd = BeamStart + FireDirection * MaxRange;
 	HitActor.Reset();
+	LastHit = FHitResult();
 
 	UWorld* World = GetWorld();
 	if (!World)
@@ -170,6 +172,7 @@ void ULaserBeamComponent::UpdateBeam()
 	{
 		BeamEnd = Hit.Location;
 		HitActor = Hit.GetActor();
+		LastHit = Hit;
 	}
 }
 

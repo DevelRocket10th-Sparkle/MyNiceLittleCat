@@ -10,7 +10,9 @@
 /// - 플레이어(APlayerCharacter): ApplyPlayerHit 직접 호출 (피해·경직·무적, 빔 옆으로 밀림: 플레이어가 있는 쪽의 수직 방향)
 /// - 그 외 액터: ApplyDamage(DamageTypeClass, 기본 UDamageType_BossLaser)
 /// 연출: 빔 시작·끝·맞은 액터를 GetBeamStart/GetBeamEnd/GetHitActor로 조회 (BP 빔 연출용). 프로토타입은 bDrawDebugBeam 디버그 라인으로 표시합니다.
-/// 반사판 반사는 담당자 별도 작업 (이 컴포넌트는 직선 빔만 처리)
+/// 반사판 반사는 담당자 별도 작업 (이 컴포넌트는 직선 빔만 처리).
+/// 반사 구현용으로 맞은 면 법선(GetHitNormal)·트레이스 결과(GetHitResult)를 제공합니다.
+/// 반사된 빔은 이 컴포넌트를 하나 더 써서 DamageTypeClass를 UDamageType_ReflectedLaser로 두면 30% 생성장치를 파괴할 수 있습니다.
 /// 피해 타입은 인스턴스마다 바꿀 수 있습니다 (보스 기본 UDamageType_BossLaser, 함정은 필요하면 별도 타입 지정)
 /// TODO(합의): 보스 GA에서 호출하는 방식(예고·추적 등)은 보스 담당과 확정 필요
 /// TODO(합의): 플레이어가 TakeDamage → ApplyPlayerHit를 처리하게 되면 플레이어도 ApplyDamage로 통일 (지금은 직접 호출)
@@ -76,6 +78,15 @@ public:
 	// 빔에 막힌 액터 (사거리 끝까지 아무것도 없으면 null)
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
 	AActor* GetHitActor() const { return HitActor.Get(); }
+
+	// 빔이 막힌 면의 법선 (반사 방향 계산용, 막힌 곳이 없으면 0 벡터)
+	// 반사 예: R = D - 2(D·N)N  (D = GetFireDirection(), N = GetHitNormal())
+	UFUNCTION(BlueprintPure, Category = "LaserBeam")
+	FVector GetHitNormal() const { return LastHit.bBlockingHit ? FVector(LastHit.ImpactNormal) : FVector::ZeroVector; }
+
+	// 이번 틱 빔 트레이스 결과 전체 (맞은 지점·컴포넌트 등, 막힌 곳이 없으면 bBlockingHit false)
+	UFUNCTION(BlueprintPure, Category = "LaserBeam")
+	FHitResult GetHitResult() const { return LastHit; }
 
 public:
 	UPROPERTY(BlueprintAssignable, Category = "LaserBeam")
@@ -156,6 +167,9 @@ private:
 	FVector BeamEnd = FVector::ZeroVector;
 
 	TWeakObjectPtr<AActor> HitActor;
+
+	// 이번 틱 트레이스 결과 (막힌 곳이 없으면 bBlockingHit false)
+	FHitResult LastHit;
 
 	bool bLaserActive = false;
 
