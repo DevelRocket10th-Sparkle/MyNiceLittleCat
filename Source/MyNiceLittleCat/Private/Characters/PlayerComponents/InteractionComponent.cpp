@@ -6,6 +6,8 @@
 #include "Characters/PlayerComponents/InteractionComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/PlayerController.h"
+#include "Components/InputComponent.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "Gimmicks/InteractionVolumeComponent.h"
 #include "NavigationSystem.h"
@@ -27,6 +29,16 @@ void UInteractionComponent::BeginPlay()
 	Super::BeginPlay();
 
 	GetWorld()->GetTimerManager().SetTimer(ScanTimerHandle, this, &UInteractionComponent::RefreshFocus, ScanInterval, true);
+
+	// 테스트용 키 입력: 빙의(컨트롤러 변경) 때마다 그 플레이어 컨트롤러에 입력 컴포넌트를 넣음
+	if (bBindInteractKey)
+	{
+		if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+		{
+			OwnerPawn->ReceiveControllerChangedDelegate.AddDynamic(this, &UInteractionComponent::HandleOwnerControllerChanged);
+			PushKeyInput(OwnerPawn->GetController());
+		}
+	}
 }
 
 void UInteractionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -34,8 +46,48 @@ void UInteractionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	GetWorld()->GetTimerManager().ClearTimer(ScanTimerHandle);
 	FinishAlign(false);
 	SetFocusedActor(nullptr);
+	PopKeyInput();
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void UInteractionComponent::HandleOwnerControllerChanged(APawn* Pawn, AController* OldController, AController* NewController)
+{
+	PopKeyInput();
+	PushKeyInput(NewController);
+}
+
+void UInteractionComponent::PushKeyInput(AController* Controller)
+{
+	APlayerController* PlayerController = Cast<APlayerController>(Controller);
+	if (!PlayerController || !PlayerController->IsLocalController())
+	{
+		return;
+	}
+
+	if (!KeyInputComponent)
+	{
+		KeyInputComponent = NewObject<UInputComponent>(GetOwner(), TEXT("InteractKeyInput"));
+		FInputKeyBinding& Binding = KeyInputComponent->BindKey(InteractKey, IE_Pressed, this, &UInteractionComponent::HandleInteractKey);
+		Binding.bConsumeInput = false;
+	}
+
+	PlayerController->PushInputComponent(KeyInputComponent);
+	KeyInputController = PlayerController;
+}
+
+void UInteractionComponent::PopKeyInput()
+{
+	if (KeyInputController.IsValid() && KeyInputComponent)
+	{
+		KeyInputController->PopInputComponent(KeyInputComponent);
+	}
+	KeyInputController.Reset();
+}
+
+void UInteractionComponent::HandleInteractKey()
+{
+	TryInteract();
 }
 
 bool UInteractionComponent::TryInteract()
