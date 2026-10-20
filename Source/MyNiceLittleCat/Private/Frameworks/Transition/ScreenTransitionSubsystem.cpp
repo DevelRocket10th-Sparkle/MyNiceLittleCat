@@ -36,6 +36,9 @@ bool UScreenTransitionSubsystem::PlayTransition(APlayerController* PlayerControl
 	MidpointCallback = MoveTemp(OnMidpoint);
 	FinishedCallback = MoveTemp(OnFinished);
 
+	UE_LOG(LogTemp, Log, TEXT("[ScreenTransition] Start (FadeOut %.2f / Hold %.2f / FadeIn %.2f, BlockInput %d)"),
+		ActiveSettings.FadeOutTime, ActiveSettings.HoldTime, ActiveSettings.FadeInTime, ActiveSettings.bBlockInput ? 1 : 0);
+
 	if (ActiveSettings.bBlockInput)
 	{
 		SetInputBlocked(true);
@@ -62,6 +65,7 @@ void UScreenTransitionSubsystem::HandleFadeOutFinished()
 	}
 
 	// 화면이 완전히 어두운 순간 (부활 텔레포트·체력 회복 등)
+	UE_LOG(LogTemp, Log, TEXT("[ScreenTransition] Midpoint (screen dark)"));
 	if (MidpointCallback)
 	{
 		MidpointCallback();
@@ -88,6 +92,7 @@ void UScreenTransitionSubsystem::HandleFadeInFinished()
 	// 콜백 안에서 다음 전환을 바로 시작할 수 있게 상태를 먼저 정리
 	TFunction<void()> Finished = MoveTemp(FinishedCallback);
 	ResetState();
+	UE_LOG(LogTemp, Log, TEXT("[ScreenTransition] Finished"));
 
 	if (Finished)
 	{
@@ -102,6 +107,8 @@ void UScreenTransitionSubsystem::CancelTransition()
 	{
 		return;
 	}
+
+	UE_LOG(LogTemp, Log, TEXT("[ScreenTransition] Cancelled"));
 
 	if (APlayerController* PlayerController = ActiveController.Get())
 	{

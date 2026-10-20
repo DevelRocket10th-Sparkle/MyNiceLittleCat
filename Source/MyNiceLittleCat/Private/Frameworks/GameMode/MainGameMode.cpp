@@ -13,6 +13,14 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "GameFramework/PlayerController.h"
+
+AMainGameMode::AMainGameMode()
+{
+	// 부활 전환: 사망 장면에서 소리도 함께 줄이고, 어두운 상태는 짧게
+	RespawnTransition.HoldTime = 0.5f;
+	RespawnTransition.bFadeAudio = true;
+}
 
 void AMainGameMode::RestartPlayer(AController* NewPlayer)
 {
@@ -60,7 +68,7 @@ void AMainGameMode::OnPlayerDeath(AController* DeadController)
 
 	FTimerDelegate RespawnDelegate = FTimerDelegate::CreateWeakLambda(this, [this, WeakController = TWeakObjectPtr<AController>(DeadController)]()
 	{
-		RespawnPlayer(WeakController.Get());
+		BeginRespawn(WeakController.Get());
 	});
 
 	if (RespawnDelay > 0.f)
@@ -70,6 +78,49 @@ void AMainGameMode::OnPlayerDeath(AController* DeadController)
 	else
 	{
 		RespawnDelegate.Execute();
+	}
+}
+
+void AMainGameMode::BeginRespawn(AController* Controller)
+{
+	if (!IsValid(Controller))
+	{
+		return;
+	}
+
+	APlayerController* PlayerController = Cast<APlayerController>(Controller);
+	UScreenTransitionSubsystem* Transition = GetWorld()->GetSubsystem<UScreenTransitionSubsystem>();
+	if (!bUseRespawnTransition || !PlayerController || !Transition)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[MainGameMode] Respawn without transition (Use %d, PlayerController %d, Subsystem %d)"),
+			bUseRespawnTransition ? 1 : 0, PlayerController ? 1 : 0, Transition ? 1 : 0);
+		RespawnPlayer(Controller);
+		return;
+	}
+
+	// 체크포인트 휴식 등 다른 전환 중에 죽으면 부활을 우선
+	if (Transition->IsTransitionPlaying())
+	{
+		Transition->CancelTransition();
+	}
+
+	// 화면이 완전히 어두워진 순간 폰 교체 (폰 제거·체크포인트 스폰·카메라 이동이 보이지 않게)
+	TWeakObjectPtr<AMainGameMode> WeakThis(this);
+	TWeakObjectPtr<AController> WeakController(Controller);
+	const bool bStarted = Transition->PlayTransition(PlayerController, RespawnTransition,
+		[WeakThis, WeakController]()
+		{
+			if (AMainGameMode* GameMode = WeakThis.Get())
+			{
+				GameMode->RespawnPlayer(WeakController.Get());
+			}
+		});
+
+	// 전환을 시작하지 못하면 부활이 막히지 않게 바로 부활
+	if (!bStarted)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[MainGameMode] Respawn transition failed to start, respawning immediately"));
+		RespawnPlayer(Controller);
 	}
 }
 
