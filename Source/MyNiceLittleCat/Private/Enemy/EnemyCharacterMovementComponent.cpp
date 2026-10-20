@@ -185,3 +185,30 @@ bool UEnemyCharacterMovementComponent::ShouldRemainVertical() const
 
 	return Super::ShouldRemainVertical();
 }
+
+void UEnemyCharacterMovementComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	ProcessRootMotionPreConvertToWorld.BindUObject(
+		this,
+		&UEnemyCharacterMovementComponent::FilterFlightRootMotion
+	);
+}
+
+FTransform UEnemyCharacterMovementComponent::FilterFlightRootMotion(const FTransform& LocalRootMotion, 
+	UCharacterMovementComponent* MovementComponent, float DeltaSeconds)
+{
+	FTransform Result = LocalRootMotion;
+
+	if (false == bUseGroundPathForFlight || false == IsFlying())
+		return Result;
+
+	const AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(CharacterOwner);
+	if (false == IsValid(Enemy) || false == Enemy->IsAlive())
+		return Result;
+
+	// 비행형은 몽타주를 포함해 루트 모션의 추가 회전을 제거
+	Result.SetRotation(FQuat::Identity);
+
+	return Result;
+}
