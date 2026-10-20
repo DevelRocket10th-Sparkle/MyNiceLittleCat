@@ -65,7 +65,42 @@ void AMagneticCoin::Tick(float DeltaTime)
 		return;
 	}
 
+	UpdateHeldState();
+
 	PreviousSpeed = Mesh->GetPhysicsLinearVelocity().Size();
+}
+
+void AMagneticCoin::UpdateHeldState()
+{
+	const bool bSimulating = Mesh->IsSimulatingPhysics();
+
+	switch (CoinState)
+	{
+	case EMagneticCoinState::Landed:
+	case EMagneticCoinState::Thrown:
+		// 착지 후 코인 스스로는 물리를 끄지 않으므로, 꺼졌다면 외부(펫 자석 잡기)가 직접 옮기는 중
+		if (!bSimulating)
+		{
+			SetCoinState(EMagneticCoinState::Held);
+		}
+		else if (CoinState == EMagneticCoinState::Thrown && GetWorld()->GetTimeSeconds() - ThrownTime > ThrowGraceTime)
+		{
+			SetCoinState(EMagneticCoinState::Landed);
+		}
+		break;
+
+	case EMagneticCoinState::Held:
+		// 물리가 다시 켜지면 놓이거나 던져진 것 (놓을 때 속도가 느리면 MinImpactSpeed에서 걸러짐)
+		if (bSimulating)
+		{
+			ThrownTime = GetWorld()->GetTimeSeconds();
+			SetCoinState(EMagneticCoinState::Thrown);
+		}
+		break;
+
+	default:
+		break;
+	}
 }
 
 void AMagneticCoin::StartFall(EMagneticPolarity NewPolarity)
@@ -203,7 +238,7 @@ void AMagneticCoin::HandleMeshBeginOverlap(UPrimitiveComponent* OverlappedCompon
 
 void AMagneticCoin::HandleMeshHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
 {
-	if (CoinState != EMagneticCoinState::Landed || !CanDamageTarget(OtherActor))
+	if ((CoinState != EMagneticCoinState::Landed && CoinState != EMagneticCoinState::Thrown) || !CanDamageTarget(OtherActor))
 	{
 		return;
 	}
@@ -239,7 +274,8 @@ bool AMagneticCoin::CanDamageTarget(const AActor* OtherActor) const
 		return false;
 	}
 
-	if (bRequireMagneticForce && (LastMagneticForceTime < 0.f || Now - LastMagneticForceTime > MagneticForceGraceTime))
+	if (bRequireMagneticForce && CoinState != EMagneticCoinState::Thrown
+		&& (LastMagneticForceTime < 0.f || Now - LastMagneticForceTime > MagneticForceGraceTime))
 	{
 		return false;
 	}

@@ -36,6 +36,12 @@ public :
 
 	virtual bool ShouldRemainVertical() const override;
 
+protected:
+	virtual void BeginPlay() override;
+
+private:
+	FTransform FilterFlightRootMotion(const FTransform& LocalRootMotion,
+		UCharacterMovementComponent* MovementComponent, float DeltaSeconds);
 protected :
 
 	// 평평한 지면 위 일정 높이 비행에 사용
