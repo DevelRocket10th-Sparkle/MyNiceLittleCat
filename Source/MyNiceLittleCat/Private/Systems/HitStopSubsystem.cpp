@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+ï»¿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Systems/HitStopSubsystem.h"
 #include "Engine/World.h"
@@ -18,7 +18,7 @@ void UHitStopSubsystem::ApplyHitStop(AActor* Actor, float Duration)
 	const FTimerDelegate EndDelegate = FTimerDelegate::CreateUObject(
 		this, &UHitStopSubsystem::EndHitStop, TWeakObjectPtr<AActor>(Actor));
 
-	// ÀÌ¹Ì È÷Æ®½ºÅé ÁßÀÌ¸é ´Ù½Ã ¸ØÃßÁö ¾Ê°í ½Ã°£¸¸ ¿¬Àå
+	// ì´ë¯¸ ížˆíŠ¸ìŠ¤í†± ì¤‘ì´ë©´ ë‹¤ì‹œ ë©ˆì¶”ì§€ ì•Šê³  ì‹œê°„ë§Œ ì—°ìž¥
 	if (FHitStopState* Existing = ActiveHitStops.Find(Actor))
 	{
 		if (TimerManager.GetTimerRemaining(Existing->TimerHandle) < Duration)
@@ -34,12 +34,12 @@ void UHitStopSubsystem::ApplyHitStop(AActor* Actor, float Duration)
 	if (!AnimInstance) return;
 
 	UAnimMontage* Montage = AnimInstance->GetCurrentActiveMontage();
-	if (!Montage) return;   // Àç»ý ÁßÀÎ ¸ùÅ¸ÁÖ°¡ ¾øÀ¸¸é ¸ØÃâ °ÍÀÌ ¾øÀ½
+	if (!Montage) return;   // ìž¬ìƒ ì¤‘ì¸ ëª½íƒ€ì£¼ê°€ ì—†ìœ¼ë©´ ë©ˆì¶œ ê²ƒì´ ì—†ìŒ
 
-	// ¸ùÅ¸ÁÖ¸¸ Á¤Áö ¡æ AnimBP(²¿¸® ¹°¸® µî)´Â Á¤»ó ½Ã°£À¸·Î °è¼Ó µ¿ÀÛ
+	// ëª½íƒ€ì£¼ë§Œ ì •ì§€ â†’ AnimBP(ê¼¬ë¦¬ ë¬¼ë¦¬ ë“±)ëŠ” ì •ìƒ ì‹œê°„ìœ¼ë¡œ ê³„ì† ë™ìž‘
 	AnimInstance->Montage_Pause(Montage);
 
-	// Á¤Áö Áß¿£ ·çÆ®¸ð¼ÇÀÌ ²÷°Ü ÀÏ¹Ý ÀÌµ¿À¸·Î Ã³¸®µÇ¹Ç·Î ³²Àº ¼Óµµ Á¦°Å
+	// ì •ì§€ ì¤‘ì—” ë£¨íŠ¸ëª¨ì…˜ì´ ëŠê²¨ ì¼ë°˜ ì´ë™ìœ¼ë¡œ ì²˜ë¦¬ë˜ë¯€ë¡œ ë‚¨ì€ ì†ë„ ì œê±°
 	if (UCharacterMovementComponent* MoveComp = Character->GetCharacterMovement())
 	{
 		MoveComp->StopMovementImmediately();
@@ -67,7 +67,7 @@ void UHitStopSubsystem::ResumeMontage(const FHitStopState& State)
 	UAnimInstance* AnimInstance = State.AnimInstance.Get();
 	UAnimMontage* Montage = State.PausedMontage.Get();
 
-	// Á¤Áö Áß¿¡ ´Ù¸¥ ¸ùÅ¸ÁÖ·Î ¹Ù²î¾úÀ¸¸é(ÇÇ°Ý ¸®¾×¼Ç µî) °Çµå¸®Áö ¾ÊÀ½
+	// ì •ì§€ ì¤‘ì— ë‹¤ë¥¸ ëª½íƒ€ì£¼ë¡œ ë°”ë€Œì—ˆìœ¼ë©´(í”¼ê²© ë¦¬ì•¡ì…˜ ë“±) ê±´ë“œë¦¬ì§€ ì•ŠìŒ
 	if (AnimInstance && Montage && AnimInstance->Montage_IsActive(Montage))
 	{
 		AnimInstance->Montage_Resume(Montage);
