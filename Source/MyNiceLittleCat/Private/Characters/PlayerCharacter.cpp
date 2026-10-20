@@ -66,6 +66,10 @@ APlayerCharacter::APlayerCharacter()
         TEXT("[Constructor] AttributeSet=%s"),
         *GetNameSafe(PlayerAttributeSet));
 
+    // 포스트 프로세싱
+    GetMesh()->SetRenderCustomDepth(true);
+    GetMesh()->SetCustomDepthStencilValue(1);
+
 }
 
 UAbilitySystemComponent* APlayerCharacter::GetAbilitySystemComponent() const

@@ -1,7 +1,7 @@
-// �ۼ���: ������
-// �ۼ�����: 2026-10-12
+// 작성자: 강진구
+// 작성일자: 2026-10-12
 // 
-// �÷��̾� Ŭ�����Դϴ�.
+// 플레이어 클래스입니다.
 
 #pragma once
 
@@ -54,7 +54,7 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-	// �����Ϳ��� ȣ���ϴ� �ǰ� �׽�Ʈ ��ư
+	// 에디터에서 호출하는 피격 테스트 버튼
 	UFUNCTION(CallInEditor, Category = "Hit Reaction")
 	void TestReceiveHit();
 
@@ -65,27 +65,27 @@ public:
 	void ApplyPlayerHit(float Damage, FVector HitDirection);
 
 protected:
-	// �̵� �Լ�
+	// 이동 함수
 	void Move(const FInputActionValue& Value);
-	// ��� �Լ�
+	// 잠금 함수
 	void ToggleTargetLock();
-	// ��� Ÿ�� ���� �Լ�
+	// 잠금 타겟 변경 함수
 	void SwitchTarget(const FInputActionValue& Value);
-	// ������ ����
+	// 구르기 시작
 	void StartDodge();
 	void UpdateDodge();
-	// ������ ����
+	// 구르기 종료
 	void EndDodge();
 
-	// ������ �Է� �� ���� �Լ�
+	// 구르기 입력 시 실행 함수
 	void OnDodgeInput(const FInputActionValue& Value);
 
-	// ���� �Է� �� ���� �Լ�
+	// 공격 입력 시 실행 함수
 	void OnMeleeAttackInput(const FInputActionValue& Value);
 
-	// ü�� ���� �� ó�� �Լ�
+	// 체력 변경 시 처리 함수
 	void OnHealthChanged(const FOnAttributeChangeData& Data);
-	// ���
+	// 사망
 	void Die();
 
 	UFUNCTION()

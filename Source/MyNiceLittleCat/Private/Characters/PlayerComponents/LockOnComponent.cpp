@@ -41,7 +41,7 @@ void ULockOnComponent::ToggleTargetLock()
 
 void ULockOnComponent::SwitchTarget(float Direction)
 {
-    // �� �Է� �� �ĺ��� ��� ����
+    // 휠 입력 시 후보를 즉시 갱신
     RefreshCandidates();
 
     if (Candidates.Num() < 2) return;
@@ -54,7 +54,7 @@ void ULockOnComponent::SwitchTarget(float Direction)
     }
     AActor* PreviousTarget = CurrentCandidate.Get();
 
-    // ���: ���� �ĺ�, ����: ���� �ĺ�
+    // 양수: 다음 후보, 음수: 이전 후보
     const int32 Step = Direction > 0.f ? 1 : -1;
 
     CurrentIndex = (CurrentIndex + Step + Candidates.Num())
@@ -87,7 +87,7 @@ void ULockOnComponent::BeginPlay()
         if (APlayerController* PC =
             Cast<APlayerController>(PlayerCharacter->GetController()))
         {
-           // ���� ����
+           // 추후 구현
 
         }
     }
@@ -110,7 +110,7 @@ void ULockOnComponent::BeginPlay()
 
     RefreshCandidates();
 
-    // ��ĵ Ÿ�̸� ����
+    // 스캔 타이머 시작
     if (GetWorld())
     {
         GetWorld()->GetTimerManager().SetTimer(
@@ -183,7 +183,7 @@ void ULockOnComponent::RefreshCandidates()
         NewCandidates.Add(Actor);
     }
 
-    // �÷��̾�� ����� ������ ����
+    // 플레이어와 가까운 순서로 정렬
     NewCandidates.Sort(
         [Character](
             const TWeakObjectPtr<AActor>& A,
@@ -200,7 +200,7 @@ void ULockOnComponent::RefreshCandidates()
 
     Candidates = MoveTemp(NewCandidates);
 
-    // ��� ����� �׾����� ���� ����� �ĺ��� ��ȯ, �ĺ��� ������ ����
+    // 잠금 대상이 죽었으면 가장 가까운 후보로 전환, 후보가 없으면 해제
     if (LockedTarget.IsValid() &&
         !ITargetableInterface::Execute_IsTargetAlive(LockedTarget.Get()))
     {
@@ -208,7 +208,7 @@ void ULockOnComponent::RefreshCandidates()
 
         if (!Candidates.IsEmpty())
         {
-            // Candidates�� �Ÿ��� ���� + ����ִ� ��� ����
+            // Candidates는 거리순 정렬 + 살아있는 대상만 포함
             LockedTarget = Candidates[0];
         }
         else
@@ -221,7 +221,7 @@ void ULockOnComponent::RefreshCandidates()
             *GetNameSafe(LockedTarget.Get()));
     }
 
-    // ���� ������ ������� �� ���� ����� ������� ����
+    // 현재 선택이 사라졌을 때 가장 가까운 대상으로 갱신
     if (!CurrentCandidate.IsValid() || !Candidates.Contains(CurrentCandidate))
     {
         AActor* PreviousTarget = CurrentCandidate.Get();
@@ -247,7 +247,7 @@ void ULockOnComponent::RefreshCandidates()
         }
     }
 
-    // ��� ����� �ִٸ� ���� ���ð� ����ȭ
+    // 잠금 대상이 있다면 현재 선택과 동기화
     if (LockedTarget.IsValid())
     {
         CurrentCandidate = LockedTarget;
@@ -277,7 +277,7 @@ bool ULockOnComponent::GetTargetScreenPosition(AActor* Target, FVector2D& OutScr
 
     int32 ViewportX = 0;
     int32 ViewportY = 0;
-	int32 Margin = 50; // ȭ�� �����ڸ������� ����
+	int32 Margin = 50; // 화면 가장자리에서의 여백
     PC->GetViewportSize(ViewportX, ViewportY);
 
     return OutScreenPosition.X >= Margin
@@ -317,14 +317,14 @@ void ULockOnComponent::UpdateLockOnCamera()
             BoundsExtent
         );
 
-        // �÷��̾�� Ÿ�ٱ����� �Ÿ� ����
+        // 플레이어에서 타겟까지의 거리 벡터
         const FVector ToTarget =
             TargetLocation - PlayerLocation;
 
-        // �� ��� ������ �߰� ������ ī�޶� �߽����� ����
+        // 두 대상 사이의 중간 지점을 카메라 중심으로 설정
         DesiredOffset += ToTarget * 0.5f;
 
-        // �Ÿ��� �־������� ī�޶� �ڷ� �̵�
+        // 거리가 멀어질수록 카메라 뒤로 이동
         const float HorizontalDistance = FVector(
             ToTarget.X,
             ToTarget.Y,
@@ -342,7 +342,7 @@ void ULockOnComponent::UpdateLockOnCamera()
             BaseCameraArmLength + ExtraArmLength;
     }
 
-    // ī�޶� �߽ɰ� ���� �ε巴�� ����
+    // 카메라 중심과 길이 부드럽게 보간
     constexpr float TimerDeltaTime = 1.0f / 60.0f;
 
     CameraBoom->TargetOffset = FMath::VInterpTo(
