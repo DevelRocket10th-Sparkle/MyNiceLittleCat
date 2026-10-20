@@ -1,9 +1,9 @@
 /// 작성자: 최요환
 /// 작성일자: 2026-10-20
 ///
-/// 보스 레이저 컴포넌트 구현
+/// 레이저 빔 컴포넌트 구현
 
-#include "Gimmicks/Boss/Laser/BossLaserComponent.h"
+#include "Gimmicks/Laser/LaserBeamComponent.h"
 #include "Gimmicks/Boss/DamageTypes/DamageType_BossLaser.h"
 #include "Characters/PlayerCharacter.h"
 #include "GameFramework/Pawn.h"
@@ -11,7 +11,7 @@
 #include "Engine/World.h"
 #include "DrawDebugHelpers.h"
 
-UBossLaserComponent::UBossLaserComponent()
+ULaserBeamComponent::ULaserBeamComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
@@ -24,14 +24,14 @@ UBossLaserComponent::UBossLaserComponent()
 	DamageTypeClass = UDamageType_BossLaser::StaticClass();
 }
 
-void UBossLaserComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void ULaserBeamComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopLaser();
 
 	Super::EndPlay(EndPlayReason);
 }
 
-void UBossLaserComponent::StartLaser(const FVector& TargetLocation, float Duration)
+void ULaserBeamComponent::StartLaser(const FVector& TargetLocation, float Duration)
 {
 	SetTargetLocation(TargetLocation);
 
@@ -51,7 +51,7 @@ void UBossLaserComponent::StartLaser(const FVector& TargetLocation, float Durati
 	}
 }
 
-void UBossLaserComponent::StartLaserAtActor(AActor* TargetActor, float Duration)
+void ULaserBeamComponent::StartLaserAtActor(AActor* TargetActor, float Duration)
 {
 	if (!IsValid(TargetActor))
 	{
@@ -61,7 +61,12 @@ void UBossLaserComponent::StartLaserAtActor(AActor* TargetActor, float Duration)
 	StartLaser(TargetActor->GetActorLocation(), Duration);
 }
 
-void UBossLaserComponent::StopLaser()
+void ULaserBeamComponent::StartLaserForward(float Duration)
+{
+	StartLaser(GetComponentLocation() + GetForwardVector() * 100.f, Duration);
+}
+
+void ULaserBeamComponent::StopLaser()
 {
 	if (!bLaserActive)
 	{
@@ -75,12 +80,23 @@ void UBossLaserComponent::StopLaser()
 	OnLaserStopped.Broadcast(this);
 }
 
-void UBossLaserComponent::SetTargetLocation(const FVector& TargetLocation)
+void ULaserBeamComponent::SetTargetLocation(const FVector& TargetLocation)
 {
 	SetFireDirection(TargetLocation - GetComponentLocation());
 }
 
-void UBossLaserComponent::SetFireDirection(const FVector& Direction)
+void ULaserBeamComponent::SetFireDirection(const FVector& Direction)
+{
+	// 컴포넌트 회전을 따라가는 중이면 방향은 UpdateBeam에서 정함
+	if (bFollowComponentRotation)
+	{
+		return;
+	}
+
+	FireDirection = MakeFireDirection(Direction);
+}
+
+FVector ULaserBeamComponent::MakeFireDirection(const FVector& Direction) const
 {
 	FVector NewDirection = Direction;
 	if (bPlanarAim)
@@ -88,11 +104,11 @@ void UBossLaserComponent::SetFireDirection(const FVector& Direction)
 		NewDirection.Z = 0.f;
 	}
 
-	// 방향이 없으면(목표가 발사 위치와 같음) 컴포넌트 정면으로
-	FireDirection = NewDirection.IsNearlyZero() ? GetForwardVector() : NewDirection.GetSafeNormal();
+	// 방향이 없으면(목표가 발사 위치와 같음, 수평 발사인데 정면이 수직) 컴포넌트 정면으로
+	return NewDirection.IsNearlyZero() ? GetForwardVector() : NewDirection.GetSafeNormal();
 }
 
-void UBossLaserComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+void ULaserBeamComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
@@ -101,7 +117,7 @@ void UBossLaserComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		return;
 	}
 
-	// 보스나 막는 물체가 움직이면 끝 지점이 바뀌므로 매 틱 다시 계산
+	// 발사하는 액터나 막는 물체가 움직이면 끝 지점이 바뀌므로 매 틱 다시 계산
 	UpdateBeam();
 	ApplyLaserDamage();
 
@@ -120,8 +136,13 @@ void UBossLaserComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	}
 }
 
-void UBossLaserComponent::UpdateBeam()
+void ULaserBeamComponent::UpdateBeam()
 {
+	if (bFollowComponentRotation)
+	{
+		FireDirection = MakeFireDirection(GetForwardVector());
+	}
+
 	BeamStart = GetComponentLocation();
 	BeamEnd = BeamStart + FireDirection * MaxRange;
 	HitActor.Reset();
@@ -138,7 +159,7 @@ void UBossLaserComponent::UpdateBeam()
 		ObjectParams.AddObjectTypesToQuery(UEngineTypes::ConvertToCollisionChannel(ObjectType));
 	}
 
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(BossLaser), false, GetOwner());
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(LaserBeam), false, GetOwner());
 
 	FHitResult Hit;
 	const bool bHit = BeamRadius > 0.f
@@ -152,7 +173,7 @@ void UBossLaserComponent::UpdateBeam()
 	}
 }
 
-void UBossLaserComponent::ApplyLaserDamage()
+void ULaserBeamComponent::ApplyLaserDamage()
 {
 	AActor* Target = HitActor.Get();
 	if (!IsValid(Target) || !IsActorOfClasses(Target, DamageTargetClasses) || DamagePerHit <= 0.f)
@@ -201,7 +222,7 @@ void UBossLaserComponent::ApplyLaserDamage()
 	}
 }
 
-void UBossLaserComponent::DrawDebugBeam() const
+void ULaserBeamComponent::DrawDebugBeam() const
 {
 #if ENABLE_DRAW_DEBUG
 	const UWorld* World = GetWorld();
@@ -219,7 +240,7 @@ void UBossLaserComponent::DrawDebugBeam() const
 #endif
 }
 
-bool UBossLaserComponent::IsActorOfClasses(const AActor* Actor, const TArray<TSubclassOf<AActor>>& Classes)
+bool ULaserBeamComponent::IsActorOfClasses(const AActor* Actor, const TArray<TSubclassOf<AActor>>& Classes)
 {
 	if (Classes.IsEmpty())
 	{

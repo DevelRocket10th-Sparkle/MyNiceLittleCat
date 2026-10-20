@@ -4,7 +4,7 @@
 /// 보스 레이저 테스트용 발사기 구현
 
 #include "Gimmicks/Boss/Test/Test_LaserEmitter.h"
-#include "Gimmicks/Boss/Laser/BossLaserComponent.h"
+#include "Gimmicks/Laser/LaserBeamComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/InputComponent.h"
 #include "GameFramework/PlayerController.h"
@@ -19,13 +19,21 @@ ATest_LaserEmitter::ATest_LaserEmitter()
 	SetRootComponent(Body);
 	Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-	Laser = CreateDefaultSubobject<UBossLaserComponent>(TEXT("Laser"));
+	Laser = CreateDefaultSubobject<ULaserBeamComponent>(TEXT("Laser"));
 	Laser->SetupAttachment(Body);
 }
 
 void ATest_LaserEmitter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 에셋이 깨져 컴포넌트 포인터가 비면(클래스 이름 변경 후 리다이렉트 없이 저장 등) 크래시 대신 경고만 남기고 동작 중지
+	if (!IsValid(Laser))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[%s] Laser 컴포넌트가 없습니다. BP를 다시 저장하거나 다시 배치하세요."), *GetName());
+		SetActorTickEnabled(false);
+		return;
+	}
 
 	Laser->OnLaserDamaged.AddDynamic(this, &ATest_LaserEmitter::HandleLaserDamaged);
 
@@ -77,6 +85,11 @@ void ATest_LaserEmitter::Tick(float DeltaTime)
 
 void ATest_LaserEmitter::ToggleLaser()
 {
+	if (!IsValid(Laser))
+	{
+		return;
+	}
+
 	if (Laser->IsLaserActive())
 	{
 		Laser->StopLaser();
@@ -89,6 +102,11 @@ void ATest_LaserEmitter::ToggleLaser()
 
 void ATest_LaserEmitter::Retarget()
 {
+	if (!IsValid(Laser))
+	{
+		return;
+	}
+
 	if (AActor* Target = GetTargetActor())
 	{
 		Laser->StartLaserAtActor(Target);
@@ -96,7 +114,7 @@ void ATest_LaserEmitter::Retarget()
 	else
 	{
 		// 목표가 없으면 발사기 정면
-		Laser->StartLaser(Laser->GetComponentLocation() + GetActorForwardVector() * 100.f);
+		Laser->StartLaserForward();
 	}
 }
 
@@ -116,7 +134,7 @@ AActor* ATest_LaserEmitter::GetTargetActor() const
 	return PlayerController ? PlayerController->GetPawn() : nullptr;
 }
 
-void ATest_LaserEmitter::HandleLaserDamaged(UBossLaserComponent* InLaser, AActor* DamagedActor, float Damage)
+void ATest_LaserEmitter::HandleLaserDamaged(ULaserBeamComponent* InLaser, AActor* DamagedActor, float Damage)
 {
 	TotalDamage += Damage;
 }
