@@ -228,7 +228,7 @@ void APlayerCharacter::TestRespawn()
 
 void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
 {
-    if (bIsDead || bIsInvincible || Damage <= 0.f)
+    if (bIsDead || bIsInvincible || bIsDodgeInvincible || Damage <= 0.f)
     {
         return;
     }
@@ -402,7 +402,7 @@ void APlayerCharacter::UpdateDodge()
 {
     if (!bIsDodging) return;
 
-    constexpr float DodgeSpeed = 1100.0f;
+    constexpr float DodgeSpeed = 1000.0f;
 
     UCharacterMovementComponent* MoveComp = GetCharacterMovement();
     FVector Velocity = MoveComp->Velocity;

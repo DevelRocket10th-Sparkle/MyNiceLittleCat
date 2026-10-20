@@ -40,10 +40,10 @@ UAbilitySystemComponent* AEnemyCharacter::GetAbilitySystemComponent() const
 
 bool AEnemyCharacter::IsTargetAlive_Implementation() const
 {
-	return LifeState == EEnemyLifeState::Alive;
+	return IsAlive();
 }
 
-// Called when the game starts or when spawned
+// Called when the game starts or when spawnedsa
 void AEnemyCharacter::BeginPlay()
 {
 	Super::BeginPlay();
