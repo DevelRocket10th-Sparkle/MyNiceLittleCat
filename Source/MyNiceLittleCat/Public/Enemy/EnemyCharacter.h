@@ -65,6 +65,10 @@ public:
 	// ITargetable 유효한 타깃인지 체크
 	virtual bool IsTargetAlive_Implementation() const override;
 
+	// 이번 피해로 감소할 Health 계산
+	// 잡몹은 일반 계산, 보스는 페이즈 정책 추가
+	virtual float CalculateHealthAfterDamage(float CurrentHealth, float MaxHealth, float Damage) const;
+
 protected:
 
 	// Called when the game starts or when spawned

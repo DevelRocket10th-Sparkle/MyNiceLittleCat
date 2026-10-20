@@ -43,6 +43,16 @@ bool AEnemyCharacter::IsTargetAlive_Implementation() const
 	return LifeState == EEnemyLifeState::Alive;
 }
 
+float AEnemyCharacter::CalculateHealthAfterDamage(float CurrentHealth, float MaxHealth, float Damage) const
+{
+	if (!IsAlive())
+	{
+		return CurrentHealth;
+	}
+
+	return FMath::Clamp(CurrentHealth - FMath::Max(0.f, Damage), 0.f, MaxHealth);
+}
+
 // Called when the game starts or when spawned
 void AEnemyCharacter::BeginPlay()
 {

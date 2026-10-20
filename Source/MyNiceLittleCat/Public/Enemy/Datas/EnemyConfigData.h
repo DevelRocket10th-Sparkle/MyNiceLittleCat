@@ -1,11 +1,11 @@
 // Fill out your copyright notice in the Description page of Project Settings.
-
-#pragma once
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.15.
-* 몬스터의 능력치(Attributes) 
+* Enemy 능력치(Attributes)
 */
+
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"

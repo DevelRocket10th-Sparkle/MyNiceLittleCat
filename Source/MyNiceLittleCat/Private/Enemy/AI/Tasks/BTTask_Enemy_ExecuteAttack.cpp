@@ -102,6 +102,9 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeCompon
 void UBTTask_Enemy_ExecuteAttack::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
 {
 	Super::TickTask(OwnerComp, NodeMemory, DeltaSeconds);
+
+	if (!bAttackEnded)
+		return;
 	
 	if (!CachedASC.IsValid())
 	{
@@ -144,7 +147,7 @@ void UBTTask_Enemy_ExecuteAttack::Cleanup(bool bCancelAttack)
 		ASC->OnAbilityEnded.Remove(AbilityEndedDelegateHandle);
 
 		// Ability 취소
-		if (bCancelAttack && bOwnsAttack && bAttackEnded)
+		if (bCancelAttack && bOwnsAttack && !bAttackEnded)
 		{
 			ASC->CancelAbilityHandle(AttackHandle);
 		}

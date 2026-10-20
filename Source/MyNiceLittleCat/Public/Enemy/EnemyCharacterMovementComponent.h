@@ -1,4 +1,10 @@
 // Fill out your copyright notice in the Description page of Project Settings.
+/*
+* 작성자: 전선현
+* 작성 일자: 2026.10.19.
+* 비행형 몬스터의 루트 모션 관련 회전 문제 처리를 위해
+* 캐릭터 무브먼트 컴포넌트를 상속하여 일부 함수 오버라이드 구현
+*/
 
 #pragma once
 
