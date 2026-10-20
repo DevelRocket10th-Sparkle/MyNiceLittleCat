@@ -173,8 +173,19 @@ void UBossLaserComponent::ApplyLaserDamage()
 	// TODO(합의): 플레이어가 TakeDamage를 처리하게 되면 아래 ApplyDamage로 통일
 	if (APlayerCharacter* Player = Cast<APlayerCharacter>(Target))
 	{
-		// 피해·경직·무적은 플레이어 쪽에서 처리 (무적 중이면 무시됨), 빔 방향으로 밀림
-		Player->ApplyPlayerHit(DamagePerHit, FireDirection);
+		// 빔 방향(수평)의 오른쪽 수직 벡터: Up × Forward
+		const FVector BeamDir = FireDirection.GetSafeNormal2D();
+		FVector PushDir = FVector::CrossProduct(FVector::UpVector, BeamDir);
+
+		// 플레이어가 빔 중심선의 왼쪽에 있으면 왼쪽으로 (빔 방향으로 밀면 계속 맞으므로 빔 밖으로 밀어냄)
+		const FVector ToPlayer = Player->GetActorLocation() - BeamStart;
+		if (FVector::DotProduct(ToPlayer, PushDir) < 0.f)
+		{
+			PushDir = -PushDir;
+		}
+
+		// 피해·경직·무적은 플레이어 쪽에서 처리 (무적 중이면 무시됨), 빔 옆으로 밀림
+		Player->ApplyPlayerHit(DamagePerHit, PushDir);
 		OnLaserDamaged.Broadcast(this, Target, DamagePerHit);
 		return;
 	}

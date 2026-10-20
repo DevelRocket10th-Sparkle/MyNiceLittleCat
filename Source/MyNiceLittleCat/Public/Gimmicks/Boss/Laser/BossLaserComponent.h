@@ -6,7 +6,7 @@
 /// 발사 방향은 StartLaser 시점의 목표 지점 방향이며(bPlanarAim이면 수평), 발사 중 SetTargetLocation·SetFireDirection으로 바꿀 수 있습니다.
 /// 켜져 있는 동안 매 틱 발사 위치에서 MaxRange까지 트레이스하고, 처음 막힌 액터에
 /// 닿은 즉시 한 번, 계속 닿아 있으면 DamageInterval마다 DamagePerHit 만큼 피해를 줍니다.
-/// - 플레이어(APlayerCharacter): ApplyPlayerHit 직접 호출 (피해·경직·무적, 빔 방향으로 밀림)
+/// - 플레이어(APlayerCharacter): ApplyPlayerHit 직접 호출 (피해·경직·무적, 빔 옆으로 밀림: 플레이어가 있는 쪽의 수직 방향)
 /// - 그 외 액터: ApplyDamage(DamageTypeClass, 기본 UDamageType_BossLaser)
 /// 연출: 빔 시작·끝·맞은 액터를 GetBeamStart/GetBeamEnd/GetHitActor로 조회 (BP 빔 연출용). 프로토타입은 bDrawDebugBeam 디버그 라인으로 표시합니다.
 /// 반사판 반사는 담당자 별도 작업 (이 컴포넌트는 직선 빔만 처리)
