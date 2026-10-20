@@ -5,11 +5,13 @@
 /// 보스의 발사 위치(소켓)에 붙이고, 보스 공격 GA가 StartLaser / SetTargetLocation / StopLaser로 조작합니다.
 /// 발사 방향은 StartLaser 시점의 목표 지점 방향이며(bPlanarAim이면 수평), 발사 중 SetTargetLocation·SetFireDirection으로 바꿀 수 있습니다.
 /// 켜져 있는 동안 매 틱 발사 위치에서 MaxRange까지 트레이스하고, 처음 막힌 액터에
-/// DamageInterval마다 DamagePerSecond × DamageInterval 만큼 ApplyDamage(DamageTypeClass, 기본 UDamageType_BossLaser) 합니다.
+/// 닿은 즉시 한 번, 계속 닿아 있으면 DamageInterval마다 DamagePerHit 만큼 피해를 줍니다.
+/// - 플레이어(APlayerCharacter): ApplyPlayerHit 직접 호출 (피해·경직·무적, 빔 방향으로 밀림)
+/// - 그 외 액터: ApplyDamage(DamageTypeClass, 기본 UDamageType_BossLaser)
 /// 연출: 빔 시작·끝·맞은 액터를 GetBeamStart/GetBeamEnd/GetHitActor로 조회 (BP 빔 연출용). 프로토타입은 bDrawDebugBeam 디버그 라인으로 표시합니다.
 /// 반사판 반사는 담당자 별도 작업 (이 컴포넌트는 직선 빔만 처리)
 /// TODO(합의): 보스 GA에서 호출하는 방식(예고·추적 등)은 보스 담당과 확정 필요
-/// TODO(합의): 플레이어 피해는 ApplyDamage 호출까지 (GAS HP 반영은 플레이어 담당)
+/// TODO(합의): 플레이어가 TakeDamage → ApplyPlayerHit를 처리하게 되면 플레이어도 ApplyDamage로 통일 (지금은 직접 호출)
 
 #pragma once
 
@@ -76,7 +78,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "BossLaser")
 	FOnBossLaserStateChanged OnLaserStopped;
 
-	// 맞은 액터가 실제로 피해를 받았을 때 (피해량 0 초과)
+	// 맞은 액터에 피해를 줬을 때 (플레이어는 무적이면 실제 피해 없이 무시될 수 있음)
 	UPROPERTY(BlueprintAssignable, Category = "BossLaser")
 	FOnBossLaserDamaged OnLaserDamaged;
 
@@ -87,7 +89,7 @@ protected:
 	void UpdateBeam();
 
 	// 빔에 막힌 액터에 피해
-	void ApplyLaserDamage(float DeltaTime);
+	void ApplyLaserDamage();
 
 	void DrawDebugBeam() const;
 
@@ -115,13 +117,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Trace")
 	TArray<TEnumAsByte<EObjectTypeQuery>> TraceObjectTypes;
 
-	// 초당 피해량
+	// 한 번 맞을 때 피해량
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Damage", meta = (ClampMin = "0.0"))
-	float DamagePerSecond = 20.f;
+	float DamagePerHit = 1.f;
 
-	// 피해를 주는 간격 (한 번에 DamagePerSecond × DamageInterval)
+	// 계속 닿아 있을 때 다시 피해를 주는 간격 (기본 1초에 1)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Damage", meta = (ClampMin = "0.05", Units = "s"))
-	float DamageInterval = 0.2f;
+	float DamageInterval = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Damage")
 	TSubclassOf<UDamageType> DamageTypeClass;
@@ -147,5 +149,8 @@ private:
 	// 0 이하면 시간 제한 없음
 	float RemainingTime = 0.f;
 
-	float DamageTimer = 0.f;
+	// 마지막으로 피해를 준 대상과 시각 (대상이 바뀌거나 음수면 닿는 즉시 피해)
+	TWeakObjectPtr<AActor> LastDamagedActor;
+
+	float LastDamageTime = -1.f;
 };

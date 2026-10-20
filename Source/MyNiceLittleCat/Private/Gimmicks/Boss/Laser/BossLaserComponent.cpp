@@ -5,6 +5,7 @@
 
 #include "Gimmicks/Boss/Laser/BossLaserComponent.h"
 #include "Gimmicks/Boss/DamageTypes/DamageType_BossLaser.h"
+#include "Characters/PlayerCharacter.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
@@ -35,7 +36,8 @@ void UBossLaserComponent::StartLaser(const FVector& TargetLocation, float Durati
 	SetTargetLocation(TargetLocation);
 
 	RemainingTime = Duration > 0.f ? Duration : LaserDuration;
-	DamageTimer = 0.f;
+	LastDamagedActor.Reset();
+	LastDamageTime = -1.f;
 
 	const bool bWasActive = bLaserActive;
 	bLaserActive = true;
@@ -101,7 +103,7 @@ void UBossLaserComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	// 보스나 막는 물체가 움직이면 끝 지점이 바뀌므로 매 틱 다시 계산
 	UpdateBeam();
-	ApplyLaserDamage(DeltaTime);
+	ApplyLaserDamage();
 
 	if (bDrawDebugBeam)
 	{
@@ -150,18 +152,30 @@ void UBossLaserComponent::UpdateBeam()
 	}
 }
 
-void UBossLaserComponent::ApplyLaserDamage(float DeltaTime)
+void UBossLaserComponent::ApplyLaserDamage()
 {
-	DamageTimer += DeltaTime;
-	if (DamageTimer < DamageInterval)
+	AActor* Target = HitActor.Get();
+	if (!IsValid(Target) || !IsActorOfClasses(Target, DamageTargetClasses) || DamagePerHit <= 0.f)
 	{
 		return;
 	}
-	DamageTimer -= DamageInterval;
 
-	AActor* Target = HitActor.Get();
-	if (!IsValid(Target) || !IsActorOfClasses(Target, DamageTargetClasses) || DamagePerSecond <= 0.f)
+	// 새 대상은 닿은 즉시 한 번, 같은 대상에 계속 닿아 있으면 DamageInterval마다
+	const float Now = GetWorld()->GetTimeSeconds();
+	const bool bSameTarget = LastDamagedActor.Get() == Target;
+	if (bSameTarget && LastDamageTime >= 0.f && Now - LastDamageTime < DamageInterval)
 	{
+		return;
+	}
+	LastDamageTime = Now;
+	LastDamagedActor = Target;
+
+	// TODO(합의): 플레이어가 TakeDamage를 처리하게 되면 아래 ApplyDamage로 통일
+	if (APlayerCharacter* Player = Cast<APlayerCharacter>(Target))
+	{
+		// 피해·경직·무적은 플레이어 쪽에서 처리 (무적 중이면 무시됨), 빔 방향으로 밀림
+		Player->ApplyPlayerHit(DamagePerHit, FireDirection);
+		OnLaserDamaged.Broadcast(this, Target, DamagePerHit);
 		return;
 	}
 
@@ -169,8 +183,7 @@ void UBossLaserComponent::ApplyLaserDamage(float DeltaTime)
 	const APawn* OwnerPawn = Cast<APawn>(OwnerActor);
 	AController* InstigatorController = OwnerPawn ? OwnerPawn->GetController() : nullptr;
 
-	const float Damage = DamagePerSecond * DamageInterval;
-	const float AppliedDamage = UGameplayStatics::ApplyDamage(Target, Damage, InstigatorController, OwnerActor, DamageTypeClass);
+	const float AppliedDamage = UGameplayStatics::ApplyDamage(Target, DamagePerHit, InstigatorController, OwnerActor, DamageTypeClass);
 	if (AppliedDamage > 0.f)
 	{
 		OnLaserDamaged.Broadcast(this, Target, AppliedDamage);
