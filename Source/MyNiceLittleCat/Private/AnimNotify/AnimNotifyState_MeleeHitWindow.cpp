@@ -152,7 +152,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
 
         const FGameplayTag DamageTag =FGameplayTag::RequestGameplayTag(FName("Data.Damage"));
 
-        UE_LOG(LogTemp, Warning, TEXT("[MeleeHit] �ǰ�: %s"), *Target->GetName());
+        UE_LOG(LogTemp, Warning, TEXT("[MeleeHit] 피격: %s"), *Target->GetName());
 
         SpecHandle.Data->SetSetByCallerMagnitude(
             DamageTag,
@@ -163,7 +163,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
             *SpecHandle.Data.Get()
         );
 
-        // ī�޶� ����ũ
+        // 카메라 셰이크
         if (APlayerCharacter* Player = Cast<APlayerCharacter>(Attacker))
         {
             if (APlayerController* PC =
@@ -175,8 +175,8 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
                 );
             }
         }
-        // ��Ʈ ����
-        ApplyMontageHitStop(Attacker, 0.2f);
+        // 히트 스톱
+        ApplyMontageHitStop(Attacker, 0.15f);
         //ApplyMontageHitStop(Target, 0.1f);
     }
 }
