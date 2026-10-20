@@ -5,7 +5,8 @@
 /// 물리 메시 + UMagneticComponent로 구성되어 펫 자석 능력에 끌리거나 밀립니다.
 /// 상태: Falling(낙하) → Landed(착지) ⇄ Held(잡힘) → Thrown(던져짐) → Landed
 /// - Falling: StartFall로 시작. 물리·자력 없이 착지 지점까지 직선으로 떨어지고, 극성 색은 표시합니다.
-///            떨어지는 코인에 플레이어(FallDamageTargetClasses)가 닿으면 낙하 피해(UDamageType_MagneticCoinFall)를 한 번 줍니다.
+///            떨어지는 코인에 플레이어(FallDamageTargetClasses)가 닿으면 낙하 피해를 한 번 줍니다.
+///            플레이어는 ApplyPlayerHit 직접 호출(피해·경직·무적), 그 외 액터는 ApplyDamage(UDamageType_MagneticCoinFall).
 /// - Landed:  물리·자력을 켭니다. 자력을 받은 직후(MagneticForceGraceTime 이내) MinImpactSpeed 이상으로
 ///            DamageTargetClasses(기본 ABarrierGenerator)에 부딪히면 UDamageType_MagneticCoin 피해를 줍니다.
 /// - Held:    착지한 코인의 물리를 외부(펫 자석 능력의 잡기)가 끄면 잡힌 것으로 봅니다.
@@ -141,9 +142,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Fall")
 	TArray<TEnumAsByte<EObjectTypeQuery>> GroundObjectTypes;
 
-	// 낙하 중 닿은 대상에게 주는 피해량
+	// 낙하 중 닿은 대상에게 주는 피해량 (플레이어 기본 체력 3 기준 1)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Fall", meta = (ClampMin = "0.0"))
-	float FallDamage = 10.f;
+	float FallDamage = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Fall")
 	TSubclassOf<UDamageType> FallDamageTypeClass;
