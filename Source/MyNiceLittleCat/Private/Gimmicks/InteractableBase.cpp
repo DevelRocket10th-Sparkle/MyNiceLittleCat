@@ -58,7 +58,8 @@ void AInteractableBase::OnFocusBegin_Implementation(AActor* InteractInstigator)
 
 void AInteractableBase::OnFocusEnd_Implementation(AActor* InteractInstigator)
 {
-	if (Mesh)
+	// 포커스 하이라이트를 쓸 때만 끔 (다른 용도로 켠 커스텀 뎁스는 건드리지 않음)
+	if (bHighlightOnFocus && Mesh)
 	{
 		Mesh->SetRenderCustomDepth(false);
 	}
