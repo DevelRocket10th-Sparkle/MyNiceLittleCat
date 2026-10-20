@@ -16,6 +16,7 @@
 #include "GameplayTagContainer.h"
 #include "Components/CapsuleComponent.h"
 
+#include "Characters/Datas/PlayerConfig.h"
 #include "Characters/GAS/PlayerAttributeSet.h"
 #include "Characters/GAS/GA_MeleeAttack.h"
 #include "Characters/PlayerComponents/LockOnComponent.h"
@@ -85,6 +86,7 @@ void APlayerCharacter::BeginPlay()
     if (AbilitySystemComponent)
     {
         AbilitySystemComponent->InitAbilityActorInfo(this, this);
+        ApplyStatData();
         AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
             UPlayerAttributeSet::GetHealthAttribute())
             .AddUObject(
@@ -522,6 +524,17 @@ void APlayerCharacter::Die()
     // 몽타주가 없거나 재생에 실패한 경우
     OnDeathMontageEnded(nullptr, false);
     
+}
+
+void APlayerCharacter::ApplyStatData()
+{
+    if (!StatData || !AbilitySystemComponent) return;
+
+    AbilitySystemComponent->SetNumericAttributeBase(UPlayerAttributeSet::GetMaxHealthAttribute(), StatData->MaxHealth);
+    AbilitySystemComponent->SetNumericAttributeBase(UPlayerAttributeSet::GetHealthAttribute(), StatData->MaxHealth);
+    AbilitySystemComponent->SetNumericAttributeBase(UPlayerAttributeSet::GetAttackPowerAttribute(), StatData->AttackPower);
+
+    GetCharacterMovement()->MaxWalkSpeed = StatData->MoveSpeed;
 }
 
 void APlayerCharacter::OnDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted)

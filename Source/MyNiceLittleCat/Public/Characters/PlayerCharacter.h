@@ -20,6 +20,7 @@ class UAnimMontage;
 class UStaticMeshComponent;
 class UPlayerAttributeSet;
 class UGA_MeleeAttack;
+class UPlayerConfig;
 struct FInputActionValue;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPlayerDied);
@@ -87,6 +88,9 @@ protected:
 	void OnHealthChanged(const FOnAttributeChangeData& Data);
 	// 사망
 	void Die();
+
+	// PlayerConfig 값을 어트리뷰트에 적용하는 함수
+	void ApplyStatData();
 
 	UFUNCTION()
 	void OnDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted);
@@ -170,6 +174,9 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UPlayerAttributeSet> PlayerAttributeSet;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Stats")
+	TObjectPtr<UPlayerConfig> StatData;
 
 	UPROPERTY(EditDefaultsOnly, Category = "GAS")
 	TSubclassOf<UGA_MeleeAttack> MeleeAttackAbilityClass;
