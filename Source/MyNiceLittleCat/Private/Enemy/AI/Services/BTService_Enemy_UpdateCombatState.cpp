@@ -10,6 +10,7 @@
 
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/Datas/EnemyConfigData.h"
+#include "Enemy/Components/EnemyPatternComponent.h"
 
 namespace EnemyCombatKeys
 {
@@ -86,11 +87,13 @@ void UBTService_Enemy_UpdateCombatState::UpdateCombatState(UBehaviorTreeComponen
 		// Actor 중심 사이의 수평 거리 기준
 		const float DistanceSqaured = FVector::DistSquared2D(Enemy->GetActorLocation(), Target->GetActorLocation());
 
-		bInAttackRange = DistanceSqaured <= FMath::Square(Config->AttackRange);
+		bInAttackRange = Enemy->GetPatternComponent()->HasPatterns()
+			? Enemy->GetPatternComponent()->HasPatternInRange(Target)
+			: DistanceSqaured <= FMath::Square(Config->AttackRange);
 
 		bHasLineOfSight = AI->LineOfSightTo(Target);
 		
-		UE_LOG(LogTemp, Log, TEXT("[%s] Target Distance Squared: %.1f"), *Enemy->GetName(), DistanceSqaured);
+		//UE_LOG(LogTemp, Log, TEXT("[%s] Target Distance Squared: %.1f"), *Enemy->GetName(), DistanceSqaured);
 	}
 
 	// Blackboard 값 설정: 참조한 값들이 nullptr이든 말든 Blackboard 값 업데이트는 해줘야 함

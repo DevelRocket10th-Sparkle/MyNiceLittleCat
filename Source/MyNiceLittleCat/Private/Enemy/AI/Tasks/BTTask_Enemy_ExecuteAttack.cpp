@@ -11,6 +11,7 @@
 #include "BehaviorTree/BlackboardComponent.h"
 
 #include "Enemy/EnemyCharacter.h"
+#include "Enemy/Components/EnemyPatternComponent.h"
 
 UBTTask_Enemy_ExecuteAttack::UBTTask_Enemy_ExecuteAttack()
 {
@@ -33,6 +34,7 @@ UBTTask_Enemy_ExecuteAttack::UBTTask_Enemy_ExecuteAttack()
 	);
 }
 
+// Task 시작 시 행동을 요청하고 비동기 완료까지 InProgress 반환
 EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeComponent & OwnerComp, uint8 * NodeMemory)
 {
 	// AI Controller
@@ -45,7 +47,7 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeCompon
 		IsValid(AI)
 		? Cast<AEnemyCharacter>(AI->GetPawn())
 		: nullptr;
-	if (!IsValid(Enemy))
+	if (!IsValid(Enemy) || !Enemy->CanRunEnemyAI())
 		return EBTNodeResult::Failed;
 
 	// Blackboard
@@ -55,6 +57,17 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeCompon
 
 	// Target Actor
 	AActor* Target = Cast<AActor>(Blackboard->GetValueAsObject(BlackboardKey.SelectedKeyName));
+	// 새 패턴은 타깃이 없어도 실행 조건을 만족할 수 있으므로 컴포넌트에서 판단
+	if (Enemy->GetPatternComponent()->HasPatterns())
+	{
+		CachedPattern = Enemy->GetPatternComponent();
+		// 이 Task에서 새 공격을 시작했는지 기록
+		const bool bStarted = PatternId.IsNone()
+			? CachedPattern->TryStartAttack(Target, PatternRequestId)
+			: CachedPattern->TryStartPattern(PatternId, Target, PatternRequestId);
+		if (!bStarted) { CachedPattern.Reset(); return EBTNodeResult::Failed; }
+		return EBTNodeResult::InProgress;
+	}
 	if (!IsValid(Target) || Target == Enemy)
 		return EBTNodeResult::Failed;
 
@@ -99,9 +112,26 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeCompon
 	return EBTNodeResult::InProgress;
 }
 
+// 요청의 종료 결과를 확인하여 BT Task 완료
 void UBTTask_Enemy_ExecuteAttack::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
 {
 	Super::TickTask(OwnerComp, NodeMemory, DeltaSeconds);
+	if (PatternRequestId != 0)
+	{
+		// 종료된 결과는 정리 전에 보관: 정리 후에는 Invalid가 됨
+		const EEnemyPatternResult PatternResult = CachedPattern.IsValid()
+			? CachedPattern->GetRequestResult(PatternRequestId) : EEnemyPatternResult::Invalid;
+		if (PatternResult == EEnemyPatternResult::Running) return;
+		Cleanup(false);
+		FinishLatentTask(OwnerComp, PatternResult == EEnemyPatternResult::Completed
+			? EBTNodeResult::Succeeded : EBTNodeResult::Failed);
+		return;
+	}
+	// 기존 테스트 경로에서도 ASC가 제거되면 대기를 종료
+	if (!CachedASC.IsValid()) { Cleanup(false); FinishLatentTask(OwnerComp, EBTNodeResult::Failed); return; }
+
+	if (!bAttackEnded)
+		return;
 	
 	if (!CachedASC.IsValid())
 	{
@@ -110,6 +140,7 @@ void UBTTask_Enemy_ExecuteAttack::TickTask(UBehaviorTreeComponent& OwnerComp, ui
 		return;
 	}
 	
+	// 정리 전에 보관한 실행 결과
 	const EBTNodeResult::Type Result =
 		bAttackCancelled
 		? EBTNodeResult::Failed
@@ -119,6 +150,7 @@ void UBTTask_Enemy_ExecuteAttack::TickTask(UBehaviorTreeComponent& OwnerComp, ui
 	FinishLatentTask(OwnerComp, Result);
 }
 
+// Task 완료 및 중단 모두 실행 참조와 요청 번호 정리
 void UBTTask_Enemy_ExecuteAttack::OnTaskFinished(UBehaviorTreeComponent & OwnerComp, uint8 * NodeMemory, EBTNodeResult::Type TaskResult)
 {
 	Cleanup(true);
@@ -126,6 +158,7 @@ void UBTTask_Enemy_ExecuteAttack::OnTaskFinished(UBehaviorTreeComponent & OwnerC
 	Super::OnTaskFinished(OwnerComp, NodeMemory, TaskResult);
 }
 
+// 현재 능력의 종료 이벤트만 받아 완료 또는 취소 기록
 void UBTTask_Enemy_ExecuteAttack::HandleAbilityEnded(const FAbilityEndedData & EndedData)
 {
 	// 다른 Ability의 종료 이벤트 무시
@@ -136,15 +169,19 @@ void UBTTask_Enemy_ExecuteAttack::HandleAbilityEnded(const FAbilityEndedData & E
 	bAttackCancelled = EndedData.bWasCancelled;
 }
 
+// 이 Task가 소유한 공격 및 이벤트 구독 정리
 void UBTTask_Enemy_ExecuteAttack::Cleanup(bool bCancelAttack)
 {
+	if (CachedPattern.IsValid()) CachedPattern->ReleaseRequest(PatternRequestId);
+	CachedPattern.Reset();
+	PatternRequestId = 0;
 	if (UAbilitySystemComponent* ASC = CachedASC.Get())
 	{
 		// Ability 취소 시 종료 이벤트 발생하기 때문에 종료 이벤트 구독 해제
 		ASC->OnAbilityEnded.Remove(AbilityEndedDelegateHandle);
 
 		// Ability 취소
-		if (bCancelAttack && bOwnsAttack && bAttackEnded)
+		if (bCancelAttack && bOwnsAttack && !bAttackEnded)
 		{
 			ASC->CancelAbilityHandle(AttackHandle);
 		}
@@ -160,4 +197,11 @@ void UBTTask_Enemy_ExecuteAttack::Cleanup(bool bCancelAttack)
 	bAttackEnded = false;
 	bAttackCancelled = false;
 	
+}
+
+// 브랜치 중단 시 이 Task가 시작한 요청만 취소
+EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
+{
+	Cleanup(true);
+	return EBTNodeResult::Aborted;
 }

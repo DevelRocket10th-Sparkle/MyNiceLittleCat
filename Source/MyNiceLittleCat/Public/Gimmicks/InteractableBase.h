@@ -92,8 +92,10 @@ protected:
 	TArray<TObjectPtr<AActor>> LinkedActors;
 
 	// 포커스 시 메시에 커스텀 뎁스 켜기 (외곽선 포스트프로세스용)
+	// 기본 꺼짐: 외곽선 머티리얼이 아직 없고, 켜면 플레이어 실루엣 PP(커스텀 뎁스 사용)가 이 기믹 뒤에서 가려짐
+	// TODO: 포커스 표시가 필요해지면 커스텀 뎁스 대신 Overlay Material 방식 검토 (실루엣과 충돌 없음)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Focus")
-	bool bHighlightOnFocus = true;
+	bool bHighlightOnFocus = false;
 
 	// 상호작용 전 캐릭터 정렬 방식
 	// SnapToPoint: InteractionPoint 컴포넌트 중 가장 가까운 지점으로 이동,

@@ -5,9 +5,13 @@
 
 #include "Gimmicks/Checkpoint/Checkpoint.h"
 #include "Frameworks/Save/GameProgressSubsystem.h"
+#include "Frameworks/Transition/ScreenTransitionSubsystem.h"
 #include "Components/ArrowComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 
 ACheckpoint::ACheckpoint()
 {
@@ -59,12 +63,55 @@ void ACheckpoint::Interact_Implementation(AActor* InteractInstigator)
 	// 등록하면 OnCheckpointChanged로 이 체크포인트는 켜지고 이전 체크포인트는 꺼짐
 	Progress->SetCheckpoint(this, GetCheckpointId(), GetRespawnTransform(), bSaveOnInteract);
 	K2_OnCheckpointInteracted(InteractInstigator);
+
+	if (bPlayRestTransition)
+	{
+		PlayRestTransition(InteractInstigator);
+	}
+}
+
+void ACheckpoint::PlayRestTransition(AActor* InteractInstigator)
+{
+	const APawn* InstigatorPawn = Cast<APawn>(InteractInstigator);
+	APlayerController* PlayerController = InstigatorPawn ? Cast<APlayerController>(InstigatorPawn->GetController()) : nullptr;
+	UScreenTransitionSubsystem* Transition = GetWorld()->GetSubsystem<UScreenTransitionSubsystem>();
+	if (!PlayerController || !Transition)
+	{
+		return;
+	}
+
+	// 연출 도중 체크포인트나 플레이어가 사라질 수 있어 약한 참조로 넘김
+	TWeakObjectPtr<ACheckpoint> WeakThis(this);
+	TWeakObjectPtr<AActor> WeakInstigator(InteractInstigator);
+
+	Transition->PlayTransition(PlayerController, RestTransition,
+		[WeakThis, WeakInstigator]()
+		{
+			if (ACheckpoint* Checkpoint = WeakThis.Get())
+			{
+				Checkpoint->K2_OnRestScreenDark(WeakInstigator.Get());
+			}
+		},
+		[WeakThis, WeakInstigator]()
+		{
+			if (ACheckpoint* Checkpoint = WeakThis.Get())
+			{
+				Checkpoint->K2_OnRestFinished(WeakInstigator.Get());
+			}
+		});
 }
 
 bool ACheckpoint::CanInteract_Implementation(AActor* InteractInstigator) const
 {
 	// 활성 상태와 관계없이 다시 저장할 수 있게 토글 규칙은 쓰지 않음
-	return IsInteractionEnabled();
+	if (!IsInteractionEnabled())
+	{
+		return false;
+	}
+
+	// 휴식 연출 등 화면 전환 중에는 다시 상호작용하지 않음
+	const UScreenTransitionSubsystem* Transition = GetWorld() ? GetWorld()->GetSubsystem<UScreenTransitionSubsystem>() : nullptr;
+	return !Transition || !Transition->IsTransitionPlaying();
 }
 
 void ACheckpoint::HandleCheckpointChanged(FName NewCheckpointId)

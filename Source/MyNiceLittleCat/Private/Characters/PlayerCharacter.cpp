@@ -16,6 +16,7 @@
 #include "GameplayTagContainer.h"
 #include "Components/CapsuleComponent.h"
 
+#include "Characters/Datas/PlayerConfig.h"
 #include "Characters/GAS/PlayerAttributeSet.h"
 #include "Characters/GAS/GA_MeleeAttack.h"
 #include "Characters/PlayerComponents/LockOnComponent.h"
@@ -56,6 +57,11 @@ APlayerCharacter::APlayerCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
+    // 무기 메쉬
+    WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMesh"));
+    WeaponMesh->SetupAttachment(GetMesh(), TEXT("R_Hand_Socket"));
+    WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
     // 락온 컴포넌트
     LockOnComponent = CreateDefaultSubobject<ULockOnComponent>(TEXT("LockOnComponent"));
 
@@ -85,6 +91,7 @@ void APlayerCharacter::BeginPlay()
     if (AbilitySystemComponent)
     {
         AbilitySystemComponent->InitAbilityActorInfo(this, this);
+        ApplyStatData();
         AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
             UPlayerAttributeSet::GetHealthAttribute())
             .AddUObject(
@@ -267,11 +274,8 @@ void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
     ASC->ApplyGameplayEffectSpecToSelf(
         *SpecHandle.Data.Get());
 
-    // This hit killed the player: Die() already played DeathMontage, so skip hit reaction (it would stop the montage)
-    if (bIsDead)
-    {
-        return;
-    }
+    // 이미 죽었다면 중복 호출 방지
+    if (bIsDead) return;
 
     bIsInvincible = true;
 
@@ -496,6 +500,7 @@ void APlayerCharacter::Die()
 
     if (AnimInstance)
     {
+        AnimInstance->OnPlayMontageNotifyBegin.AddUniqueDynamic(this, &APlayerCharacter::OnDeathMontageNotify);
         AnimInstance->StopAllMontages(0.0f);
 
         if (DeathMontage)
@@ -522,6 +527,17 @@ void APlayerCharacter::Die()
     // 몽타주가 없거나 재생에 실패한 경우
     OnDeathMontageEnded(nullptr, false);
     
+}
+
+void APlayerCharacter::ApplyStatData()
+{
+    if (!StatData || !AbilitySystemComponent) return;
+
+    AbilitySystemComponent->SetNumericAttributeBase(UPlayerAttributeSet::GetMaxHealthAttribute(), StatData->MaxHealth);
+    AbilitySystemComponent->SetNumericAttributeBase(UPlayerAttributeSet::GetHealthAttribute(), StatData->MaxHealth);
+    AbilitySystemComponent->SetNumericAttributeBase(UPlayerAttributeSet::GetAttackPowerAttribute(), StatData->AttackPower);
+
+    GetCharacterMovement()->MaxWalkSpeed = StatData->MoveSpeed;
 }
 
 void APlayerCharacter::OnDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted)
@@ -612,4 +628,22 @@ void APlayerCharacter::EndInvincibility()
     bIsAbleToMove = true;
     //UE_LOG(LogTemp, Warning,
     //    TEXT("[HitReaction] 무적 시간 종료"));
+}
+
+void APlayerCharacter::DropWeapon()
+{
+    if (WeaponMesh)
+    {
+        WeaponMesh->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+        WeaponMesh->SetCollisionProfileName(TEXT("PhysicsActor"));
+        WeaponMesh->SetSimulatePhysics(true);
+    }
+}
+
+void APlayerCharacter::OnDeathMontageNotify(FName NotifyName, const FBranchingPointNotifyPayload& Payload)
+{
+    if (NotifyName == TEXT("DropWeapon"))
+    {
+        DropWeapon();
+    }
 }
