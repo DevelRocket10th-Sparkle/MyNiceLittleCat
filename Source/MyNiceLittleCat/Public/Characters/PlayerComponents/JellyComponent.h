@@ -36,6 +36,9 @@ private:
 	void OnHealthChanged(const FOnAttributeChangeData& Data);
 	void StopJelly();
 
+	void StartFlash();
+	void EndFlash();
+
 protected:
 	// 이 attribute가 감소하면 출렁임 시작
 	UPROPERTY(EditAnywhere, Category = "Jelly")
@@ -50,6 +53,16 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Jelly")
 	float Damping = 7.f;
 
+	UPROPERTY(EditAnywhere, Category = "Jelly|Flash")
+	TObjectPtr<UMaterialInterface> FlashMaterial;
+
+	UPROPERTY(EditAnywhere, Category = "Jelly|Flash", meta = (ClampMin = "0.01"))
+	float FlashDuration = 0.1f;
+
+	FTimerHandle FlashTimer;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> OriginalOverlay;
 
 	UPROPERTY()
 	TObjectPtr<USkeletalMeshComponent> Mesh;
