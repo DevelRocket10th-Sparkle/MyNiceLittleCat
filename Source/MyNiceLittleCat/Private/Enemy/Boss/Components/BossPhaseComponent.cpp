@@ -76,8 +76,9 @@ bool UBossPhaseComponent::StartPhases()
 	CurrentPhaseIndex = 0;
 	// 설정 적용 중에는 피해가 허용되지 않도록 Active 전환을 나중에 수행
 	RunState = EBossPhaseRunState::Transitioning;
-	if (!IsCurrentPhaseLogOnly() && !ApplyPhase.Execute(Config->Phases[0])) { StopAndInvalidate(); return false; }
+	if (!ApplyCurrentPhase()) { StopAndInvalidate(); return false; }
 	RunState = EBossPhaseRunState::Active;
+	if (bPendingGimmickCompletion) RequestNextPhase();
 	return true;
 }
 
@@ -98,7 +99,19 @@ float UBossPhaseComponent::GetDamageHealthFloor(float MaxHealth) const
 {
 	// 배리어에서는 체력 하한 대신 BossCharacter의 피해 차단을 사용
 	const FBossPhaseDefinition* Phase = GetCurrentPhase();
-	return Phase && !IsCurrentPhaseLogOnly() ? Phase->HealthFloorRatio * MaxHealth : 0.f;
+	if (!Phase || IsCurrentPhaseLogOnly()) return 0.f;
+	// 배리어는 자체 비율 대신 직전 전투의 체력 하한을 유지하여 피해로 진행되지 않게 함
+	if (Phase->Kind == EBossPhaseKind::Barrier)
+	{
+		for (int32 Index = CurrentPhaseIndex - 1; Index >= 0; --Index)
+		{
+			const FBossPhaseDefinition& PreviousPhase = Config->Phases[Index];
+			if (!Config->IsLogOnlyPhase(Index) && PreviousPhase.Kind == EBossPhaseKind::Combat)
+				return PreviousPhase.HealthFloorRatio * MaxHealth;
+		}
+		return 0.f;
+	}
+	return Phase->HealthFloorRatio * MaxHealth;
 }
 
 // 현재 전투 페이즈의 하한 체력 도달 여부 확인
@@ -106,7 +119,7 @@ void UBossPhaseComponent::EvaluateHealth(float Health, float MaxHealth)
 {
 	// 현재 활성 전투 페이즈에 대해서만 체력 조건 평가
 	const FBossPhaseDefinition* Phase = GetCurrentPhase();
-	if (IsActive() && Phase && !IsCurrentPhaseLogOnly()
+	if (IsActive() && Phase && !IsCurrentPhaseLogOnly() && Phase->Kind == EBossPhaseKind::Combat
 		&& Phase->HealthFloorRatio > 0.f && Health > 0.f && MaxHealth > 0.f
 		&& Health <= MaxHealth * Phase->HealthFloorRatio) RequestNextPhase();
 }
@@ -117,6 +130,8 @@ void UBossPhaseComponent::EvaluateHealth(float Health, float MaxHealth)
 void UBossPhaseComponent::RequestNextPhase()
 {
 	if (!IsActive() || !Config || !Config->Phases.IsValidIndex(CurrentPhaseIndex + 1)) return;
+	ActivePhaseExecutionId = 0;
+	bPendingGimmickCompletion = false;
 	PendingPhaseIndex = CurrentPhaseIndex + 1;
 	ActiveTransitionId = ++NextTransitionId;
 	TransitionResult = EEnemyPatternResult::Running;
@@ -178,17 +193,21 @@ bool UBossPhaseComponent::CompleteTransition(int64 TransitionId)
 		if (CurrentPhaseIndex == Config->Phases.Num() - 1) break;
 		++CurrentPhaseIndex;
 	}
-	if (!IsCurrentPhaseLogOnly() && !ApplyPhase.Execute(Config->Phases[CurrentPhaseIndex])) return false;
+	if (!ApplyCurrentPhase()) return false;
 	// 기믹 적용 중 정지 요청이 발생했다면 다시 활성화하지 않음
 	if (!IsTransitioning() || ActiveTransitionId != TransitionId) return false;
 	RunState = EBossPhaseRunState::Active;
 	ActiveTransitionId = 0;
+	if (bPendingGimmickCompletion) RequestNextPhase();
 	return true;
 }
 
 // 요청을 먼저 무효화한 뒤 타이머, 구독 및 능력 실행 정리
 void UBossPhaseComponent::StopAndInvalidate()
 {
+	ActivePhaseExecutionId = 0;
+	bApplyingPhase = false;
+	bPendingGimmickCompletion = false;
 	RunState = EBossPhaseRunState::Stopped;
 	ActiveTransitionId = 0;
 	PendingPhaseIndex = INDEX_NONE;
@@ -224,4 +243,37 @@ void UBossPhaseComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 bool UBossPhaseComponent::IsCurrentPhaseLogOnly() const
 {
 	return Config && Config->IsLogOnlyPhase(CurrentPhaseIndex);
+}
+
+// 현재 배리어와 진입 번호가 일치하는 기믹 완료만 다음 페이즈 요청으로 변환
+bool UBossPhaseComponent::RequestNextPhaseFromGimmick(FName PhaseId, int64 PhaseExecutionId)
+{
+	const FBossPhaseDefinition* Phase = GetCurrentPhase();
+	if (!GetOwner()->HasAuthority() || !Phase || IsCurrentPhaseLogOnly()
+		|| Phase->Kind != EBossPhaseKind::Barrier || Phase->PhaseId != PhaseId
+		|| PhaseExecutionId == 0 || PhaseExecutionId != ActivePhaseExecutionId
+		|| !Config->Phases.IsValidIndex(CurrentPhaseIndex + 1)) return false;
+	// 진입 중 즉시 완료되는 기믹은 설정 적용을 마친 뒤 한 번만 처리
+	if (bApplyingPhase && IsTransitioning())
+	{
+		if (bPendingGimmickCompletion) return false;
+		bPendingGimmickCompletion = true;
+		return true;
+	}
+	if (!IsActive()) return false;
+	RequestNextPhase();
+	return true;
+}
+
+// 페이즈별 실행 번호를 부여하고 외부 적용 콜백의 정지 및 동기 완료 처리
+bool UBossPhaseComponent::ApplyCurrentPhase()
+{
+	if (!Config || !Config->Phases.IsValidIndex(CurrentPhaseIndex)) return false;
+	ActivePhaseExecutionId = ++NextPhaseExecutionId;
+	const int64 ApplyingExecutionId = ActivePhaseExecutionId;
+	bPendingGimmickCompletion = false;
+	bApplyingPhase = true;
+	const bool bApplied = IsCurrentPhaseLogOnly() || ApplyPhase.Execute(Config->Phases[CurrentPhaseIndex]);
+	bApplyingPhase = false;
+	return bApplied && IsTransitioning() && ActivePhaseExecutionId == ApplyingExecutionId;
 }

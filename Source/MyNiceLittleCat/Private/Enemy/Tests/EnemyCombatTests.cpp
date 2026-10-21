@@ -190,6 +190,7 @@ bool FBossExternalPlaceholderTest::RunTest(const FString& Parameters)
 	EnemyConfig->PatternSet->Patterns.Add(Placeholder);
 	EnemyCombatTests::SetObjectSetting(Boss, TEXT("EnemyConfig"), EnemyConfig);
 	UBossPhaseConfigData* Config = NewObject<UBossPhaseConfigData>(Boss);
+	Config->bLogOnlyAfterFirstPhase = true;
 	FBossPhaseDefinition First;
 	First.PhaseId = TEXT("Phase1");
 	First.HealthFloorRatio = 0.7f;
@@ -225,6 +226,88 @@ bool FBossExternalPlaceholderTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("No immortal health floor after skipping"), Boss->CalculateHealthAfterDamage(70.f, 100.f, 100.f), 0.f);
 	TestFalse(TEXT("Previous phase attacks stay disabled"), Patterns->TryStartPattern(Placeholder.PatternId, nullptr, RequestId));
 	TestFalse(TEXT("Stale transition completion ignored"), Phases->CompleteTransition(TransitionId));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBossBarrierPhaseTest, "MyNiceLittleCat.Enemy.BarrierPhase",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// 배리어를 건너뛰지 않고 직전 체력 하한을 유지하며 기믹 완료를 기다리는지 검사
+bool FBossBarrierPhaseTest::RunTest(const FString& Parameters)
+{
+	EnemyCombatTests::FFixture Fixture;
+	ABossCharacter* Boss = Fixture.World->SpawnActor<ABossCharacter>();
+	EnemyCombatTests::SetObjectSetting(Boss, TEXT("EnemyConfig"), EnemyCombatTests::MakeEnemyConfig(Boss));
+	UBossPhaseConfigData* Config = NewObject<UBossPhaseConfigData>(Boss);
+	TestFalse(TEXT("Full phase execution is the default"), Config->bLogOnlyAfterFirstPhase);
+	FBossPhaseDefinition First;
+	First.PhaseId = TEXT("CombatA");
+	First.HealthFloorRatio = 0.7f;
+	Config->Phases.Add(First);
+	FBossPhaseDefinition Barrier;
+	Barrier.PhaseId = TEXT("Barrier70");
+	Barrier.Kind = EBossPhaseKind::Barrier;
+	Barrier.HealthFloorRatio = 0.7f;
+	Config->Phases.Add(Barrier);
+	FBossPhaseDefinition Final;
+	Final.PhaseId = TEXT("CombatC");
+	Config->Phases.Add(Final);
+	FString Error;
+	TestTrue(TEXT("Combat and barrier floors may match"), Config->ValidateConfiguration(Error));
+	TestFalse(TEXT("Barrier is executable"), Config->IsLogOnlyPhase(1));
+	EnemyCombatTests::SetObjectSetting(Boss, TEXT("PhaseConfig"), Config);
+	Boss->DispatchBeginPlay();
+	TestTrue(TEXT("Encounter starts"), Boss->StartEncounter());
+	UBossPhaseComponent* Phases = Boss->GetPhaseComponent();
+	// 기믹 액터 대신 페이즈 관리 계약만 검증; 실제 보스는 계약 구현 컴포넌트를 요구
+	Phases->ApplyPhase.BindLambda([](const FBossPhaseDefinition&) { return true; });
+	Phases->EvaluateHealth(70.f, 100.f);
+	int64 TransitionId = 0;
+	TestTrue(TEXT("Barrier transition starts"), Phases->BeginPendingTransition(TransitionId));
+	TestTrue(TEXT("Barrier entered"), Phases->CompleteTransition(TransitionId));
+	Boss->FinishPhaseTransition();
+	TestEqual(TEXT("Barrier is current phase"), Phases->GetCurrentPhaseId(), Barrier.PhaseId);
+	TestEqual(TEXT("Barrier retains previous floor"), Boss->CalculateHealthAfterDamage(70.f, 100.f, 90.f), 70.f);
+	Phases->EvaluateHealth(70.f, 100.f);
+	TestFalse(TEXT("Health does not complete barrier"), Phases->HasPendingTransition());
+	const int64 FirstExecution = Phases->GetCurrentPhaseExecutionId();
+	TestTrue(TEXT("Barrier has an execution ID"), FirstExecution > 0);
+	TestFalse(TEXT("Wrong phase rejected"), Phases->RequestNextPhaseFromGimmick(TEXT("Other"), FirstExecution));
+	TestFalse(TEXT("Wrong execution rejected"), Phases->RequestNextPhaseFromGimmick(Barrier.PhaseId, FirstExecution + 1));
+	TestTrue(TEXT("Matching completion requests next phase"), Phases->RequestNextPhaseFromGimmick(Barrier.PhaseId, FirstExecution));
+	TestFalse(TEXT("Duplicate completion rejected"), Phases->RequestNextPhaseFromGimmick(Barrier.PhaseId, FirstExecution));
+	Phases->BeginPendingTransition(TransitionId);
+	TestTrue(TEXT("Final combat entered"), Phases->CompleteTransition(TransitionId));
+	TestFalse(TEXT("Combat cannot finish through gimmick API"), Phases->RequestNextPhaseFromGimmick(Final.PhaseId, Phases->GetCurrentPhaseExecutionId()));
+	// 같은 설정으로 재초기화해도 이전 진입 번호는 다시 사용하지 않음
+	Phases->InitializePhases(Boss->GetAbilitySystemComponent(), Config);
+	Phases->StartPhases();
+	Phases->EvaluateHealth(70.f, 100.f);
+	Phases->BeginPendingTransition(TransitionId);
+	Phases->CompleteTransition(TransitionId);
+	TestFalse(TEXT("Previous encounter completion rejected"), Phases->RequestNextPhaseFromGimmick(Barrier.PhaseId, FirstExecution));
+	const int64 SecondExecution = Phases->GetCurrentPhaseExecutionId();
+	TestTrue(TEXT("Execution IDs increase across resets"), SecondExecution > FirstExecution);
+	Phases->StopAndInvalidate();
+	TestFalse(TEXT("Stopped phase rejects completion"), Phases->RequestNextPhaseFromGimmick(Barrier.PhaseId, SecondExecution));
+	// 진입 함수 안에서 즉시 완료되는 기믹도 활성화 후 전환을 한 번만 요청
+	Phases->InitializePhases(Boss->GetAbilitySystemComponent(), Config);
+	Phases->ApplyPhase.BindLambda([this, Phases](const FBossPhaseDefinition& Phase)
+	{
+		if (Phase.Kind == EBossPhaseKind::Barrier)
+		{
+			TestTrue(TEXT("Synchronous completion accepted"), Phases->RequestNextPhaseFromGimmick(Phase.PhaseId, Phases->GetCurrentPhaseExecutionId()));
+			TestFalse(TEXT("Synchronous duplicate rejected"), Phases->RequestNextPhaseFromGimmick(Phase.PhaseId, Phases->GetCurrentPhaseExecutionId()));
+		}
+		return true;
+	});
+	Phases->StartPhases();
+	Phases->EvaluateHealth(70.f, 100.f);
+	Phases->BeginPendingTransition(TransitionId);
+	TestTrue(TEXT("Synchronous completion does not break phase application"), Phases->CompleteTransition(TransitionId));
+	TestTrue(TEXT("Synchronous completion leaves next transition pending"), Phases->HasPendingTransition());
+	Phases->BeginPendingTransition(TransitionId);
+	TestTrue(TEXT("Synchronous path reaches final combat"), Phases->CompleteTransition(TransitionId));
 	return true;
 }
 

@@ -54,6 +54,9 @@ public :
 	// 현재 보스 상태를 Blackboard 판단 값에 반영
 	// 현재 보스 상태를 일반 행동 및 전환 판단 키에 반영
 	void RefreshBossBlackboard();
+	// 현재 연결한 기믹 컴포넌트의 완료만 페이즈 관리에 전달
+	UFUNCTION(BlueprintCallable, Category = "Boss|Gimmick")
+	bool NotifyPhaseGimmickCompleted(UActorComponent* SourceComponent, FName PhaseId, int64 PhaseExecutionId);
 	// 보스방 관리자가 보스 사망을 받아 클리어 처리하는 이벤트
 	UPROPERTY(BlueprintAssignable, Category = "Boss")
 	FBossEncounterSignal OnDefeated;
@@ -88,6 +91,13 @@ protected :
 	TObjectPtr<UBossPhaseConfigData> PhaseConfig;
 
 private :
+	// 보스에 부착된 기믹 계약 구현 컴포넌트 하나를 찾아 연결; 실제 기믹 클래스는 별도 담당
+	bool InitializeGimmickConnection();
+	// 연결한 기믹의 실행 중지 호출: 기믹 구현 내부에서 액터·타이머·구독 정리
+	void StopPhaseGimmicks();
+	// 같은 보스에 붙은 계약 구현 컴포넌트; 매니저의 레벨 참조 전달은 별도 작업
+	UPROPERTY(Transient)
+	TObjectPtr<UActorComponent> PhaseGimmickComponent;
 	// 안전한 다음 Tick 실패 처리용 타이머
 	FTimerHandle FailureTimerHandle;
 	// 초기화 및 사망 시 증가시켜 이전 전투의 지연 콜백 무효화

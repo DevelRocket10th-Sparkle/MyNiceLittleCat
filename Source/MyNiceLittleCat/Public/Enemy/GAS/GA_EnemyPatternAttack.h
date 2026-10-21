@@ -6,6 +6,7 @@
 
 class AEnemyCharacter;
 class UEnemyPatternComponent;
+class UEnemyMeleeTraceComponent;
 
 // 패턴 데이터의 몽타주를 사용하는 기본 근접 공격: 원거리 및 아레나 공격은 별도 GA로 확장
 UCLASS()
@@ -30,10 +31,11 @@ protected :
 	// 몽타주 중단 또는 취소 시 취소 결과로 종료
 	UFUNCTION()
 	void HandleMontageCancelled();
-	// 판정 이벤트를 현재 실행에 한해 처리하고 조건에 맞는 타깃에 피해 적용
-	// 현재 요청의 판정 시점에 실제 타깃 위치를 검사하고 피해 GE 적용
 	UFUNCTION()
-	void HandleHitEvent(FGameplayEventData Payload);
+	void HandleWindowBegin(FGameplayEventData Payload);
+	UFUNCTION()
+	void HandleWindowEnd(FGameplayEventData Payload);
+	void HandlePlayerHit(const FHitResult& Hit);
 	// 현재 실행용으로 복사한 불변 패턴 설정
 	UPROPERTY(BlueprintReadOnly, Category = "Pattern")
 	FEnemyPatternDefinition ExecutionPattern;
@@ -45,12 +47,12 @@ private :
 	TWeakObjectPtr<AEnemyCharacter> Enemy;
 	// 현재 요청의 유효성을 확인할 컴포넌트
 	TWeakObjectPtr<UEnemyPatternComponent> PatternComponent;
+	TWeakObjectPtr<UEnemyMeleeTraceComponent> MeleeTraceComponent;
+	FDelegateHandle PlayerHitDelegateHandle;
 	// 이번 GA가 실행하는 요청 번호
 	int64 RequestId = 0;
 	// 이 GA가 획득한 이동 제한만 해제하기 위한 상태
 	bool bOwnsMovementLock = false;
 	// 이 GA가 획득한 회전 제한만 해제하기 위한 상태
 	bool bOwnsRotationLock = false;
-	// 같은 실행에서 기본 타깃에 중복 피해를 주지 않기 위한 상태
-	bool bHitApplied = false;
 };

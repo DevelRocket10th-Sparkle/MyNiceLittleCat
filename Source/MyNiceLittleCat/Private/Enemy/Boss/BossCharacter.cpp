@@ -2,6 +2,7 @@
 
 
 #include "Enemy/Boss/BossCharacter.h"
+#include "Enemy/Boss/Components/BossPhaseGimmickInterface.h"
 #include "Enemy/Boss/Components/BossPhaseComponent.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
 #include "Enemy/AI/EnemyAIController.h"
@@ -9,6 +10,7 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BrainComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 
 
@@ -60,6 +62,7 @@ bool ABossCharacter::InitializeEnemyExtensions()
 			if (!GetPatternComponent()->HasPattern(PatternId)) return false;
 
 	}
+	if (!InitializeGimmickConnection()) return false;
 	PhaseComponent->OnTransitionRequested.AddUObject(this, &ABossCharacter::HandleTransitionRequested);
 	PhaseComponent->ApplyPhase.BindUObject(this, &ABossCharacter::HandlePhaseEntered);
 	GetPatternComponent()->SetRequestsBlocked(true);
@@ -89,6 +92,7 @@ void ABossCharacter::HandleTransitionRequested()
 	if (!IsEncounterActive() || !IsAlive()) return;
 	GetPatternComponent()->SetRequestsBlocked(true);
 	GetPatternComponent()->CancelActiveRequest();
+	StopPhaseGimmicks();
 	if (AEnemyAIController* AI = Cast<AEnemyAIController>(GetController())) AI->StopMovement();
 	RefreshBossBlackboard();
 }
@@ -100,6 +104,15 @@ bool ABossCharacter::HandlePhaseEntered(const FBossPhaseDefinition& Phase)
 {
 	if (!IsEncounterActive()) return false;
 	GetPatternComponent()->SetAvailablePatterns(Phase.AllowedPatternIds);
+	if (IsValid(PhaseGimmickComponent))
+		return IBossPhaseGimmickInterface::Execute_EnterBossPhase(PhaseGimmickComponent,
+			Phase.PhaseId, PhaseComponent->GetCurrentPhaseExecutionId());
+	// 기믹 구현이 빠진 배리어를 완료된 것처럼 진행하지 않음
+	if (Phase.Kind == EBossPhaseKind::Barrier)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Missing phase gimmick component for %s"), *Phase.PhaseId.ToString());
+		return false;
+	}
 	return true;
 }
 
@@ -142,6 +155,7 @@ void ABossCharacter::ScheduleEncounterFailure()
 	PhaseComponent->StopAndInvalidate();
 	GetPatternComponent()->SetRequestsBlocked(true);
 	GetPatternComponent()->CancelActiveRequest();
+	StopPhaseGimmicks();
 	// 이 예약 이후 보스가 사망 또는 초기화되면 실행하지 않음
 	const int64 ExpectedGeneration = EncounterGeneration;
 	FailureTimerHandle = GetWorld()->GetTimerManager().SetTimerForNextTick(
@@ -162,12 +176,15 @@ void ABossCharacter::StopEncounter()
 	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(FailureTimerHandle);
 	PhaseComponent->StopAndInvalidate();
 	GetPatternComponent()->StopAndInvalidate();
+	StopPhaseGimmicks();
 	if (AEnemyAIController* AI = Cast<AEnemyAIController>(GetController()))
 	{
 		if (UBrainComponent* Brain = AI->GetBrainComponent()) Brain->StopLogic(TEXT("Boss encounter stopped"));
 		AI->StopMovement();
 		AI->ClearCombatTarget();
 	}
+	GetCharacterMovement()->StopMovementImmediately();
+	SetWantsToMove(false);
 	RefreshBossBlackboard();
 }
 
@@ -187,4 +204,38 @@ void ABossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	PhaseComponent->OnTransitionRequested.RemoveAll(this);
 	PhaseComponent->ApplyPhase.Unbind();
 	Super::EndPlay(EndPlayReason);
+}
+
+// 다른 담당자의 실제 기믹 타입은 참조하지 않고 보스 소유 컴포넌트에서 계약 구현 검색
+bool ABossCharacter::InitializeGimmickConnection()
+{
+	PhaseGimmickComponent = nullptr;
+	TInlineComponentArray<UActorComponent*> Components;
+	GetComponents(Components);
+	for (UActorComponent* Component : Components)
+	{
+		if (!IsValid(Component) || !Component->Implements<UBossPhaseGimmickInterface>()) continue;
+		if (PhaseGimmickComponent)
+		{
+			UE_LOG(LogTemp, Error, TEXT("Boss requires at most one phase gimmick component: %s"), *GetName());
+			return false;
+		}
+		PhaseGimmickComponent = Component;
+	}
+	return true;
+}
+
+// 정지 상태를 무효화한 뒤 호출하므로 정리 중 발생한 완료 알림도 페이즈를 진행시키지 못함
+void ABossCharacter::StopPhaseGimmicks()
+{
+	if (HasAuthority() && IsValid(PhaseGimmickComponent))
+		IBossPhaseGimmickInterface::Execute_StopBossGimmicks(PhaseGimmickComponent);
+}
+
+// 연결된 컴포넌트와 현재 전투에서 발생한 완료 통지만 수락
+bool ABossCharacter::NotifyPhaseGimmickCompleted(UActorComponent* SourceComponent, FName PhaseId, int64 PhaseExecutionId)
+{
+	if (!HasAuthority() || !IsEncounterActive() || !IsAlive() || !IsValid(PhaseGimmickComponent)
+		|| SourceComponent != PhaseGimmickComponent || SourceComponent->GetOwner() != this) return false;
+	return PhaseComponent->RequestNextPhaseFromGimmick(PhaseId, PhaseExecutionId);
 }
