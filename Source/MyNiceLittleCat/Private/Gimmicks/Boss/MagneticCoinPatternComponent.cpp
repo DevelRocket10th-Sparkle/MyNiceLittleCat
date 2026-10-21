@@ -180,7 +180,7 @@ int32 UMagneticCoinPatternComponent::GetActiveCoinCount(bool bIncludeFalling) co
 
 	for (const TWeakObjectPtr<AMagneticCoin>& Coin : SpawnedCoins)
 	{
-		if (Coin.IsValid() && (bIncludeFalling || Coin->GetCoinState() != EMagneticCoinState::Falling))
+		if (Coin.IsValid() && (bIncludeFalling || !Coin->IsAirborne()))
 		{
 			++Count;
 		}
