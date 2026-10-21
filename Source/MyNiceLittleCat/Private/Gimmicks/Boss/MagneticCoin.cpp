@@ -8,6 +8,7 @@
 #include "Gimmicks/Boss/DamageTypes/DamageType_MagneticCoin.h"
 #include "Gimmicks/Boss/DamageTypes/DamageType_MagneticCoinFall.h"
 #include "Gimmicks/Magnetic/MagneticComponent.h"
+#include "Gimmicks/Warning/AttackWarningDecal.h"
 #include "Characters/PlayerCharacter.h"
 #include "Components/StaticMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -55,9 +56,26 @@ void AMagneticCoin::BeginPlay()
 	}
 }
 
+void AMagneticCoin::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// 낙하 전에 소멸(패턴 ClearCoins 등)해도 경고가 남지 않게
+	HideLandingWarning();
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void AMagneticCoin::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (CoinState == EMagneticCoinState::Warning)
+	{
+		if (GetWorld()->GetTimeSeconds() - WarningStartTime >= WarningTime)
+		{
+			BeginFalling();
+		}
+		return;
+	}
 
 	if (CoinState == EMagneticCoinState::Falling)
 	{
@@ -144,7 +162,65 @@ void AMagneticCoin::StartFallTo(EMagneticPolarity NewPolarity, const FVector& La
 	// 바닥 지점 위로 메시 절반 높이만큼 (코인 중심 기준)
 	FallTargetLocation = LandLocation + FVector::UpVector * Mesh->Bounds.BoxExtent.Z;
 
+	if (WarningTime <= 0.f)
+	{
+		BeginFalling();
+		return;
+	}
+
+	ShowLandingWarning(LandLocation);
+
+	if (bHideCoinDuringWarning)
+	{
+		SetActorHiddenInGame(true);
+	}
+
+	WarningStartTime = GetWorld()->GetTimeSeconds();
+	SetCoinState(EMagneticCoinState::Warning);
+}
+
+void AMagneticCoin::BeginFalling()
+{
+	SetActorHiddenInGame(false);
+	FallStartLocation = GetActorLocation();
 	SetCoinState(EMagneticCoinState::Falling);
+}
+
+void AMagneticCoin::ShowLandingWarning(const FVector& LandLocation)
+{
+	HideLandingWarning();
+
+	if (!WarningDecalClass)
+	{
+		return;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = this;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	LandingWarning = GetWorld()->SpawnActor<AAttackWarningDecal>(WarningDecalClass, LandLocation, FRotator::ZeroRotator, SpawnParams);
+	if (!LandingWarning)
+	{
+		return;
+	}
+
+	const float Radius = FMath::Max(Mesh->Bounds.BoxExtent.X, Mesh->Bounds.BoxExtent.Y) * WarningRadiusScale + WarningRadiusPadding;
+	const FLinearColor Color = bUsePolarityColorForWarning ? MagneticComponent->GetPolarityColor(GetPolarity()) : WarningColor;
+
+	// 예고 대기 + 낙하 시간 동안 차오르도록
+	const float FallTime = FVector::Dist(GetActorLocation(), FallTargetLocation) / FallSpeed;
+	LandingWarning->ShowCircleWarning(LandLocation, Radius, WarningTime + FallTime, Color);
+}
+
+void AMagneticCoin::HideLandingWarning()
+{
+	if (IsValid(LandingWarning))
+	{
+		LandingWarning->HideWarning();
+	}
+
+	LandingWarning = nullptr;
 }
 
 void AMagneticCoin::TickFalling(float DeltaTime)
@@ -161,6 +237,7 @@ void AMagneticCoin::TickFalling(float DeltaTime)
 void AMagneticCoin::Land()
 {
 	SetActorLocation(FallTargetLocation);
+	HideLandingWarning();
 
 	Mesh->SetCollisionProfileName(LandedCollisionProfile);
 	Mesh->SetSimulatePhysics(true);
@@ -188,6 +265,11 @@ void AMagneticCoin::SetCoinState(EMagneticCoinState NewState)
 
 float AMagneticCoin::GetFallProgress() const
 {
+	if (CoinState == EMagneticCoinState::Warning)
+	{
+		return 0.f;
+	}
+
 	if (CoinState != EMagneticCoinState::Falling)
 	{
 		return 1.f;

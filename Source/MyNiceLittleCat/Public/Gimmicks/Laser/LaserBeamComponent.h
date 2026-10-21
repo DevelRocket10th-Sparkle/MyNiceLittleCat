@@ -88,6 +88,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LaserBeam")
 	void SetFireDirection(const FVector& Direction);
 
+	// 사거리 변경 (패턴이 영역 끝까지만 쏘게 할 때 등)
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam")
+	void SetMaxRange(float NewMaxRange) { MaxRange = FMath::Max(NewMaxRange, 1.f); }
+
+	// 빔 굵기 변경 (0이면 선 트레이스)
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam")
+	void SetBeamRadius(float NewBeamRadius) { BeamRadius = FMath::Max(NewBeamRadius, 0.f); }
+
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
 	bool IsLaserActive() const { return bLaserActive; }
 

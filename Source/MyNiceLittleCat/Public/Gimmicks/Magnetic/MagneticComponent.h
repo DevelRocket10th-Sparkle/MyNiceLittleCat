@@ -39,6 +39,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Magnetic")
 	EMagneticPolarity GetPolarity() const { return Polarity; }
 
+	// 극성 표시 색 (PolarityColors에 없으면 흰색). 경고 데칼 등 연출용
+	UFUNCTION(BlueprintPure, Category = "Magnetic")
+	FLinearColor GetPolarityColor(EMagneticPolarity InPolarity) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Magnetic")
 	void SetMagnetEnabled(bool bEnabled) { bMagnetEnabled = bEnabled; }
 
