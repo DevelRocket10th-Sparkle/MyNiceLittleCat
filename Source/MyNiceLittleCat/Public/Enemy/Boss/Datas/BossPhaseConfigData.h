@@ -74,7 +74,7 @@ public :
 
 	// 현재 담당 범위인 첫 페이즈 이후는 로그만 출력; 전체 전투 구현 시 해제
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Phases")
-	bool bLogOnlyAfterFirstPhase = true;
+	bool bLogOnlyAfterFirstPhase = false;
 
 	// 개별 설정과 현재 담당 범위로 로그 전용 페이즈인지 확인
 	bool IsLogOnlyPhase(int32 Index) const;

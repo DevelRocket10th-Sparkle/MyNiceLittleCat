@@ -9,6 +9,10 @@
 #include "NavigationSystem.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Gimmicks/Laser/LaserBeamComponent.h"
+#include "Gimmicks/Reflection/ReflectionMath.h"
+//#include "UObject/UObjectIterator.h"
+//#include "DrawDebugHelpers.h"
 
 UGameplayAbility_PetReflect::UGameplayAbility_PetReflect()
 {
@@ -68,6 +72,7 @@ void UGameplayAbility_PetReflect::ActivateAbility(const FGameplayAbilitySpecHand
     PreviewMID = PreviewMesh->CreateDynamicMaterialInstance(0, PreviewMaterial.Get());
 
     bDraggingPlacement = false;
+    CachedPreviewLasers.Reset();
     bHasPendingPlacement = false;
     PendingPlacementTransform = FTransform::Identity;
     Pet->OnPetModeUseInput.AddUniqueDynamic(this, &UGameplayAbility_PetReflect::HandleModeUseInput);
@@ -100,6 +105,7 @@ void UGameplayAbility_PetReflect::EndAbility(const FGameplayAbilitySpecHandle Ha
     PlacementMoveRequestId.Invalidate();
 
     bDraggingPlacement = false;
+    CachedPreviewLasers.Reset();
     bHasPendingPlacement = false;
     PendingPlacementTransform = FTransform::Identity;
     DragStartHit = FHitResult();
@@ -184,6 +190,9 @@ void UGameplayAbility_PetReflect::HandleReflectTick(float DeltaTime)
     DrawDebugDirectionalArrow(GetWorld(),
         GroundLocation, GroundLocation + PlacementRotation.Vector() * 60.f,
         15.f, FColor::Yellow, false, -1.f, 0, 2.f);
+
+    // 프리뷰 반사 방향
+    DrawLaserReflectionPreview();
 }
 
 bool UGameplayAbility_PetReflect::CanPlaceReflector(const FHitResult& Hit, const FRotator& Rotation) const
@@ -207,6 +216,7 @@ void UGameplayAbility_PetReflect::HandleModeUseInput(EPetModeUseInputPhase Phase
     if (Phase == EPetModeUseInputPhase::Canceled)
     {
         bDraggingPlacement = false;
+        CachedPreviewLasers.Reset();
         bCanPlaceReflector = false;
         return;
     }
@@ -222,6 +232,7 @@ void UGameplayAbility_PetReflect::HandleModeUseInput(EPetModeUseInputPhase Phase
 
         PlacementRotation = FRotator(0.f, Pet->GetAimDirection().Rotation().Yaw, 0.f);
         bDraggingPlacement = true;
+        CachePreviewLasers();
         HandleReflectTick(0.f);
         return;
     }
@@ -231,6 +242,7 @@ void UGameplayAbility_PetReflect::HandleModeUseInput(EPetModeUseInputPhase Phase
         // 마지막 커서 위치와 공간 판정을 놓는 순간 다시 갱신
         HandleReflectTick(0.f);
         bDraggingPlacement = false;
+        CachedPreviewLasers.Reset();
 
         if (false == bCanPlaceReflector) return;
 
@@ -438,4 +450,66 @@ bool UGameplayAbility_PetReflect::TryPlaceReflector()
 
     PlacedReflectors.Add(Reflector);
     return true;
+}
+
+void UGameplayAbility_PetReflect::CachePreviewLasers()
+{
+    // 레이저 수집해요오
+    CachedPreviewLasers.Reset();
+
+    // 드래그 시작 시 한 번만 검색
+    for (TObjectIterator<ULaserBeamComponent> iter; iter; ++iter)
+    {
+        ULaserBeamComponent* Laser = *iter;
+        if (false == IsValid(Laser) || true == Laser->IsTemplate()
+            || false == Laser->IsRegistered() || GetWorld() != Laser->GetWorld())
+            continue;
+  
+        CachedPreviewLasers.Add(TWeakObjectPtr<ULaserBeamComponent>(Laser));
+    }
+}
+
+void UGameplayAbility_PetReflect::DrawLaserReflectionPreview() const
+{
+#if ENABLE_DRAW_DEBUG
+    if (false == bDraggingPlacement || false == bCanPlaceReflector || true == bHasPendingPlacement)
+        return;
+
+    const APetReflector* Defaults = ReflectorClass.GetDefaultObject();
+    if (false == IsValid(Defaults)) return;
+
+    // 실제 설치할 반사판과 같은 크기, 위치, 회전
+    FVirtualReflectiveSurface VirtualSurface;
+    VirtualSurface.HalfExtents = Defaults->GetPlacementHalfExtents();
+
+    VirtualSurface.Center = DragStartHit.ImpactPoint + 
+        FVector::UpVector * (VirtualSurface.HalfExtents.Z + PlacementGroundClearance);
+
+    VirtualSurface.Rotation = PlacementRotation.Quaternion();
+
+    TArray<FLaserBeamSegment> PreviewSegments;
+
+    for (const TWeakObjectPtr<ULaserBeamComponent>& Entry : CachedPreviewLasers)
+    {
+        ULaserBeamComponent* Laser = Entry.Get();
+
+        if (false == IsValid(Laser)|| Laser->GetWorld() != GetWorld()
+            || false == Laser->IsLaserActive())
+            continue;
+
+        // 실제 빔 배열 대신 프리뷰 전용 배열에 계산
+        Laser->CalculateBeamPath(PreviewSegments, &VirtualSurface);
+        bool bAfterVirtualSurface = false;
+
+        for (const FLaserBeamSegment& Segment : PreviewSegments)
+        {
+            // 가상 반사판에 맞은 이후 구간만 표시
+            if (true == bAfterVirtualSurface)
+                DrawDebugLine( GetWorld(), Segment.Start, Segment.End, FColor::Magenta, false, -1.f, 0, 3.f);
+
+            if (Segment.bHitVirtualSurface)
+                bAfterVirtualSurface = true;
+        }
+    }
+#endif
 }

@@ -3,8 +3,10 @@
 ///
 /// 보스 패턴의 자성 코인입니다.
 /// 물리 메시 + UMagneticComponent로 구성되어 펫 자석 능력에 끌리거나 밀립니다.
-/// 상태: Falling(낙하) → Landed(착지) ⇄ Held(잡힘) → Thrown(던져짐) → Landed
-/// - Falling: StartFall로 시작. 물리·자력 없이 착지 지점까지 직선으로 떨어지고, 극성 색은 표시합니다.
+/// 상태: Warning(예고) → Falling(낙하) → Landed(착지) ⇄ Held(잡힘) → Thrown(던져짐) → Landed
+/// - Warning: StartFall 시 WarningTime > 0이면 착지 지점에 경고 데칼(WarningDecalClass)을 표시하고 그 자리에서 대기합니다.
+///            데칼 진행도는 예고 시작부터 착지까지 0 → 1로 차오르고, 착지(또는 코인 소멸) 시 사라집니다.
+/// - Falling: 물리·자력 없이 착지 지점까지 직선으로 떨어지고, 극성 색은 표시합니다.
 ///            떨어지는 코인에 플레이어(FallDamageTargetClasses)가 닿으면 낙하 피해를 한 번 줍니다.
 ///            플레이어는 ApplyPlayerHit 직접 호출(피해·경직·무적), 그 외 액터는 ApplyDamage(UDamageType_MagneticCoinFall).
 /// - Landed:  물리·자력을 켭니다. 자력을 받은 직후(MagneticForceGraceTime 이내) MinImpactSpeed 이상으로
@@ -15,7 +17,7 @@
 ///            펫 코드를 호출하지 않고 물리 상태 변화만으로 판단하므로 펫 능력 쪽 변경이 필요 없습니다.
 /// 레벨에 직접 배치하면 bFallOnBeginPlay가 false일 때 바로 Landed로 시작합니다.
 /// TODO(합의): 보스 패턴이 스폰 후 StartFall(극성)을 호출하는 방식은 보스 담당과 확정 필요
-/// TODO: 경고 데칼, 소멸 상태는 다음 단계에서 추가
+/// TODO: 소멸 상태는 다음 단계에서 추가
 
 #pragma once
 
@@ -28,6 +30,7 @@ class UStaticMeshComponent;
 class UMagneticComponent;
 class UDamageType;
 class AMagneticCoin;
+class AAttackWarningDecal;
 
 UENUM(BlueprintType)
 enum class EMagneticCoinState : uint8
@@ -40,6 +43,8 @@ enum class EMagneticCoinState : uint8
 	Held	UMETA(DisplayName = "Held"),
 	// 놓이거나 던져진 직후 (ThrowGraceTime 동안 충돌 피해 유효)
 	Thrown	UMETA(DisplayName = "Thrown"),
+	// 떨어지기 전 착지 지점에 경고를 표시하며 대기
+	Warning	UMETA(DisplayName = "Warning"),
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnMagneticCoinDamaged, AMagneticCoin*, Coin, AActor*, DamagedActor);
@@ -72,7 +77,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "MagneticCoin")
 	EMagneticCoinState GetCoinState() const { return CoinState; }
 
-	// 낙하 진행도 (0 시작 ~ 1 착지, 낙하 중이 아니면 1). 경고 표시 연출용
+	// 아직 착지 전인지 (예고 대기 또는 낙하 중)
+	UFUNCTION(BlueprintPure, Category = "MagneticCoin")
+	bool IsAirborne() const { return CoinState == EMagneticCoinState::Warning || CoinState == EMagneticCoinState::Falling; }
+
+	// 낙하 진행도 (0 시작 ~ 1 착지, 예고 대기 중이면 0, 착지 후면 1)
 	UFUNCTION(BlueprintPure, Category = "MagneticCoin")
 	float GetFallProgress() const;
 
@@ -90,6 +99,15 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	// 예고 대기가 끝나면 실제 낙하 시작
+	void BeginFalling();
+
+	void ShowLandingWarning(const FVector& LandLocation);
+
+	void HideLandingWarning();
 
 	void TickFalling(float DeltaTime);
 
@@ -153,6 +171,33 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Fall")
 	TArray<TSubclassOf<AActor>> FallDamageTargetClasses;
 
+	// 떨어지기 전 착지 지점 경고를 표시하며 대기하는 시간 (초, 0이면 바로 낙하)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Warning", meta = (ClampMin = "0.0"))
+	float WarningTime = 1.f;
+
+	// 착지 지점에 표시할 경고 데칼 (비어 있으면 표시 없이 대기만)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Warning")
+	TSubclassOf<AAttackWarningDecal> WarningDecalClass;
+
+	// 경고 반경 = 코인 메시 바닥 반경 × WarningRadiusScale + WarningRadiusPadding
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Warning", meta = (ClampMin = "0.1"))
+	float WarningRadiusScale = 1.f;
+
+	// 경고 반경에 더하는 여유 (cm). 플레이어 캡슐 반경만큼 더하면 플레이어 중심이 원 안에 있을 때 맞는 범위가 됨
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Warning", meta = (ClampMin = "0.0"))
+	float WarningRadiusPadding = 35.f;
+
+	// true면 경고 색을 코인 극성 색으로, false면 WarningColor
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Warning")
+	bool bUsePolarityColorForWarning = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Warning", meta = (EditCondition = "!bUsePolarityColorForWarning"))
+	FLinearColor WarningColor = FLinearColor(1.f, 0.2f, 0.f);
+
+	// 예고 대기 중 코인을 숨김 (false면 공중에 떠 있는 모습이 보임)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Warning")
+	bool bHideCoinDuringWarning = false;
+
 	// 한 번 부딪힐 때 주는 피해량
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Damage", meta = (ClampMin = "0.0"))
 	float Damage = 1.f;
@@ -200,6 +245,12 @@ private:
 
 	// 착지 시 코인 중심 위치
 	FVector FallTargetLocation = FVector::ZeroVector;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AAttackWarningDecal> LandingWarning;
+
+	// 예고 대기 시작 시각
+	float WarningStartTime = -1.f;
 
 	// 이번 낙하에서 이미 피해를 준 대상 (한 번만 피해)
 	TArray<TWeakObjectPtr<AActor>> FallHitActors;

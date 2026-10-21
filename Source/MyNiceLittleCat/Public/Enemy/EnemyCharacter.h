@@ -22,6 +22,7 @@ class UEnemyAttributeSet;
 class UEnemyConfigData;
 
 class UEnemyPatternComponent;
+class UEnemyMeleeTraceComponent;
 
 // Test용
 class UAnimMontage;
@@ -79,6 +80,8 @@ public:
 	// Getter: 캐릭터별 패턴 실행 컴포넌트
 	UFUNCTION(BlueprintPure, Category = "Enemy|Pattern")
 	UEnemyPatternComponent* GetPatternComponent() const;
+	UFUNCTION(BlueprintPure, Category = "Enemy|Melee")
+	UEnemyMeleeTraceComponent* GetMeleeTraceComponent() const { return MeleeTraceComponent; }
 	// 공격 GA가 이동 요청을 막는 동안 유지하는 참조 횟수 증가
 	void AcquireAttackMovementLock() { ++AttackMovementLockCount; }
 	// 공격 GA 종료 시 자신이 획득한 이동 제한 해제
@@ -178,6 +181,8 @@ protected :
 	// 캐릭터별 패턴 실행 상태 및 GA 핸들 관리
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
 	TObjectPtr<UEnemyPatternComponent> PatternComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
+	TObjectPtr<UEnemyMeleeTraceComponent> MeleeTraceComponent;
 	// 현재 이동 제한을 획득한 공격 실행 수
 	int32 AttackMovementLockCount = 0;
 	// 현재 회전 제한을 획득한 공격 실행 수

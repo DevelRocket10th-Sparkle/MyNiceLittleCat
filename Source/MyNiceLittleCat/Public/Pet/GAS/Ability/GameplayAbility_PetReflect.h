@@ -46,6 +46,10 @@ protected:
     bool CanPlaceReflectorAtTransform(const FTransform& PlacementTransform) const;
 
     bool TryPlaceReflector();
+
+    void CachePreviewLasers();
+
+    void DrawLaserReflectionPreview() const;
     // =============================================================================
 protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reflect")
@@ -108,4 +112,8 @@ protected:
 
     UPROPERTY(Transient)
     TArray<TWeakObjectPtr<class APetReflector>> PlacedReflectors;
+
+    // 이번 드래그에서 확인할 레이저 목록
+    UPROPERTY(Transient)
+    TArray<TWeakObjectPtr<class ULaserBeamComponent>> CachedPreviewLasers;
 };

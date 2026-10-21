@@ -13,7 +13,7 @@ public class MyNiceLittleCat : ModuleRules
 			"UMG", "Slate", "SlateCore"								// 위젯 관련
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "PhysicsCore", "NavigationSystem" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "PhysicsCore", "NavigationSystem", "ChaosCore" });
 
 		// Uncomment if you are using Slate UI
 		//PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

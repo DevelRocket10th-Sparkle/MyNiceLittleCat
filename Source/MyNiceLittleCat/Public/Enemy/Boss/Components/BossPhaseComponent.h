@@ -42,6 +42,12 @@ public:
 	// 전투 페이즈의 체력 하한 도달 여부 검사
 	// 현재 전투 페이즈의 하한 체력 도달 여부 확인
 	void EvaluateHealth(float Health, float MaxHealth);
+	// 현재 배리어의 완료만 검증하여 다음 전환 요청; 지연 콜백은 진입 시 받은 번호를 그대로 전달
+	UFUNCTION(BlueprintCallable, Category = "Boss|Phase")
+	bool RequestNextPhaseFromGimmick(FName PhaseId, int64 PhaseExecutionId);
+	// Getter: 현재 페이즈 진입 번호; 전환 요청 또는 정지 이후에는 0
+	UFUNCTION(BlueprintPure, Category = "Boss|Phase")
+	int64 GetCurrentPhaseExecutionId() const { return ActivePhaseExecutionId; }
 	// Getter: 현재 페이즈가 실제 기믹을 실행하지 않는 로그 전용 항목인지 확인
 	bool IsCurrentPhaseLogOnly() const;
 	// 대기 중인 전환 시작: 성공하면 요청 ID를 반환
@@ -93,6 +99,8 @@ private :
 	// 현재 페이즈 다음 인덱스의 전환을 중복 없이 요청
 	// 다음 페이즈 전환을 중복 없이 요청하고 즉시 보호 처리 통지
 	void RequestNextPhase();
+	// 적용 중 즉시 완료되는 기믹도 페이즈 활성화 이후 진행하도록 적용 구간 관리
+	bool ApplyCurrentPhase();
 	// 현재 전환 GA의 종료만 받아 정상 완료 또는 취소 기록
 	// 현재 능력의 종료 이벤트만 받아 완료 또는 취소 기록
 	void HandleAbilityEnded(const FAbilityEndedData& EndedData);
@@ -121,6 +129,14 @@ private :
 	int32 PendingPhaseIndex = INDEX_NONE;
 	// 전환 번호 발급용: 정지 시에도 이전 번호로 되돌리지 않음
 	int64 NextTransitionId = 0;
+	// 페이즈 진입 번호 발급용: 재초기화 시에도 번호를 재사용하지 않음
+	int64 NextPhaseExecutionId = 0;
+	// 현재 페이즈 진입 번호: 늦은 기믹 완료 이벤트를 거부하는 기준
+	int64 ActivePhaseExecutionId = 0;
+	// 진입 함수가 실행 중인지 확인하여 동기 완료를 안전하게 지연
+	bool bApplyingPhase = false;
+	// 진입 함수 안에서 받은 기믹 완료 요청을 활성화 직후 한 번만 처리
+	bool bPendingGimmickCompletion = false;
 	// 현재 전환 요청 번호: 0은 유효한 요청 없음
 	int64 ActiveTransitionId = 0;
 	// 전환 대기 및 실행 상태

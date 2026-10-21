@@ -3,14 +3,14 @@
 #include "Enemy/GAS/EnemyAttributeSet.h"
 #include "Enemy/GAS/EnemyCombatTags.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
+#include "Enemy/Components/EnemyMeleeTraceComponent.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
-#include "AbilitySystemBlueprintLibrary.h"
-#include "AbilitySystemComponent.h"
 #include "AIController.h"
 #include "Characters/PlayerCharacter.h"
-#include "Interfaces/TargetableInterface.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
 
 UGA_EnemyPatternAttack::UGA_EnemyPatternAttack()
 {
@@ -35,7 +35,14 @@ void UGA_EnemyPatternAttack::ActivateAbility(const FGameplayAbilitySpecHandle Ha
 		return;
 	}
 	ExecutionTarget = Target;
-	bHitApplied = false;
+	MeleeTraceComponent = Enemy->GetMeleeTraceComponent();
+	if (!MeleeTraceComponent.IsValid() || !MeleeTraceComponent->PrepareAttack(ExecutionPattern.MeleeTraceSettings, RequestId))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[%s] Pattern %s has no valid melee traces"), *Enemy->GetName(), *ExecutionPattern.PatternId.ToString());
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+	PlayerHitDelegateHandle = MeleeTraceComponent->OnPlayerHit.AddUObject(this, &UGA_EnemyPatternAttack::HandlePlayerHit);
 	if (AAIController* AI = Cast<AAIController>(Enemy->GetController())) AI->StopMovement();
 	Enemy->GetCharacterMovement()->StopMovementImmediately();
 	if (ExecutionPattern.bFaceTargetOnStart && IsValid(Target))
@@ -53,10 +60,14 @@ void UGA_EnemyPatternAttack::ActivateAbility(const FGameplayAbilitySpecHandle Ha
 		bOwnsRotationLock = true;
 	}
 	// Notify 이벤트는 몽타주 시작 전에 구독
-	UAbilityTask_WaitGameplayEvent* HitTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
-		this, EnemyCombatTags::PatternHit, nullptr, false, true);
-	HitTask->EventReceived.AddDynamic(this, &UGA_EnemyPatternAttack::HandleHitEvent);
-	HitTask->ReadyForActivation();
+	UAbilityTask_WaitGameplayEvent* BeginTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+		this, EnemyCombatTags::MeleeWindowBegin, nullptr, false, true);
+	BeginTask->EventReceived.AddDynamic(this, &UGA_EnemyPatternAttack::HandleWindowBegin);
+	BeginTask->ReadyForActivation();
+	UAbilityTask_WaitGameplayEvent* EndTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+		this, EnemyCombatTags::MeleeWindowEnd, nullptr, false, true);
+	EndTask->EventReceived.AddDynamic(this, &UGA_EnemyPatternAttack::HandleWindowEnd);
+	EndTask->ReadyForActivation();
 	// Ability가 취소되면 몽타주도 정지
 	UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
 		this, NAME_None, ExecutionPattern.Montage, 1.f, ExecutionPattern.MontageSection, true);
@@ -66,37 +77,39 @@ void UGA_EnemyPatternAttack::ActivateAbility(const FGameplayAbilitySpecHandle Ha
 	MontageTask->ReadyForActivation();
 }
 
-// 현재 요청의 판정 시점에 실제 타깃 위치를 검사하고 피해 GE 적용
-void UGA_EnemyPatternAttack::HandleHitEvent(FGameplayEventData Payload)
+void UGA_EnemyPatternAttack::HandleWindowBegin(FGameplayEventData Payload)
 {
-	if (!Enemy.IsValid() || !Enemy->IsAlive() || !PatternComponent.IsValid()
-		|| !PatternComponent->IsRequestRunning(RequestId) || bHitApplied || !ExecutionPattern.DamageEffect) return;
-	// 기본 근접 공격은 이번 요청의 원래 타깃 한 명만 판정
-	AActor* Target = ExecutionTarget;
-	if (!IsValid(Target)) return;
-	if (const APlayerCharacter* Player = Cast<APlayerCharacter>(Target))
+	if (!IsActive() || !Enemy.IsValid() || !Enemy->IsAlive() || !PatternComponent.IsValid()
+		|| !PatternComponent->IsRequestRunning(RequestId) || !MeleeTraceComponent.IsValid()
+		|| Payload.Instigator != Enemy.Get() || Payload.OptionalObject2 != Enemy->GetMesh()) return;
+	UAnimInstance* AnimInstance = Enemy->GetMesh()->GetAnimInstance();
+	if (!AnimInstance || AnimInstance->GetCurrentActiveMontage() != ExecutionPattern.Montage) return;
+	MeleeTraceComponent->BeginWindow(Payload.OptionalObject.Get());
+}
+
+void UGA_EnemyPatternAttack::HandleWindowEnd(FGameplayEventData Payload)
+{
+	if (MeleeTraceComponent.IsValid() && Enemy.IsValid() && Payload.Instigator == Enemy.Get()
+		&& Payload.OptionalObject2 == Enemy->GetMesh())
+		MeleeTraceComponent->EndWindow(Payload.OptionalObject.Get());
+}
+
+void UGA_EnemyPatternAttack::HandlePlayerHit(const FHitResult& Hit)
+{
+	if (!IsActive() || !Enemy.IsValid() || !Enemy->IsAlive() || !PatternComponent.IsValid()
+		|| !PatternComponent->IsRequestRunning(RequestId)) return;
+	APlayerCharacter* Player = Cast<APlayerCharacter>(Hit.GetActor());
+	if (!IsValid(Player) || Player->GetbIsDead()) return;
+	if (ExecutionPattern.bRequiresLineOfSight)
 	{
-		if (Player->GetbIsDead()) return;
+		AAIController* AI = Cast<AAIController>(Enemy->GetController());
+		if (!AI || !AI->LineOfSightTo(Player)) return;
 	}
-	else if (Target->Implements<UTargetableInterface>() && !ITargetableInterface::Execute_IsTargetAlive(Target)) return;
-	// 애니메이션 판정 시점의 실제 위치에서 거리와 장애물을 다시 검사
-	const FVector Center = Enemy->GetActorLocation() + Enemy->GetActorForwardVector() * ExecutionPattern.HitForwardOffset;
-	if (FVector::DistSquared(Center, Target->GetActorLocation()) > FMath::Square(ExecutionPattern.HitRadius)) return;
-	AAIController* AI = Cast<AAIController>(Enemy->GetController());
-	if (!AI || !AI->LineOfSightTo(Target)) return;
-	// 피해를 주는 쪽과 받는 쪽의 ASC
-	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
-	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Target);
-	if (!SourceASC || !TargetASC) return;
-	FGameplayEffectContextHandle Context = SourceASC->MakeEffectContext();
-	Context.AddSourceObject(Enemy.Get());
-	FGameplayEffectSpecHandle Spec = SourceASC->MakeOutgoingSpec(ExecutionPattern.DamageEffect, GetAbilityLevel(), Context);
-	if (!Spec.IsValid()) return;
-	if (ExecutionPattern.DamageMagnitudeTag.IsValid())
-		Spec.Data->SetSetByCallerMagnitude(ExecutionPattern.DamageMagnitudeTag,
-			Enemy->GetAttributeSet()->GetAttackPower() * ExecutionPattern.DamageMultiplier);
-	bHitApplied = true;
-	SourceASC->ApplyGameplayEffectSpecToTarget(*Spec.Data.Get(), TargetASC);
+	const float Damage = Enemy->GetAttributeSet()->GetAttackPower() * ExecutionPattern.DamageMultiplier;
+	if (!FMath::IsFinite(Damage) || Damage <= 0.f) return;
+	FVector Direction = (Player->GetActorLocation() - Enemy->GetActorLocation()).GetSafeNormal2D();
+	if (Direction.IsNearlyZero()) Direction = Enemy->GetActorForwardVector().GetSafeNormal2D();
+	Player->ApplyPlayerHit(Damage, Direction);
 }
 
 void UGA_EnemyPatternAttack::HandleMontageCompleted()
@@ -114,6 +127,13 @@ void UGA_EnemyPatternAttack::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
 	bool bReplicateEndAbility, bool bWasCancelled)
 {
+	if (MeleeTraceComponent.IsValid())
+	{
+		MeleeTraceComponent->OnPlayerHit.Remove(PlayerHitDelegateHandle);
+		MeleeTraceComponent->StopAttack(RequestId);
+	}
+	PlayerHitDelegateHandle.Reset();
+	MeleeTraceComponent.Reset();
 	if (Enemy.IsValid())
 	{
 		if (bOwnsRotationLock) Enemy->ReleaseRotationLock();

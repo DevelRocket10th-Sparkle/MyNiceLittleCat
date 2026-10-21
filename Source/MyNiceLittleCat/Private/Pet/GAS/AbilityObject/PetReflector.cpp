@@ -1,6 +1,7 @@
 #include "Pet/GAS/AbilityObject/PetReflector.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Gimmicks/Reflection/ReflectionMath.h"
 
 APetReflector::APetReflector()
 {
@@ -48,4 +49,15 @@ float APetReflector::GetHalfWidth() const
 FVector APetReflector::GetPlacementHalfExtents() const
 {
     return CollisionBox->GetScaledBoxExtent();
+}
+
+bool APetReflector::TryGetReflection_Implementation(const FVector& IncomingDirection, const FHitResult& Hit, FVector& OutDirection) const
+{
+    OutDirection = FVector::ZeroVector;
+
+    if(false == Hit.bBlockingHit || Hit.bStartPenetrating) return false;
+    if (CollisionBox.Get() != Hit.GetComponent()) return false;
+
+    return FReflectionMath::TryReflectFrontFace(
+        IncomingDirection, CollisionBox->GetForwardVector(), FVector(Hit.ImpactNormal), OutDirection);
 }

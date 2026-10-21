@@ -22,6 +22,7 @@
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
 #include "Engine/EngineTypes.h"
+#include "Engine/HitResult.h"
 #include "LaserBeamComponent.generated.h"
 
 class ULaserBeamComponent;
@@ -29,6 +30,35 @@ class UDamageType;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLaserBeamStateChanged, ULaserBeamComponent*, Laser);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnLaserBeamDamaged, ULaserBeamComponent*, Laser, AActor*, DamagedActor, float, Damage);
+
+
+// 레이저의 직선 구간 하나
+USTRUCT(BlueprintType)
+struct MYNICELITTLECAT_API FLaserBeamSegment
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "LaserBeam")
+	FVector Start = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "LaserBeam")
+	FVector End = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "LaserBeam")
+	FVector Direction = FVector::ForwardVector;
+
+	// 이 구간 끝에서 발생한 충돌. 안 맞았으면 bBlockingHit == false
+	UPROPERTY(BlueprintReadOnly, Category = "LaserBeam")
+	FHitResult Hit;
+
+	// 이 구간에 도달하기까지 반사된 횟수. 원본 구간은 0
+	UPROPERTY(BlueprintReadOnly, Category = "LaserBeam")
+	int32 ReflectionCount = 0;
+
+	// 이 구간 끝에서 설치 예정 반사판에 맞았는지
+	UPROPERTY(BlueprintReadOnly, Category = "LaserBeam")
+	bool bHitVirtualSurface = false;
+};
 
 UCLASS(ClassGroup = (Gimmick), meta = (BlueprintSpawnableComponent))
 class MYNICELITTLECAT_API ULaserBeamComponent : public USceneComponent
@@ -62,6 +92,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LaserBeam")
 	void SetFireDirection(const FVector& Direction);
 
+	// 사거리 변경 (패턴이 영역 끝까지만 쏘게 할 때 등)
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam")
+	void SetMaxRange(float NewMaxRange) { MaxRange = FMath::Max(NewMaxRange, 1.f); }
+
+	// 빔 굵기 변경 (0이면 선 트레이스)
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam")
+	void SetBeamRadius(float NewBeamRadius) { BeamRadius = FMath::Max(NewBeamRadius, 0.f); }
+
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
 	bool IsLaserActive() const { return bLaserActive; }
 
@@ -87,6 +125,13 @@ public:
 	// 이번 틱 빔 트레이스 결과 전체 (맞은 지점·컴포넌트 등, 막힌 곳이 없으면 bBlockingHit false)
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
 	FHitResult GetHitResult() const { return LastHit; }
+
+	UFUNCTION(BlueprintPure, Category = "LaserBeam")
+	TArray<FLaserBeamSegment> GetBeamSegments() const { return BeamSegments; }
+
+	// VirtualSurface가 없으면 기존 실제 경로만 계산
+	void CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegments,
+		const struct FVirtualReflectiveSurface* VirtualSurface = nullptr) const;
 
 public:
 	UPROPERTY(BlueprintAssignable, Category = "LaserBeam")
@@ -159,6 +204,24 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Debug")
 	bool bDrawDebugBeam = true;
 
+	// 한 번 이상 반사된 레이저가 사용할 피해 타입
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Damage")
+	TSubclassOf<UDamageType> ReflectedDamageTypeClass;
+
+	// 이 레이저가 반사면에서 반사될 수 있는지
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Reflection")
+	bool bEnableReflection = false;
+
+	// 한 번의 경로 계산에서 허용할 최대 반사 횟수
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Reflection", 
+		meta = (ClampMin = "0", EditCondition = "bEnableReflection"))
+	int32 MaxReflectionCount = 8;
+
+	// 반사 직후 같은 표면을 즉시 다시 맞는 것을 피하기 위한 여유 거리
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Reflection",
+		meta = (ClampMin = "0.1", Units = "cm", EditCondition = "bEnableReflection"))
+	float ReflectionStartOffset = 1.f;
+
 private:
 	FVector FireDirection = FVector::ForwardVector;
 
@@ -180,4 +243,8 @@ private:
 	TWeakObjectPtr<AActor> LastDamagedActor;
 
 	float LastDamageTime = -1.f;
+
+	// 레이저 모음 배열
+	UPROPERTY(Transient)
+	TArray<FLaserBeamSegment> BeamSegments;
 };
