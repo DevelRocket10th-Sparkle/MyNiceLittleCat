@@ -57,6 +57,11 @@ APlayerCharacter::APlayerCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
+    // 무기 메쉬
+    WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMesh"));
+    WeaponMesh->SetupAttachment(GetMesh(), TEXT("R_Hand_Socket"));
+    WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
     // 락온 컴포넌트
     LockOnComponent = CreateDefaultSubobject<ULockOnComponent>(TEXT("LockOnComponent"));
 
@@ -269,11 +274,8 @@ void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
     ASC->ApplyGameplayEffectSpecToSelf(
         *SpecHandle.Data.Get());
 
-    // This hit killed the player: Die() already played DeathMontage, so skip hit reaction (it would stop the montage)
-    if (bIsDead)
-    {
-        return;
-    }
+    // 이미 죽었다면 중복 호출 방지
+    if (bIsDead) return;
 
     bIsInvincible = true;
 
@@ -498,6 +500,7 @@ void APlayerCharacter::Die()
 
     if (AnimInstance)
     {
+        AnimInstance->OnPlayMontageNotifyBegin.AddUniqueDynamic(this, &APlayerCharacter::OnDeathMontageNotify);
         AnimInstance->StopAllMontages(0.0f);
 
         if (DeathMontage)
@@ -625,4 +628,22 @@ void APlayerCharacter::EndInvincibility()
     bIsAbleToMove = true;
     //UE_LOG(LogTemp, Warning,
     //    TEXT("[HitReaction] 무적 시간 종료"));
+}
+
+void APlayerCharacter::DropWeapon()
+{
+    if (WeaponMesh)
+    {
+        WeaponMesh->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+        WeaponMesh->SetCollisionProfileName(TEXT("PhysicsActor"));
+        WeaponMesh->SetSimulatePhysics(true);
+    }
+}
+
+void APlayerCharacter::OnDeathMontageNotify(FName NotifyName, const FBranchingPointNotifyPayload& Payload)
+{
+    if (NotifyName == TEXT("DropWeapon"))
+    {
+        DropWeapon();
+    }
 }

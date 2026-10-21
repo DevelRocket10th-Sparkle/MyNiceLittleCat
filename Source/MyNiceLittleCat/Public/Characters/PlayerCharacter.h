@@ -42,7 +42,7 @@ public:
 	bool GetbIsDead() const { return bIsDead; }
 	void SetDodgeInvincible(bool bNewDodgeInvincible) { bIsDodgeInvincible = bNewDodgeInvincible; }
 
-	UStaticMeshComponent* GetWeaponMesh() const{ return WeaponMesh.Get(); }
+	UStaticMeshComponent* GetWeaponMesh() const{ return WeaponMesh; }
 
 protected:
 	// Called when the game starts or when spawned
@@ -95,10 +95,15 @@ protected:
 	UFUNCTION()
 	void OnDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
+	// 배트 떨구기만을 위한 애님 노티파이 콜백 함수
+	UFUNCTION()
+	void OnDeathMontageNotify(FName NotifyName, const FBranchingPointNotifyPayload& Payload);
+
 private:
 	void StartHitReaction(FVector HitDirection);
 	void ToggleHitFlash();
 	void EndInvincibility();
+	void DropWeapon();
 
 
 public:
@@ -187,8 +192,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Character|Death")
 	TObjectPtr<UAnimMontage> DeathMontage;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	TWeakObjectPtr<UStaticMeshComponent> WeaponMesh;
+	UPROPERTY(VisibleAnywhere, Category = "Weapon")
+	TObjectPtr<UStaticMeshComponent> WeaponMesh;
 
 
 private:
