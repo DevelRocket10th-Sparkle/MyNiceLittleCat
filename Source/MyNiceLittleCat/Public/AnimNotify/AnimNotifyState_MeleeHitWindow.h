@@ -67,6 +67,9 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Melee Hit")
     TSubclassOf<UCameraShakeBase> HitCameraShakeClass;
 
+    UPROPERTY(EditAnywhere, Category = "Melee Hit")
+    TObjectPtr<USoundBase> HitSound;
+
 private:
     TMap<TWeakObjectPtr<USkeletalMeshComponent>, TSet<TWeakObjectPtr<AActor>>> HitActorsByMesh;
     TMap<TWeakObjectPtr<USkeletalMeshComponent>, FTimerHandle> HitStopTimers;

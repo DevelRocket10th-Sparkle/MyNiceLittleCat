@@ -20,6 +20,7 @@ class UAnimMontage;
 class UStaticMeshComponent;
 class UPlayerAttributeSet;
 class UGA_MeleeAttack;
+class UPlayerConfig;
 struct FInputActionValue;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPlayerDied);
@@ -41,7 +42,7 @@ public:
 	bool GetbIsDead() const { return bIsDead; }
 	void SetDodgeInvincible(bool bNewDodgeInvincible) { bIsDodgeInvincible = bNewDodgeInvincible; }
 
-	UStaticMeshComponent* GetWeaponMesh() const{ return WeaponMesh.Get(); }
+	UStaticMeshComponent* GetWeaponMesh() const{ return WeaponMesh; }
 
 protected:
 	// Called when the game starts or when spawned
@@ -88,13 +89,21 @@ protected:
 	// 사망
 	void Die();
 
+	// PlayerConfig 값을 어트리뷰트에 적용하는 함수
+	void ApplyStatData();
+
 	UFUNCTION()
 	void OnDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+	// 배트 떨구기만을 위한 애님 노티파이 콜백 함수
+	UFUNCTION()
+	void OnDeathMontageNotify(FName NotifyName, const FBranchingPointNotifyPayload& Payload);
 
 private:
 	void StartHitReaction(FVector HitDirection);
 	void ToggleHitFlash();
 	void EndInvincibility();
+	void DropWeapon();
 
 
 public:
@@ -171,6 +180,9 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UPlayerAttributeSet> PlayerAttributeSet;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Stats")
+	TObjectPtr<UPlayerConfig> StatData;
+
 	UPROPERTY(EditDefaultsOnly, Category = "GAS")
 	TSubclassOf<UGA_MeleeAttack> MeleeAttackAbilityClass;
 
@@ -180,8 +192,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Character|Death")
 	TObjectPtr<UAnimMontage> DeathMontage;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	TWeakObjectPtr<UStaticMeshComponent> WeaponMesh;
+	UPROPERTY(VisibleAnywhere, Category = "Weapon")
+	TObjectPtr<UStaticMeshComponent> WeaponMesh;
 
 
 private:
