@@ -188,6 +188,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Debug")
 	bool bDrawDebugBeam = true;
 
+	// 한 번 이상 반사된 레이저가 사용할 피해 타입
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Damage")
+	TSubclassOf<UDamageType> ReflectedDamageTypeClass;
+
 	// 이 레이저가 반사면에서 반사될 수 있는지
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Reflection")
 	bool bEnableReflection = false;

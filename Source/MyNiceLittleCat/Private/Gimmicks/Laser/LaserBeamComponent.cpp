@@ -11,8 +11,7 @@
 #include "Engine/World.h"
 #include "DrawDebugHelpers.h"
 #include "Interfaces/ReflectiveSurfaceInterface.h"
-//#include "CollisionQueryParams.h"
-//#include "CollisionShape.h"
+#include "Gimmicks/Boss/DamageTypes/DamageType_ReflectedLaser.h"
 
 ULaserBeamComponent::ULaserBeamComponent()
 {
@@ -25,6 +24,7 @@ ULaserBeamComponent::ULaserBeamComponent()
 	TraceObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_PhysicsBody));
 
 	DamageTypeClass = UDamageType_BossLaser::StaticClass();
+	ReflectedDamageTypeClass = UDamageType_ReflectedLaser::StaticClass();
 }
 
 void ULaserBeamComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -175,7 +175,11 @@ void ULaserBeamComponent::UpdateBeam()
 	{
 		const FVector TraceEnd = SegmentStart + SegmentDirection * RemainingRange;
 
-		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(LaserBeam), false, GetOwner());
+		// 원본 구간은 발사자 자신을 무시. / 반사된 구간은 발사자도 맞힐 수 있음.
+		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(LaserBeam), false);
+		if (0 == ReflectionCount)
+			QueryParams.AddIgnoredActor(GetOwner());
+
 		FHitResult Hit;
 		const bool bHit = BeamRadius > 0.f
 			? World->SweepSingleByObjectType(Hit, SegmentStart, TraceEnd, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(BeamRadius), QueryParams)
@@ -234,9 +238,23 @@ void ULaserBeamComponent::UpdateBeam()
 
 void ULaserBeamComponent::ApplyLaserDamage()
 {
-	AActor* Target = HitActor.Get();
-	if (!IsValid(Target) || !IsActorOfClasses(Target, DamageTargetClasses) || DamagePerHit <= 0.f)
+	if (0.f  >= DamagePerHit) return;
+	if (true == BeamSegments.IsEmpty())
 	{
+		LastDamagedActor.Reset();
+		LastDamageTime = -1.f;
+		return;
+	}
+
+	// 피해 콜백에서 경로가 변경되어도 안전하도록 복사
+	const FLaserBeamSegment Segment = BeamSegments.Last();
+	AActor* Target = Segment.Hit.GetActor();
+
+	if (false == Segment.Hit.bBlockingHit || false == IsValid(Target) || 
+		false == IsActorOfClasses(Target, DamageTargetClasses))
+	{
+		LastDamagedActor.Reset();
+		LastDamageTime = -1.f;
 		return;
 	}
 
@@ -258,7 +276,7 @@ void ULaserBeamComponent::ApplyLaserDamage()
 		FVector PushDir = FVector::CrossProduct(FVector::UpVector, BeamDir);
 
 		// 플레이어가 빔 중심선의 왼쪽에 있으면 왼쪽으로 (빔 방향으로 밀면 계속 맞으므로 빔 밖으로 밀어냄)
-		const FVector ToPlayer = Player->GetActorLocation() - BeamStart;
+		const FVector ToPlayer = Player->GetActorLocation() - Segment.Start;
 		if (FVector::DotProduct(ToPlayer, PushDir) < 0.f)
 		{
 			PushDir = -PushDir;
@@ -270,11 +288,16 @@ void ULaserBeamComponent::ApplyLaserDamage()
 		return;
 	}
 
+	const TSubclassOf<UDamageType> HitDamageType = Segment.ReflectionCount > 0
+		? ReflectedDamageTypeClass : DamageTypeClass;
+
 	AActor* OwnerActor = GetOwner();
 	const APawn* OwnerPawn = Cast<APawn>(OwnerActor);
 	AController* InstigatorController = OwnerPawn ? OwnerPawn->GetController() : nullptr;
 
-	const float AppliedDamage = UGameplayStatics::ApplyDamage(Target, DamagePerHit, InstigatorController, OwnerActor, DamageTypeClass);
+	const float AppliedDamage = UGameplayStatics::ApplyDamage(
+		Target, DamagePerHit, InstigatorController, OwnerActor, HitDamageType);
+
 	if (AppliedDamage > 0.f)
 	{
 		OnLaserDamaged.Broadcast(this, Target, AppliedDamage);
