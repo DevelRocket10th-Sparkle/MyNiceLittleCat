@@ -2,6 +2,7 @@
 
 
 #include "Enemy/GAS/EnemyAttributeSet.h"
+#include "Enemy/EnemyCharacter.h"
 
 UEnemyAttributeSet::UEnemyAttributeSet()
 {
@@ -46,6 +47,7 @@ void UEnemyAttributeSet::PostAttributeChange(const FGameplayAttribute & Attribut
 	}
 }
 
+// 누적 피해를 비운 뒤 캐릭터 정책으로 실제 Health 계산
 void UEnemyAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData & Data)
 {
 	Super::PostGameplayEffectExecute(Data);
@@ -62,8 +64,12 @@ void UEnemyAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 			float FinalDamage = LocalDamage;	// 방어력이 없으므로 Damage 그대로 받음 (필요 시 수식 추가)
 			FinalDamage = FMath::Max(1.f, FinalDamage);	// 맞으면 최소 1
 			
-			const float NewHealth = FMath::Clamp(GetHealth() - FinalDamage, 0.f, GetMaxHealth());
-			SetHealth(NewHealth);
+			// 실제 Health 변경 전에 보스의 무적 및 페이즈 하한 정책 적용
+			UAbilitySystemComponent* OwnerASC = GetOwningAbilitySystemComponent();
+			AEnemyCharacter* Enemy = OwnerASC ? Cast<AEnemyCharacter>(OwnerASC->GetAvatarActor()) : nullptr;
+			if (!IsValid(Enemy) || !Enemy->HasAuthority() || !Enemy->IsAlive()) return;
+			const float NewHealth = Enemy->CalculateHealthAfterDamage(GetHealth(), GetMaxHealth(), FinalDamage);
+			if (NewHealth != GetHealth()) SetHealth(NewHealth);
 		}
 	}
 }

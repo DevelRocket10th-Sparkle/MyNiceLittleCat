@@ -230,9 +230,19 @@ void AMagneticCoin::HandleMeshBeginOverlap(UPrimitiveComponent* OverlappedCompon
 		return;
 	}
 
-	// TODO(합의): 플레이어가 TakeDamage를 받아 GAS HP에 반영하는 처리는 플레이어 담당과 확정 필요
 	FallHitActors.Add(OtherActor);
-	UGameplayStatics::ApplyDamage(OtherActor, FallDamage, nullptr, this, FallDamageTypeClass);
+
+	// TODO(합의): 플레이어가 TakeDamage → ApplyPlayerHit를 처리하게 되면 플레이어도 ApplyDamage로 통일
+	if (APlayerCharacter* Player = Cast<APlayerCharacter>(OtherActor))
+	{
+		// 피해·경직·무적은 플레이어 쪽에서 처리 (무적 중이면 무시됨), 코인에서 플레이어 쪽으로 밀림
+		Player->ApplyPlayerHit(FallDamage, Player->GetActorLocation() - GetActorLocation());
+	}
+	else
+	{
+		UGameplayStatics::ApplyDamage(OtherActor, FallDamage, nullptr, this, FallDamageTypeClass);
+	}
+
 	OnCoinFallHit.Broadcast(this, OtherActor);
 }
 

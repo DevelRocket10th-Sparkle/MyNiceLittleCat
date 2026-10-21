@@ -1,4 +1,10 @@
 // Fill out your copyright notice in the Description page of Project Settings.
+/*
+* 작성자: 전선현
+* 작성 일자: 2026.10.19.
+* 비행형 몬스터의 루트 모션 관련 회전 문제 처리를 위해
+* 캐릭터 무브먼트 컴포넌트를 상속하여 일부 함수 오버라이드 구현
+*/
 
 #pragma once
 
@@ -35,6 +41,11 @@ public :
 	) const override;
 
 	virtual bool ShouldRemainVertical() const override;
+
+	// 공격 회전 제한을 실제 이동 처리에 적용하여 루트 모션 회전도 차단
+	// 위치 이동과 충돌 해결을 유지하면서 공격 중 회전만 제한
+	virtual bool MoveUpdatedComponentImpl(const FVector& Delta, const FQuat& NewRotation,
+		bool bSweep, FHitResult* OutHit = nullptr, ETeleportType Teleport = ETeleportType::None) override;
 
 protected:
 	virtual void BeginPlay() override;
