@@ -10,6 +10,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 #include "DrawDebugHelpers.h"
+#include "Interfaces/ReflectiveSurfaceInterface.h"
+#include "Gimmicks/Boss/DamageTypes/DamageType_ReflectedLaser.h"
 
 ULaserBeamComponent::ULaserBeamComponent()
 {
@@ -22,6 +24,7 @@ ULaserBeamComponent::ULaserBeamComponent()
 	TraceObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_PhysicsBody));
 
 	DamageTypeClass = UDamageType_BossLaser::StaticClass();
+	ReflectedDamageTypeClass = UDamageType_ReflectedLaser::StaticClass();
 }
 
 void ULaserBeamComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -76,6 +79,7 @@ void ULaserBeamComponent::StopLaser()
 	bLaserActive = false;
 	HitActor.Reset();
 	LastHit = FHitResult();
+	BeamSegments.Reset();
 	SetComponentTickEnabled(false);
 
 	OnLaserStopped.Broadcast(this);
@@ -144,8 +148,9 @@ void ULaserBeamComponent::UpdateBeam()
 		FireDirection = MakeFireDirection(GetForwardVector());
 	}
 
+	BeamSegments.Reset();
 	BeamStart = GetComponentLocation();
-	BeamEnd = BeamStart + FireDirection * MaxRange;
+	BeamEnd = BeamStart; //. +FireDirection * MaxRange;
 	HitActor.Reset();
 	LastHit = FHitResult();
 
@@ -161,26 +166,95 @@ void ULaserBeamComponent::UpdateBeam()
 		ObjectParams.AddObjectTypesToQuery(UEngineTypes::ConvertToCollisionChannel(ObjectType));
 	}
 
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(LaserBeam), false, GetOwner());
+	FVector SegmentStart = BeamStart;
+	FVector SegmentDirection = FireDirection.GetSafeNormal();
+	float RemainingRange = FMath::Max(0.f, MaxRange);
+	int32 ReflectionCount = 0;
 
-	FHitResult Hit;
-	const bool bHit = BeamRadius > 0.f
-		? World->SweepSingleByObjectType(Hit, BeamStart, BeamEnd, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(BeamRadius), QueryParams)
-		: World->LineTraceSingleByObjectType(Hit, BeamStart, BeamEnd, ObjectParams, QueryParams);
-
-	if (bHit)
+	while ((RemainingRange > KINDA_SMALL_NUMBER) && (false == SegmentDirection.IsNearlyZero()))
 	{
-		BeamEnd = Hit.Location;
-		HitActor = Hit.GetActor();
-		LastHit = Hit;
+		const FVector TraceEnd = SegmentStart + SegmentDirection * RemainingRange;
+
+		// 원본 구간은 발사자 자신을 무시. / 반사된 구간은 발사자도 맞힐 수 있음.
+		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(LaserBeam), false);
+		if (0 == ReflectionCount)
+			QueryParams.AddIgnoredActor(GetOwner());
+
+		FHitResult Hit;
+		const bool bHit = BeamRadius > 0.f
+			? World->SweepSingleByObjectType(Hit, SegmentStart, TraceEnd, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(BeamRadius), QueryParams)
+			: World->LineTraceSingleByObjectType(Hit, SegmentStart, TraceEnd, ObjectParams, QueryParams);
+
+		FLaserBeamSegment& Segment = BeamSegments.AddDefaulted_GetRef(); // 직선 저장
+
+		Segment.Start = SegmentStart;
+		Segment.End = (true == bHit) ? FVector(Hit.Location) : TraceEnd;
+		Segment.Direction = SegmentDirection;
+		Segment.Hit = Hit;
+		Segment.ReflectionCount = ReflectionCount;
+
+		if (0 == ReflectionCount)
+		{
+			BeamEnd = Segment.End;
+			HitActor = Hit.GetActor();
+			LastHit = Hit;
+		}
+
+		// 아무것도 맞지 않았으면 경로 계산 종료
+		if (false == bHit || false == Hit.bBlockingHit || true == Hit.bStartPenetrating)
+			break;
+
+		// 반사 옵션 또는 계산 횟수 제한 확인
+		if (false == bEnableReflection || ReflectionCount >= FMath::Max(0, MaxReflectionCount))
+			break;
+
+		AActor* SurfaceActor = Hit.GetActor();
+		if (false == IsValid(SurfaceActor) ||
+			false == SurfaceActor->GetClass()->ImplementsInterface(UReflectiveSurfaceInterface::StaticClass()))
+			break;
+
+		// 레이저에 맞은 물체에게 반사 가능 여부, 방향을 물어봄
+		FVector ReflectedDirection = FVector::ZeroVector;
+		const bool bCanReflect = IReflectiveSurfaceInterface::Execute_TryGetReflection(
+			SurfaceActor, SegmentDirection, Hit, ReflectedDirection);
+		if (false == bCanReflect || true == ReflectedDirection.ContainsNaN()) break;
+
+		ReflectedDirection = ReflectedDirection.GetSafeNormal();
+		if (true == ReflectedDirection.IsNearlyZero()) break;
+
+		RemainingRange -= FVector::Distance(SegmentStart, Segment.End);
+
+		// 스윕의 중심 위치에서 표면 바깥으로 조금 이동
+		const float Offset = FMath::Max(0.1f, ReflectionStartOffset);
+		const FVector SurfaceNormal = FVector(Hit.ImpactNormal).GetSafeNormal();
+
+		SegmentStart = FVector(Hit.Location) + SurfaceNormal * Offset;
+
+		RemainingRange -= Offset;
+		SegmentDirection = ReflectedDirection;
+		++ReflectionCount;
 	}
 }
 
 void ULaserBeamComponent::ApplyLaserDamage()
 {
-	AActor* Target = HitActor.Get();
-	if (!IsValid(Target) || !IsActorOfClasses(Target, DamageTargetClasses) || DamagePerHit <= 0.f)
+	if (0.f  >= DamagePerHit) return;
+	if (true == BeamSegments.IsEmpty())
 	{
+		LastDamagedActor.Reset();
+		LastDamageTime = -1.f;
+		return;
+	}
+
+	// 피해 콜백에서 경로가 변경되어도 안전하도록 복사
+	const FLaserBeamSegment Segment = BeamSegments.Last();
+	AActor* Target = Segment.Hit.GetActor();
+
+	if (false == Segment.Hit.bBlockingHit || false == IsValid(Target) || 
+		false == IsActorOfClasses(Target, DamageTargetClasses))
+	{
+		LastDamagedActor.Reset();
+		LastDamageTime = -1.f;
 		return;
 	}
 
@@ -202,7 +276,7 @@ void ULaserBeamComponent::ApplyLaserDamage()
 		FVector PushDir = FVector::CrossProduct(FVector::UpVector, BeamDir);
 
 		// 플레이어가 빔 중심선의 왼쪽에 있으면 왼쪽으로 (빔 방향으로 밀면 계속 맞으므로 빔 밖으로 밀어냄)
-		const FVector ToPlayer = Player->GetActorLocation() - BeamStart;
+		const FVector ToPlayer = Player->GetActorLocation() - Segment.Start;
 		if (FVector::DotProduct(ToPlayer, PushDir) < 0.f)
 		{
 			PushDir = -PushDir;
@@ -214,11 +288,16 @@ void ULaserBeamComponent::ApplyLaserDamage()
 		return;
 	}
 
+	const TSubclassOf<UDamageType> HitDamageType = Segment.ReflectionCount > 0
+		? ReflectedDamageTypeClass : DamageTypeClass;
+
 	AActor* OwnerActor = GetOwner();
 	const APawn* OwnerPawn = Cast<APawn>(OwnerActor);
 	AController* InstigatorController = OwnerPawn ? OwnerPawn->GetController() : nullptr;
 
-	const float AppliedDamage = UGameplayStatics::ApplyDamage(Target, DamagePerHit, InstigatorController, OwnerActor, DamageTypeClass);
+	const float AppliedDamage = UGameplayStatics::ApplyDamage(
+		Target, DamagePerHit, InstigatorController, OwnerActor, HitDamageType);
+
 	if (AppliedDamage > 0.f)
 	{
 		OnLaserDamaged.Broadcast(this, Target, AppliedDamage);
@@ -234,11 +313,15 @@ void ULaserBeamComponent::DrawDebugBeam() const
 		return;
 	}
 
-	DrawDebugLine(World, BeamStart, BeamEnd, FColor::Red, false, 0.f, 0, FMath::Max(BeamRadius * 0.5f, 2.f));
 
-	if (HitActor.IsValid())
+	for (const FLaserBeamSegment& Segment : BeamSegments)
 	{
-		DrawDebugPoint(World, BeamEnd, 12.f, FColor::Red, false, 0.f);
+		const FColor DebugColor = (0 == Segment.ReflectionCount) ? FColor::Red : FColor::Green;
+
+		DrawDebugLine(World, Segment.Start, Segment.End, DebugColor, false, 0.f, 0, FMath::Max(BeamRadius * 0.5f, 2.f));
+
+		if(Segment.Hit.bBlockingHit)
+			DrawDebugPoint(World, Segment.End, 12.f, DebugColor, false, 0.f);
 	}
 #endif
 }
