@@ -3,7 +3,6 @@
 #include "Enemy/AI/EnemyAIController.h"
 #include "Characters/PlayerCharacter.h"
 #include "Components/SceneComponent.h"
-#include "BehaviorTree/BlackboardComponent.h"
 #include "BrainComponent.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
@@ -19,7 +18,7 @@ ABossEncounterManager::ABossEncounterManager()
 void ABossEncounterManager::BeginPlay()
 {
 	Super::BeginPlay();
-	if (HasAuthority()) ResetEncounter();
+	ResetEncounter();
 }
 
 // 레벨 기믹 참조를 먼저 전달한 뒤 보스 생성과 초기화 확인
@@ -27,7 +26,7 @@ bool ABossEncounterManager::SpawnBoss()
 {
 	if (!BossClass) return false;
 	// 보스의 초기 위치는 재시도 때마다 같은 설정 사용
-	const FTransform SpawnTransform = IsValid(SpawnPoint) ? SpawnPoint->GetActorTransform() : GetActorTransform();
+	const FTransform SpawnTransform = GetActorTransform();
 	ABossCharacter* Boss = GetWorld()->SpawnActorDeferred<ABossCharacter>(BossClass, SpawnTransform,
 		this, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
 	if (!Boss) return false;
@@ -58,41 +57,23 @@ void ABossEncounterManager::RemoveCurrentBoss()
 // 보스와 기믹 정리 후 새 보스를 생성하여 체력 및 페이즈 초기화
 void ABossEncounterManager::ResetEncounter()
 {
-	if (!HasAuthority()) return;
 	++EncounterGeneration;
 	EncounterState = EBossEncounterState::Resetting;
-	GetWorld()->GetTimerManager().ClearTimer(ParticipantCheckHandle);
+	GetWorld()->GetTimerManager().ClearTimer(PlayerCheckHandle);
 	GetWorld()->GetTimerManager().ClearTimer(ResetTimerHandle);
-	Participants.Reset();
+	ClearEncounterPlayer();
 	RemoveCurrentBoss();
 	if (SpawnBoss()) EncounterState = EBossEncounterState::Ready;
 	else UE_LOG(LogTemp, Error, TEXT("Boss room initialization failed: %s"), *GetName());
 }
 
-bool ABossEncounterManager::IsParticipantAlive(AActor* Participant) const
-{
-	// 현재 Player는 인터페이스 미구현 상태이므로 사망 Getter 사용
-	const APlayerCharacter* Player = Cast<APlayerCharacter>(Participant);
-	return IsValid(Player) && !Player->GetbIsDead();
-}
-
-AActor* ABossEncounterManager::FindAliveParticipant() const
-{
-	for (const TWeakObjectPtr<AActor>& Participant : Participants)
-		if (IsParticipantAlive(Participant.Get())) return Participant.Get();
-	return nullptr;
-}
-
 // 준비된 보스방의 첫 페이즈와 타깃 선정 시작
-bool ABossEncounterManager::StartEncounter(const TArray<AActor*>& InParticipants)
+bool ABossEncounterManager::StartEncounter(APlayerCharacter* Player)
 {
-	if (!HasAuthority() || EncounterState != EBossEncounterState::Ready || !IsValid(CurrentBoss)) return false;
-	Participants.Reset();
-	for (AActor* Participant : InParticipants)
-		if (IsParticipantAlive(Participant)) Participants.AddUnique(TWeakObjectPtr<AActor>(Participant));
-	// 최초 타깃은 참가자 목록 중 첫 번째 생존자
-	AActor* Target = FindAliveParticipant();
-	if (!Target) return false;
+	if (EncounterState != EBossEncounterState::Ready || !IsValid(CurrentBoss)
+		|| !IsValid(Player) || Player->GetbIsDead()) return false;
+	EncounterPlayer = Player;
+	EncounterPlayer->OnPlayerDied.AddUniqueDynamic(this, &ABossEncounterManager::HandlePlayerDied);
 	AEnemyAIController* AI = Cast<AEnemyAIController>(CurrentBoss->GetController());
 	if (!AI || !CurrentBoss->StartEncounter()) { ResetEncounter(); return false; }
 	if (!AI->GetBrainComponent() || !AI->GetBrainComponent()->IsRunning())
@@ -101,52 +82,80 @@ bool ABossEncounterManager::StartEncounter(const TArray<AActor*>& InParticipants
 		return false;
 	}
 	EncounterState = EBossEncounterState::Running;
-	AI->SetCombatTarget(Target);
+	AI->SetCombatTarget(EncounterPlayer);
 	// 타이머가 만들어진 전투 번호를 저장하여 이전 전투의 호출 무시
 	const int64 StartedGeneration = EncounterGeneration;
 	FTimerDelegate CheckDelegate;
 	CheckDelegate.BindWeakLambda(this, [this, StartedGeneration]()
 	{
-		if (StartedGeneration == EncounterGeneration) CheckParticipants();
+		if (StartedGeneration == EncounterGeneration) CheckPlayer();
 	});
-	GetWorld()->GetTimerManager().SetTimer(ParticipantCheckHandle, CheckDelegate, 0.5f, true);
+	GetWorld()->GetTimerManager().SetTimer(PlayerCheckHandle, CheckDelegate, 0.5f, true);
 	return true;
 }
 
-// 현재 타깃을 유지하되 사망 시 교체하고 전멸 시 초기화
-void ABossEncounterManager::CheckParticipants()
+// 단일 플레이어의 생존 여부만 확인
+void ABossEncounterManager::CheckPlayer()
 {
 	if (EncounterState != EBossEncounterState::Running) return;
 	if (!IsValid(CurrentBoss)) { ResetEncounter(); return; }
-	// 기존 타깃이 살아 있으면 유지하여 매번 타깃을 교체하지 않음
-	AEnemyAIController* AI = Cast<AEnemyAIController>(CurrentBoss->GetController());
-	UBlackboardComponent* Blackboard = AI ? AI->GetBlackboardComponent() : nullptr;
-	AActor* Target = Blackboard ? Cast<AActor>(Blackboard->GetValueAsObject(TEXT("TargetActor"))) : nullptr;
-	if (IsParticipantAlive(Target)) return;
-	Target = FindAliveParticipant();
-	if (!Target) { ResetEncounter(); return; }
-	if (AI) AI->SetCombatTarget(Target);
+	if (IsValid(EncounterPlayer) && !EncounterPlayer->GetbIsDead()) return;
+	EnterWaitingState();
+}
+
+void ABossEncounterManager::HandlePlayerDied()
+{
+	if (EncounterState == EBossEncounterState::Running || EncounterState == EBossEncounterState::Resetting)
+		EnterWaitingState();
+}
+
+void ABossEncounterManager::ClearEncounterPlayer()
+{
+	if (IsValid(EncounterPlayer))
+		EncounterPlayer->OnPlayerDied.RemoveDynamic(this, &ABossEncounterManager::HandlePlayerDied);
+	EncounterPlayer = nullptr;
+}
+
+void ABossEncounterManager::EnterWaitingState()
+{
+	// 사망 연출 중 보스를 삭제하거나 재배치하지 않고 현재 위치에서 전투만 종료
+	++EncounterGeneration;
+	GetWorld()->GetTimerManager().ClearTimer(PlayerCheckHandle);
+	GetWorld()->GetTimerManager().ClearTimer(ResetTimerHandle);
+	ClearEncounterPlayer();
+	EncounterState = EBossEncounterState::Waiting;
+	if (IsValid(CurrentBoss)) CurrentBoss->StopEncounter();
 }
 
 void ABossEncounterManager::HandleBossDefeated(ABossCharacter* Boss)
 {
 	if (Boss != CurrentBoss || EncounterState != EBossEncounterState::Running) return;
 	++EncounterGeneration;
-	GetWorld()->GetTimerManager().ClearTimer(ParticipantCheckHandle);
+	GetWorld()->GetTimerManager().ClearTimer(PlayerCheckHandle);
+	ClearEncounterPlayer();
 	EncounterState = EBossEncounterState::Cleared;
 }
 
 void ABossEncounterManager::HandleBossFailed(ABossCharacter* Boss)
 {
-	if (Boss != CurrentBoss) return;
+	if (Boss != CurrentBoss || EncounterState != EBossEncounterState::Running) return;
+	// 서비스나 Task의 실패 통지보다 플레이어 사망을 우선 처리
+	if (!IsValid(EncounterPlayer) || EncounterPlayer->GetbIsDead())
+	{
+		EnterWaitingState();
+		return;
+	}
 	EncounterState = EBossEncounterState::Resetting;
-	GetWorld()->GetTimerManager().ClearTimer(ParticipantCheckHandle);
+	GetWorld()->GetTimerManager().ClearTimer(PlayerCheckHandle);
+	// 다음 Tick까지 사망 구독을 유지하여 초기화 예약을 취소할 수 있게 함
 	// 실패 통지를 실행 중인 보스는 다음 Tick 이후 제거
 	const int64 ExpectedGeneration = ++EncounterGeneration;
 	ResetTimerHandle = GetWorld()->GetTimerManager().SetTimerForNextTick(
 		FTimerDelegate::CreateWeakLambda(this, [this, ExpectedGeneration]()
 		{
-			if (ExpectedGeneration == EncounterGeneration && EncounterState == EBossEncounterState::Resetting) ResetEncounter();
+			if (ExpectedGeneration != EncounterGeneration || EncounterState != EBossEncounterState::Resetting) return;
+			if (!IsValid(EncounterPlayer) || EncounterPlayer->GetbIsDead()) EnterWaitingState();
+			else ResetEncounter();
 		}));
 }
 
@@ -154,8 +163,9 @@ void ABossEncounterManager::HandleBossFailed(ABossCharacter* Boss)
 void ABossEncounterManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	++EncounterGeneration;
-	GetWorld()->GetTimerManager().ClearTimer(ParticipantCheckHandle);
+	GetWorld()->GetTimerManager().ClearTimer(PlayerCheckHandle);
 	GetWorld()->GetTimerManager().ClearTimer(ResetTimerHandle);
+	ClearEncounterPlayer();
 	RemoveCurrentBoss();
 	Super::EndPlay(EndPlayReason);
 }

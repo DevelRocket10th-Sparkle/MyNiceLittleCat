@@ -15,3 +15,4 @@ void UAnimNotify_EnemyPatternHit::Notify(USkeletalMeshComponent* MeshComp, UAnim
 	Payload.Instigator = Owner;
 	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(Owner, EnemyCombatTags::PatternHit, Payload);
 }
+

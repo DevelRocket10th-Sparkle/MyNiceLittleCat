@@ -56,12 +56,15 @@ public :
 	// 패턴별 공격 및 몽타주 설정: 미지정 시 기존 테스트 공격 사용
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
 	TObjectPtr<UEnemyPatternSetData> PatternSet;
+
 	// 최초로 플레이어를 감지하는 거리
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception", meta = (ClampMin = "0.0"))
 	float SightRadius = 1500.f;
+
 	// 이미 발견한 플레이어를 놓치는 거리
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception", meta = (ClampMin = "0.0"))
 	float LoseSightRadius = 1800.f;
+
 	// 정면에서 한쪽으로 보는 반각: 180이면 뒤쪽을 포함한 전 방향
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception", meta = (ClampMin = "0.0", ClampMax = "180.0"))
 	float PeripheralVisionHalfAngle = 180.f;

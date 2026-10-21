@@ -20,6 +20,7 @@
 #include "BrainComponent.h"
 #include "Enemy/AI/EnemyAIController.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
+#include "Enemy/Components/EnemyMeleeTraceComponent.h"
 
 // Sets default values
 AEnemyCharacter::AEnemyCharacter(const FObjectInitializer& ObjectInitializer)
@@ -32,6 +33,7 @@ AEnemyCharacter::AEnemyCharacter(const FObjectInitializer& ObjectInitializer)
 
 	AttributeSet = CreateDefaultSubobject<UEnemyAttributeSet>(TEXT("Stat"));
 	PatternComponent = CreateDefaultSubobject<UEnemyPatternComponent>(TEXT("PatternComponent"));
+	MeleeTraceComponent = CreateDefaultSubobject<UEnemyMeleeTraceComponent>(TEXT("MeleeTraceComponent"));
 
 }
 

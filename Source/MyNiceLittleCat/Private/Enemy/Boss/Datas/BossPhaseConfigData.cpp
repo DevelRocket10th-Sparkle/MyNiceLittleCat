@@ -11,7 +11,7 @@ bool UBossPhaseConfigData::ValidateConfiguration(FString& OutError) const
 	TSet<FName> Ids;
 	// 전투 페이즈별 체력 하한은 순서대로 감소해야 함
 	float PreviousFloor = 1.f;
-	if (Phases.IsEmpty() || IsLogOnlyPhase(0))
+	if (Phases.IsEmpty() || IsLogOnlyPhase(0) || Phases[0].Kind != EBossPhaseKind::Combat)
 	{
 		OutError = TEXT("The first phase must be an implemented combat phase.");
 		return false;
@@ -27,7 +27,7 @@ bool UBossPhaseConfigData::ValidateConfiguration(FString& OutError) const
 			return false;
 		}
 		Ids.Add(Phase.PhaseId);
-		if (!IsLogOnlyPhase(Index))
+		if (!IsLogOnlyPhase(Index) && Phase.Kind == EBossPhaseKind::Combat)
 		{
 			if (!FMath::IsFinite(Phase.HealthFloorRatio) || Phase.HealthFloorRatio < 0.f
 				|| Phase.HealthFloorRatio >= PreviousFloor
@@ -39,7 +39,8 @@ bool UBossPhaseConfigData::ValidateConfiguration(FString& OutError) const
 			PreviousFloor = Phase.HealthFloorRatio;
 		}
 	}
-	if (!IsLogOnlyPhase(Phases.Num() - 1) && PreviousFloor != 0.f)
+	if (!IsLogOnlyPhase(Phases.Num() - 1)
+		&& (Phases.Last().Kind != EBossPhaseKind::Combat || PreviousFloor != 0.f))
 	{
 		OutError = TEXT("Last combat phase must allow death.");
 		return false;
@@ -52,5 +53,5 @@ bool UBossPhaseConfigData::ValidateConfiguration(FString& OutError) const
 bool UBossPhaseConfigData::IsLogOnlyPhase(int32 Index) const
 {
 	return Phases.IsValidIndex(Index) && (Phases[Index].bLogOnly
-		|| Phases[Index].Kind != EBossPhaseKind::Combat || (bLogOnlyAfterFirstPhase && Index > 0));
+		|| Phases[Index].Kind == EBossPhaseKind::LogOnly || (bLogOnlyAfterFirstPhase && Index > 0));
 }
