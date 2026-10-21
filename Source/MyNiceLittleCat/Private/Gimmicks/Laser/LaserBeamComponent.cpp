@@ -12,6 +12,7 @@
 #include "DrawDebugHelpers.h"
 #include "Interfaces/ReflectiveSurfaceInterface.h"
 #include "Gimmicks/Boss/DamageTypes/DamageType_ReflectedLaser.h"
+#include "Gimmicks/Reflection/ReflectionMath.h"
 
 ULaserBeamComponent::ULaserBeamComponent()
 {
@@ -143,16 +144,31 @@ void ULaserBeamComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 void ULaserBeamComponent::UpdateBeam()
 {
-	if (bFollowComponentRotation)
-	{
+	if (true == bFollowComponentRotation)
 		FireDirection = MakeFireDirection(GetForwardVector());
-	}
 
-	BeamSegments.Reset();
+	// 계산 결과를 실제 레이저 배열에 저장
+	CalculateBeamPath(BeamSegments);
+
 	BeamStart = GetComponentLocation();
-	BeamEnd = BeamStart; //. +FireDirection * MaxRange;
+	BeamEnd = BeamStart;
 	HitActor.Reset();
 	LastHit = FHitResult();
+
+	// 기존 조회 함수는 원본 구간 정보를 유지
+	if (false == BeamSegments.IsEmpty())
+	{
+		const FLaserBeamSegment& FirstSegment = BeamSegments[0];
+
+		BeamEnd = FirstSegment.End;
+		HitActor = FirstSegment.Hit.GetActor();
+		LastHit = FirstSegment.Hit;
+	}
+}
+
+void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegments, const FVirtualReflectiveSurface* VirtualSurface) const
+{
+	OutSegments.Reset();
 
 	UWorld* World = GetWorld();
 	if (!World)
@@ -166,8 +182,9 @@ void ULaserBeamComponent::UpdateBeam()
 		ObjectParams.AddObjectTypesToQuery(UEngineTypes::ConvertToCollisionChannel(ObjectType));
 	}
 
-	FVector SegmentStart = BeamStart;
-	FVector SegmentDirection = FireDirection.GetSafeNormal();
+	FVector SegmentStart = GetComponentLocation();
+	FVector SegmentDirection = (true == bFollowComponentRotation) ? 
+		MakeFireDirection(GetForwardVector()).GetSafeNormal() : FireDirection.GetSafeNormal();
 	float RemainingRange = FMath::Max(0.f, MaxRange);
 	int32 ReflectionCount = 0;
 
@@ -181,24 +198,37 @@ void ULaserBeamComponent::UpdateBeam()
 			QueryParams.AddIgnoredActor(GetOwner());
 
 		FHitResult Hit;
-		const bool bHit = BeamRadius > 0.f
-			? World->SweepSingleByObjectType(Hit, SegmentStart, TraceEnd, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(BeamRadius), QueryParams)
+
+		// 먼저 실제 월드와 충돌 검사
+		bool bHit = BeamRadius > 0.f ? 
+			World->SweepSingleByObjectType(Hit, SegmentStart, TraceEnd, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(BeamRadius), QueryParams)
 			: World->LineTraceSingleByObjectType(Hit, SegmentStart, TraceEnd, ObjectParams, QueryParams);
 
-		FLaserBeamSegment& Segment = BeamSegments.AddDefaulted_GetRef(); // 직선 저장
+		bool bHitVirtualSurface = false;
 
+		if (nullptr != VirtualSurface)
+		{
+			FHitResult VirtualHit;
+			const bool bVirtualHit = FReflectionMath::TraceVirtualSurface(SegmentStart, TraceEnd, BeamRadius, *VirtualSurface, VirtualHit);
+
+			// 실제 물체보다 가상 반사판이 먼저라면 충돌 결과 교체
+			// 거의 같은 거리라면 실제 월드 충돌을 우선
+			if (true == bVirtualHit
+				&& (false == bHit || VirtualHit.Distance + KINDA_SMALL_NUMBER < Hit.Distance))
+			{
+				Hit = VirtualHit;
+				bHit = true;
+				bHitVirtualSurface = true;
+			}
+		}
+
+		FLaserBeamSegment& Segment = OutSegments.AddDefaulted_GetRef(); // 직선 저장
 		Segment.Start = SegmentStart;
 		Segment.End = (true == bHit) ? FVector(Hit.Location) : TraceEnd;
 		Segment.Direction = SegmentDirection;
 		Segment.Hit = Hit;
 		Segment.ReflectionCount = ReflectionCount;
-
-		if (0 == ReflectionCount)
-		{
-			BeamEnd = Segment.End;
-			HitActor = Hit.GetActor();
-			LastHit = Hit;
-		}
+		Segment.bHitVirtualSurface = bHitVirtualSurface;
 
 		// 아무것도 맞지 않았으면 경로 계산 종료
 		if (false == bHit || false == Hit.bBlockingHit || true == Hit.bStartPenetrating)
@@ -208,16 +238,39 @@ void ULaserBeamComponent::UpdateBeam()
 		if (false == bEnableReflection || ReflectionCount >= FMath::Max(0, MaxReflectionCount))
 			break;
 
-		AActor* SurfaceActor = Hit.GetActor();
-		if (false == IsValid(SurfaceActor) ||
-			false == SurfaceActor->GetClass()->ImplementsInterface(UReflectiveSurfaceInterface::StaticClass()))
-			break;
+		//AActor* SurfaceActor = Hit.GetActor();
+		//if (false == IsValid(SurfaceActor) ||
+		//	false == SurfaceActor->GetClass()->ImplementsInterface(UReflectiveSurfaceInterface::StaticClass()))
+		//	break;
 
-		// 레이저에 맞은 물체에게 반사 가능 여부, 방향을 물어봄
+		//// 레이저에 맞은 물체에게 반사 가능 여부, 방향을 물어봄
+		//FVector ReflectedDirection = FVector::ZeroVector;
+		//const bool bCanReflect = IReflectiveSurfaceInterface::Execute_TryGetReflection(
+		//	SurfaceActor, SegmentDirection, Hit, ReflectedDirection);
+		//if (false == bCanReflect || true == ReflectedDirection.ContainsNaN()) break;
 		FVector ReflectedDirection = FVector::ZeroVector;
-		const bool bCanReflect = IReflectiveSurfaceInterface::Execute_TryGetReflection(
-			SurfaceActor, SegmentDirection, Hit, ReflectedDirection);
-		if (false == bCanReflect || true == ReflectedDirection.ContainsNaN()) break;
+		bool bCanReflect = false;
+
+		if (true == bHitVirtualSurface)
+		{
+			// 가상 반사판에는 실제 액터가 없으므로 공통 계산 함수 사용
+			const FVector FrontNormal = VirtualSurface->Rotation.GetNormalized().GetForwardVector();
+			bCanReflect = FReflectionMath::TryReflectFrontFace(SegmentDirection, FrontNormal, FVector(Hit.ImpactNormal), ReflectedDirection);
+		}
+		else
+		{
+			// 실제 물체는 기존 인터페이스 사용
+			AActor* SurfaceActor = Hit.GetActor();
+
+			if (false == IsValid(SurfaceActor) || 
+				false == SurfaceActor->GetClass()->ImplementsInterface(UReflectiveSurfaceInterface::StaticClass()))
+				break;
+
+			bCanReflect = IReflectiveSurfaceInterface::Execute_TryGetReflection(SurfaceActor, SegmentDirection, Hit, ReflectedDirection);
+		}
+
+		if (false == bCanReflect || true == ReflectedDirection.ContainsNaN())
+			break;
 
 		ReflectedDirection = ReflectedDirection.GetSafeNormal();
 		if (true == ReflectedDirection.IsNearlyZero()) break;

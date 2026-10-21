@@ -54,6 +54,10 @@ struct MYNICELITTLECAT_API FLaserBeamSegment
 	// 이 구간에 도달하기까지 반사된 횟수. 원본 구간은 0
 	UPROPERTY(BlueprintReadOnly, Category = "LaserBeam")
 	int32 ReflectionCount = 0;
+
+	// 이 구간 끝에서 설치 예정 반사판에 맞았는지
+	UPROPERTY(BlueprintReadOnly, Category = "LaserBeam")
+	bool bHitVirtualSurface = false;
 };
 
 UCLASS(ClassGroup = (Gimmick), meta = (BlueprintSpawnableComponent))
@@ -116,6 +120,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
 	TArray<FLaserBeamSegment> GetBeamSegments() const { return BeamSegments; }
+
+	// VirtualSurface가 없으면 기존 실제 경로만 계산
+	void CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegments,
+		const struct FVirtualReflectiveSurface* VirtualSurface = nullptr) const;
 
 public:
 	UPROPERTY(BlueprintAssignable, Category = "LaserBeam")

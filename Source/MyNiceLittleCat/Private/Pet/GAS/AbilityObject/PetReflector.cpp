@@ -1,6 +1,7 @@
 #include "Pet/GAS/AbilityObject/PetReflector.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Gimmicks/Reflection/ReflectionMath.h"
 
 APetReflector::APetReflector()
 {
@@ -57,22 +58,6 @@ bool APetReflector::TryGetReflection_Implementation(const FVector& IncomingDirec
     if(false == Hit.bBlockingHit || Hit.bStartPenetrating) return false;
     if (CollisionBox.Get() != Hit.GetComponent()) return false;
 
-    const FVector Direction = IncomingDirection.GetSafeNormal(); // 들어온 방향 (입사 벡터)
-    const FVector FrontNormal = CollisionBox->GetForwardVector(); // 앞면 (반사판의 법선 벡터)
-    const FVector HitNormal = FVector(Hit.ImpactNormal).GetSafeNormal();
-
-    if (true == Direction.IsNearlyZero() || true == HitNormal.IsNearlyZero())
-        return false;
-
-    // 반사판 앞면에 맞았는지 체크 (뒷면 or 옆면은 반사 처리 하지 않아요)
-    constexpr float FrontFaceThreshold = 0.99f; // 거의 1에 가까운 (적당한 앞면 오차 각도를 허용)
-    if (FrontFaceThreshold > FVector::DotProduct(HitNormal, FrontNormal)) return false;
-
-    // 앞면을 향해 들어오는 공격인지 확인
-    const float IncomingDot = FVector::DotProduct(Direction, FrontNormal);
-    if (IncomingDot >= -KINDA_SMALL_NUMBER) return false;
-
-    // 반사 방향 R = D + 2N(-D내적N)
-    OutDirection = (Direction - 2.f * IncomingDot * FrontNormal).GetSafeNormal();
-    return (false == OutDirection.IsNearlyZero());
+    return FReflectionMath::TryReflectFrontFace(
+        IncomingDirection, CollisionBox->GetForwardVector(), FVector(Hit.ImpactNormal), OutDirection);
 }
