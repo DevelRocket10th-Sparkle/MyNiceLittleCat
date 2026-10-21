@@ -5,10 +5,11 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Interfaces/ReflectiveSurfaceInterface.h"
 #include "PetReflector.generated.h"
 
 UCLASS()
-class MYNICELITTLECAT_API APetReflector : public AActor
+class MYNICELITTLECAT_API APetReflector : public AActor, public IReflectiveSurfaceInterface
 {
 	GENERATED_BODY()
 	
@@ -23,6 +24,7 @@ protected:
 public:
 	float GetHalfWidth() const;
 	FVector GetPlacementHalfExtents() const;
+	virtual bool TryGetReflection_Implementation(const FVector& IncomingDirection, const FHitResult& Hit, FVector& OutDirection) const override;
 	// ========================================================================================
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Reflector")
