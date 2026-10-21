@@ -62,7 +62,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "MagneticCoinPattern")
 	void ClearCoins();
 
-	// 남은 코인 수 (bIncludeFalling이 false면 낙하 중인 코인 제외: 착지·잡힘·던져짐만)
+	// 남은 코인 수 (bIncludeFalling이 false면 예고·낙하 중인 코인 제외: 착지·잡힘·던져짐만)
 	UFUNCTION(BlueprintPure, Category = "MagneticCoinPattern")
 	int32 GetActiveCoinCount(bool bIncludeFalling = true) const;
 

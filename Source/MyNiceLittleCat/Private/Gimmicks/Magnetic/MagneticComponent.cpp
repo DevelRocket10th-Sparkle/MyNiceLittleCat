@@ -204,6 +204,12 @@ void UMagneticComponent::SetPolarity(EMagneticPolarity NewPolarity)
 	OnPolarityChanged.Broadcast(this, NewPolarity, OldPolarity);
 }
 
+FLinearColor UMagneticComponent::GetPolarityColor(EMagneticPolarity InPolarity) const
+{
+	const FLinearColor* Color = PolarityColors.Find(InPolarity);
+	return Color ? *Color : FLinearColor::White;
+}
+
 void UMagneticComponent::CreateDynamicMaterials()
 {
 	AActor* Owner = GetOwner();
