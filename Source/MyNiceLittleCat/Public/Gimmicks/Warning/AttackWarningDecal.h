@@ -7,6 +7,7 @@
 ///         → 공격이 끝나면 HideWarning (bDestroyOnHide면 액터 소멸)
 /// Duration > 0이면 Progress가 0 → 1로 자동 증가, 0이면 SetProgress로 직접 갱신합니다.
 /// 원형·사각형 모양은 머티리얼이 결정하므로 모양별로 BP(머티리얼만 다름)를 만들어 씁니다.
+/// 머티리얼 로컬 X(UV.x) = 액터 정면(Yaw 방향)이며, 사각형은 UV.x 0 쪽에서부터 진행도가 차오릅니다. 실제 크기는 SizeX·SizeY 파라미터로 넘깁니다.
 /// 자성 코인 낙하 지점 표시에 먼저 사용하고, 보스 공격 GA·레이저 예고에도 재사용할 수 있습니다.
 
 #pragma once
@@ -76,6 +77,13 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AttackWarning")
 	FName ProgressParameterName = TEXT("Progress");
+
+	// 표시 범위의 실제 크기(cm, 로컬 X·Y 전체 길이)를 넘길 스칼라 파라미터 (사각형 테두리 두께를 cm로 맞출 때 사용)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AttackWarning")
+	FName SizeXParameterName = TEXT("SizeX");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AttackWarning")
+	FName SizeYParameterName = TEXT("SizeY");
 
 	// 위아래로 투영하는 거리 (바닥 높낮이가 있으면 늘림). 지점 기준 위아래 절반씩
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AttackWarning", meta = (ClampMin = "1.0"))

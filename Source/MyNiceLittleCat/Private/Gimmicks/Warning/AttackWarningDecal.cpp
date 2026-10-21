@@ -65,6 +65,8 @@ void AAttackWarningDecal::ShowWarning(const FVector& Location, FVector2D HalfSiz
 	if (UMaterialInstanceDynamic* MID = GetOrCreateDynamicMaterial())
 	{
 		Decal->SetDecalMaterial(MID);
+		MID->SetScalarParameterValue(SizeXParameterName, HalfSize.X * 2.f);
+		MID->SetScalarParameterValue(SizeYParameterName, HalfSize.Y * 2.f);
 	}
 
 	SetColor(Color);
