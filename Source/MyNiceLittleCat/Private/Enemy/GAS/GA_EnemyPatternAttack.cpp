@@ -1,4 +1,4 @@
-#include "Enemy/GAS/GA_EnemyPatternAttack.h"
+﻿#include "Enemy/GAS/GA_EnemyPatternAttack.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
 #include "Enemy/GAS/EnemyCombatTags.h"
@@ -29,14 +29,20 @@ void UGA_EnemyPatternAttack::ActivateAbility(const FGameplayAbilitySpecHandle Ha
 	AActor* Target = nullptr;
 	if (!Enemy.IsValid() || !Enemy->IsAlive() || !PatternComponent.IsValid()
 		|| !PatternComponent->GetActiveExecution(ExecutionPattern, Target, RequestId)
-		|| !ExecutionPattern.Montage || !CommitAbility(Handle, ActorInfo, ActivationInfo))
+		)
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+	MeleeSettings = Cast<UEnemyMeleePatternSettings>(ExecutionPattern.ExecutionSettings);
+	if (!MeleeSettings || !MeleeSettings->Montage || !CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 	ExecutionTarget = Target;
 	MeleeTraceComponent = Enemy->GetMeleeTraceComponent();
-	if (!MeleeTraceComponent.IsValid() || !MeleeTraceComponent->PrepareAttack(ExecutionPattern.MeleeTraceSettings, RequestId))
+	if (!MeleeTraceComponent.IsValid() || !MeleeTraceComponent->PrepareAttack(MeleeSettings->MeleeTraceSettings, RequestId))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[%s] Pattern %s has no valid melee traces"), *Enemy->GetName(), *ExecutionPattern.PatternId.ToString());
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -70,7 +76,7 @@ void UGA_EnemyPatternAttack::ActivateAbility(const FGameplayAbilitySpecHandle Ha
 	EndTask->ReadyForActivation();
 	// Ability가 취소되면 몽타주도 정지
 	UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-		this, NAME_None, ExecutionPattern.Montage, 1.f, ExecutionPattern.MontageSection, true);
+		this, NAME_None, MeleeSettings->Montage, 1.f, MeleeSettings->MontageSection, true);
 	MontageTask->OnCompleted.AddDynamic(this, &UGA_EnemyPatternAttack::HandleMontageCompleted);
 	MontageTask->OnInterrupted.AddDynamic(this, &UGA_EnemyPatternAttack::HandleMontageCancelled);
 	MontageTask->OnCancelled.AddDynamic(this, &UGA_EnemyPatternAttack::HandleMontageCancelled);
@@ -83,7 +89,7 @@ void UGA_EnemyPatternAttack::HandleWindowBegin(FGameplayEventData Payload)
 		|| !PatternComponent->IsRequestRunning(RequestId) || !MeleeTraceComponent.IsValid()
 		|| Payload.Instigator != Enemy.Get() || Payload.OptionalObject2 != Enemy->GetMesh()) return;
 	UAnimInstance* AnimInstance = Enemy->GetMesh()->GetAnimInstance();
-	if (!AnimInstance || AnimInstance->GetCurrentActiveMontage() != ExecutionPattern.Montage) return;
+	if (!MeleeSettings || !AnimInstance || AnimInstance->GetCurrentActiveMontage() != MeleeSettings->Montage) return;
 	MeleeTraceComponent->BeginWindow(Payload.OptionalObject.Get());
 }
 
@@ -97,7 +103,7 @@ void UGA_EnemyPatternAttack::HandleWindowEnd(FGameplayEventData Payload)
 void UGA_EnemyPatternAttack::HandlePlayerHit(const FHitResult& Hit)
 {
 	if (!IsActive() || !Enemy.IsValid() || !Enemy->IsAlive() || !PatternComponent.IsValid()
-		|| !PatternComponent->IsRequestRunning(RequestId)) return;
+		|| !MeleeSettings || !PatternComponent->IsRequestRunning(RequestId)) return;
 	APlayerCharacter* Player = Cast<APlayerCharacter>(Hit.GetActor());
 	if (!IsValid(Player) || Player->GetbIsDead()) return;
 	if (ExecutionPattern.bRequiresLineOfSight)
@@ -105,7 +111,7 @@ void UGA_EnemyPatternAttack::HandlePlayerHit(const FHitResult& Hit)
 		AAIController* AI = Cast<AAIController>(Enemy->GetController());
 		if (!AI || !AI->LineOfSightTo(Player)) return;
 	}
-	const float Damage = Enemy->GetAttributeSet()->GetAttackPower() * ExecutionPattern.DamageMultiplier;
+	const float Damage = Enemy->GetAttributeSet()->GetAttackPower() * MeleeSettings->DamageMultiplier;
 	if (!FMath::IsFinite(Damage) || Damage <= 0.f) return;
 	FVector Direction = (Player->GetActorLocation() - Enemy->GetActorLocation()).GetSafeNormal2D();
 	if (Direction.IsNearlyZero()) Direction = Enemy->GetActorForwardVector().GetSafeNormal2D();
@@ -141,6 +147,7 @@ void UGA_EnemyPatternAttack::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	}
 	bOwnsRotationLock = false;
 	bOwnsMovementLock = false;
+	MeleeSettings = nullptr;
 	ExecutionTarget = nullptr;
 	RequestId = 0;
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);

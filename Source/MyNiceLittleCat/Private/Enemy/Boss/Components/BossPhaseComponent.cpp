@@ -3,8 +3,11 @@
 
 #include "Enemy/Boss/Components/BossPhaseComponent.h"
 #include "AbilitySystemComponent.h"
-#include "Abilities/GameplayAbility.h"
-#include "Abilities/GameplayAbilityTypes.h"
+#include "LevelSequence.h"
+#include "LevelSequenceActor.h"
+#include "LevelSequencePlayer.h"
+#include "MovieScene.h"
+#include "MovieSceneSequencePlaybackSettings.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 
@@ -13,7 +16,8 @@ UBossPhaseComponent::UBossPhaseComponent()
 {
 	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
 	// off to improve performance if you don't need them.
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
 
 	// ...
 }
@@ -35,14 +39,17 @@ void UBossPhaseComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// ...
+	// 플레이어 또는 액터 제거와 비정상 재생 종료도 다음 페이즈 진행으로 처리
+	if (IsTransitioning() && TransitionResult == EEnemyPatternResult::Running && SequenceTransitionId == ActiveTransitionId
+		&& (!IsValid(TransitionSequencePlayer) || !IsValid(TransitionSequenceActor)
+			|| (!TransitionSequencePlayer->IsPlaying() && !TransitionSequencePlayer->IsPaused())))
+		FinishTransitionSequence(TEXT("Playback unavailable"));
 }
 
 
 bool UBossPhaseComponent::InitializePhases(UAbilitySystemComponent* InASC, UBossPhaseConfigData* InConfig)
 {
 	StopAndInvalidate();
-	ClearGrantedAbilities();
 	ASC = InASC;
 	Config = InConfig;
 	CurrentPhaseIndex = INDEX_NONE;
@@ -53,18 +60,6 @@ bool UBossPhaseComponent::InitializePhases(UAbilitySystemComponent* InASC, UBoss
 		UE_LOG(LogTemp, Error, TEXT("Phase initialization failed: %s"), *Error);
 		return false;
 	}
-	for (int32 Index = 0; Index < Config->Phases.Num(); ++Index)
-	{
-		// 해당 인덱스 진입 전 실행할 전환 능력 설정
-		const FBossPhaseDefinition& Phase = Config->Phases[Index];
-		if (Config->IsLogOnlyPhase(Index) || !Phase.TransitionAbility) continue;
-		// 전환마다 고유 핸들을 사용하여 이전 전환 종료와 구분
-		const FGameplayAbilitySpecHandle Handle = InASC->GiveAbility(
-			FGameplayAbilitySpec(Phase.TransitionAbility, 1, INDEX_NONE, this));
-		if (!Handle.IsValid()) { ClearGrantedAbilities(); return false; }
-		TransitionHandles.Add(Index, Handle);
-	}
-	AbilityEndedDelegateHandle = InASC->OnAbilityEnded.AddUObject(this, &UBossPhaseComponent::HandleAbilityEnded);
 	return true;
 }
 
@@ -143,17 +138,50 @@ void UBossPhaseComponent::RequestNextPhase()
 bool UBossPhaseComponent::BeginPendingTransition(int64& OutTransitionId)
 {
 	OutTransitionId = 0;
-	if (!HasPendingTransition() || !ASC.IsValid()) return false;
+	if (!GetOwner()->HasAuthority() || !HasPendingTransition() || !ASC.IsValid()) return false;
 	RunState = EBossPhaseRunState::Transitioning;
 	OutTransitionId = ActiveTransitionId;
-	// 전환 연출이 비어 있으면 Task의 다음 Tick에서 바로 페이즈 적용
-	const FGameplayAbilitySpecHandle* Handle = TransitionHandles.Find(PendingPhaseIndex);
-	if (!Handle) { TransitionResult = EEnemyPatternResult::Completed; return true; }
-	ActiveTransitionHandle = *Handle;
-	if (!ASC->TryActivateAbility(ActiveTransitionHandle)) TransitionResult = EEnemyPatternResult::Failed;
-	if (TransitionResult == EEnemyPatternResult::Running)
-		GetWorld()->GetTimerManager().SetTimer(TransitionTimeoutHandle, this,
-			&UBossPhaseComponent::HandleTransitionTimeout, Config->Phases[PendingPhaseIndex].TransitionTimeout, false);
+	SequenceTransitionId = ActiveTransitionId;
+	const FBossPhaseDefinition& Phase = Config->Phases[PendingPhaseIndex];
+	if (Config->IsLogOnlyPhase(PendingPhaseIndex) || !Phase.bUseTransitionSequence)
+	{
+		FinishTransitionSequence(TEXT("Disabled"));
+		return true;
+	}
+	// 미지정 연출과 잘못된 길이 또는 제한 시간도 전투 실패 대신 연출만 건너뜀
+	if (!Phase.TransitionSequence || !Phase.TransitionSequence->GetMovieScene()
+		|| Phase.TransitionSequence->GetMovieScene()->GetPlaybackRange().IsEmpty()
+		|| !FMath::IsFinite(Phase.TransitionTimeout) || Phase.TransitionTimeout <= 0.f)
+	{
+		FinishTransitionSequence(TEXT("Invalid sequence or timeout"));
+		return true;
+	}
+	FMovieSceneSequencePlaybackSettings Settings;
+	Settings.bAutoPlay = false;
+	Settings.LoopCount.Value = 0;
+	Settings.bPauseAtEnd = false;
+	Settings.FinishCompletionStateOverride = EMovieSceneCompletionModeOverride::ForceRestoreState;
+	ALevelSequenceActor* SequenceActor = nullptr;
+	TransitionSequencePlayer = ULevelSequencePlayer::CreateLevelSequencePlayer(this, Phase.TransitionSequence, Settings, SequenceActor);
+	TransitionSequenceActor = SequenceActor;
+	if (!IsValid(TransitionSequencePlayer) || !IsValid(TransitionSequenceActor))
+	{
+		FinishTransitionSequence(TEXT("Creation failed"));
+		return true;
+	}
+	// 동적으로 생성한 보스는 시퀀스 바인딩 태그 Boss로 연결; 카메라만 사용하는 연출은 태그 생략 가능
+	if (!Phase.TransitionSequence->FindBindingsByTag(TEXT("Boss")).IsEmpty())
+		TransitionSequenceActor->SetBindingByTag(TEXT("Boss"), {GetOwner()}, false);
+	TransitionSequencePlayer->OnFinished.AddDynamic(this, &UBossPhaseComponent::HandleTransitionSequenceFinished);
+	TransitionSequencePlayer->OnStop.AddDynamic(this, &UBossPhaseComponent::HandleTransitionSequenceStopped);
+	GetWorld()->GetTimerManager().SetTimer(TransitionTimeoutHandle, this,
+		&UBossPhaseComponent::HandleTransitionTimeout, Phase.TransitionTimeout, false);
+	SetComponentTickEnabled(true);
+	TransitionSequencePlayer->Play();
+	// Play 중 즉시 종료된 경우에는 이미 완료된 요청을 다시 처리하지 않음
+	if (TransitionResult == EEnemyPatternResult::Running && IsValid(TransitionSequencePlayer)
+		&& !TransitionSequencePlayer->IsPlaying() && !TransitionSequencePlayer->IsPaused())
+		FinishTransitionSequence(TEXT("Playback failed"));
 	return true;
 }
 
@@ -164,20 +192,61 @@ EEnemyPatternResult UBossPhaseComponent::GetTransitionResult(int64 TransitionId)
 		? TransitionResult : EEnemyPatternResult::Invalid;
 }
 
-// 현재 능력의 종료 이벤트만 받아 완료 또는 취소 기록
-void UBossPhaseComponent::HandleAbilityEnded(const FAbilityEndedData& EndedData)
+// 정상 종료 시 다음 페이즈 적용 허용
+void UBossPhaseComponent::HandleTransitionSequenceFinished()
 {
-	if (!IsTransitioning() || TransitionResult != EEnemyPatternResult::Running
-		|| EndedData.AbilitySpecHandle != ActiveTransitionHandle) return;
-	GetWorld()->GetTimerManager().ClearTimer(TransitionTimeoutHandle);
-	TransitionResult = EndedData.bWasCancelled ? EEnemyPatternResult::Cancelled : EEnemyPatternResult::Completed;
+	FinishTransitionSequence(TEXT("Finished"));
 }
 
+// 외부에서 시퀀스를 Stop해도 다음 페이즈 적용 허용
+void UBossPhaseComponent::HandleTransitionSequenceStopped()
+{
+	FinishTransitionSequence(TEXT("Stopped"));
+}
+
+// 타임아웃은 전투 실패가 아니라 연출 생략으로 처리
 void UBossPhaseComponent::HandleTransitionTimeout()
 {
-	if (!IsTransitioning() || TransitionResult != EEnemyPatternResult::Running) return;
-	TransitionResult = EEnemyPatternResult::Failed;
-	if (ASC.IsValid()) ASC->CancelAbilityHandle(ActiveTransitionHandle);
+	FinishTransitionSequence(TEXT("Timeout"));
+}
+
+// 요청 번호가 일치하는 재생만 취소하고 다음 페이즈로 진행
+bool UBossPhaseComponent::CancelTransitionSequence(int64 TransitionId)
+{
+	if (!GetOwner()->HasAuthority() || GetTransitionResult(TransitionId) != EEnemyPatternResult::Running) return false;
+	FinishTransitionSequence(TEXT("Cancelled"));
+	return true;
+}
+
+// 재생 상태를 먼저 완료로 바꾼 뒤 정리하여 Stop 콜백의 중복 완료 방지
+void UBossPhaseComponent::FinishTransitionSequence(const TCHAR* Reason)
+{
+	if (!IsTransitioning() || TransitionResult != EEnemyPatternResult::Running
+		|| ActiveTransitionId == 0 || SequenceTransitionId != ActiveTransitionId) return;
+	TransitionResult = EEnemyPatternResult::Completed;
+	UE_LOG(LogTemp, Log, TEXT("[BossPhase][TransitionSequence] %s: %s"),
+		*Config->Phases[PendingPhaseIndex].PhaseId.ToString(), Reason);
+	CleanupTransitionSequence();
+}
+
+// 구독 해제 및 소유 참조 초기화 후 Stop과 상태 복원; 전투 초기화는 완료 통지를 발생시키지 않음
+void UBossPhaseComponent::CleanupTransitionSequence()
+{
+	SequenceTransitionId = 0;
+	SetComponentTickEnabled(false);
+	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(TransitionTimeoutHandle);
+	ULevelSequencePlayer* Player = TransitionSequencePlayer;
+	ALevelSequenceActor* Actor = TransitionSequenceActor;
+	TransitionSequencePlayer = nullptr;
+	TransitionSequenceActor = nullptr;
+	if (IsValid(Player))
+	{
+		Player->OnFinished.RemoveDynamic(this, &UBossPhaseComponent::HandleTransitionSequenceFinished);
+		Player->OnStop.RemoveDynamic(this, &UBossPhaseComponent::HandleTransitionSequenceStopped);
+		Player->Stop();
+		Player->RestoreState();
+	}
+	if (IsValid(Actor)) Actor->Destroy();
 }
 
 // 정상 종료한 전환에 한해 다음 페이즈 설정 확정
@@ -186,13 +255,6 @@ bool UBossPhaseComponent::CompleteTransition(int64 TransitionId)
 	if (GetTransitionResult(TransitionId) != EEnemyPatternResult::Completed || !ApplyPhase.IsBound()) return false;
 	CurrentPhaseIndex = PendingPhaseIndex;
 	PendingPhaseIndex = INDEX_NONE;
-	// 연속된 미담당 페이즈를 한 번씩 기록하고 다음 구현된 페이즈로 이동
-	while (Config->IsLogOnlyPhase(CurrentPhaseIndex))
-	{
-		UE_LOG(LogTemp, Log, TEXT("[BossPhase][LogOnly] %s skipped"), *Config->Phases[CurrentPhaseIndex].PhaseId.ToString());
-		if (CurrentPhaseIndex == Config->Phases.Num() - 1) break;
-		++CurrentPhaseIndex;
-	}
 	if (!ApplyCurrentPhase()) return false;
 	// 기믹 적용 중 정지 요청이 발생했다면 다시 활성화하지 않음
 	if (!IsTransitioning() || ActiveTransitionId != TransitionId) return false;
@@ -212,28 +274,13 @@ void UBossPhaseComponent::StopAndInvalidate()
 	ActiveTransitionId = 0;
 	PendingPhaseIndex = INDEX_NONE;
 	TransitionResult = EEnemyPatternResult::Invalid;
-	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(TransitionTimeoutHandle);
-	if (ASC.IsValid())
-	{
-		ASC->OnAbilityEnded.Remove(AbilityEndedDelegateHandle);
-		for (const auto& Pair : TransitionHandles) ASC->CancelAbilityHandle(Pair.Value);
-	}
-	AbilityEndedDelegateHandle.Reset();
-}
-
-// 이 컴포넌트가 부여한 GA를 중복 없이 서버에서 제거
-void UBossPhaseComponent::ClearGrantedAbilities()
-{
-	if (ASC.IsValid() && GetOwner()->HasAuthority())
-		for (const auto& Pair : TransitionHandles) ASC->ClearAbility(Pair.Value);
-	TransitionHandles.Reset();
+	CleanupTransitionSequence();
 }
 
 // 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출
 void UBossPhaseComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopAndInvalidate();
-	ClearGrantedAbilities();
 	ApplyPhase.Unbind();
 	OnTransitionRequested.Clear();
 	Super::EndPlay(EndPlayReason);
@@ -249,8 +296,8 @@ bool UBossPhaseComponent::IsCurrentPhaseLogOnly() const
 bool UBossPhaseComponent::RequestNextPhaseFromGimmick(FName PhaseId, int64 PhaseExecutionId)
 {
 	const FBossPhaseDefinition* Phase = GetCurrentPhase();
-	if (!GetOwner()->HasAuthority() || !Phase || IsCurrentPhaseLogOnly()
-		|| Phase->Kind != EBossPhaseKind::Barrier || Phase->PhaseId != PhaseId
+	if (!GetOwner()->HasAuthority() || !Phase
+		|| (!IsCurrentPhaseLogOnly() && Phase->Kind != EBossPhaseKind::Barrier) || Phase->PhaseId != PhaseId
 		|| PhaseExecutionId == 0 || PhaseExecutionId != ActivePhaseExecutionId
 		|| !Config->Phases.IsValidIndex(CurrentPhaseIndex + 1)) return false;
 	// 진입 중 즉시 완료되는 기믹은 설정 적용을 마친 뒤 한 번만 처리
@@ -273,6 +320,9 @@ bool UBossPhaseComponent::ApplyCurrentPhase()
 	const int64 ApplyingExecutionId = ActivePhaseExecutionId;
 	bPendingGimmickCompletion = false;
 	bApplyingPhase = true;
+	if (IsCurrentPhaseLogOnly())
+		UE_LOG(LogTemp, Log, TEXT("[BossPhase][LogOnly] %s waiting for manual completion"),
+			*Config->Phases[CurrentPhaseIndex].PhaseId.ToString());
 	const bool bApplied = IsCurrentPhaseLogOnly() || ApplyPhase.Execute(Config->Phases[CurrentPhaseIndex]);
 	bApplyingPhase = false;
 	return bApplied && IsTransitioning() && ActivePhaseExecutionId == ApplyingExecutionId;

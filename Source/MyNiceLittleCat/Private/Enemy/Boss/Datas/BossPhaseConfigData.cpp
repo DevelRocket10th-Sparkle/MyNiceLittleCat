@@ -20,10 +20,9 @@ bool UBossPhaseConfigData::ValidateConfiguration(FString& OutError) const
 	{
 		// 현재 검사할 페이즈 설정
 		const FBossPhaseDefinition& Phase = Phases[Index];
-		if (Phase.PhaseId.IsNone() || Ids.Contains(Phase.PhaseId)
-			|| !FMath::IsFinite(Phase.TransitionTimeout) || Phase.TransitionTimeout <= 0.f)
+		if (Phase.PhaseId.IsNone() || Ids.Contains(Phase.PhaseId))
 		{
-			OutError = TEXT("Invalid phase ID or transition timeout.");
+			OutError = TEXT("Invalid or duplicate phase ID.");
 			return false;
 		}
 		Ids.Add(Phase.PhaseId);
