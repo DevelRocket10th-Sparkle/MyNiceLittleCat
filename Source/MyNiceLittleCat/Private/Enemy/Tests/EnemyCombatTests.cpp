@@ -178,7 +178,7 @@ bool FBossPhaseConfigurationTest::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBossExternalPlaceholderTest, "MyNiceLittleCat.Enemy.ExternalPlaceholders",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-// 실드 액터와 외부 GA 없이 패턴 및 페이즈를 건너뛰고 체력 하한을 해제하는지 검사
+// 기믹 없이 로그 전용 페이즈에 머물며 수동 완료로 한 단계씩 진행하는지 검사
 bool FBossExternalPlaceholderTest::RunTest(const FString& Parameters)
 {
 	EnemyCombatTests::FFixture Fixture;
@@ -201,7 +201,7 @@ bool FBossExternalPlaceholderTest::RunTest(const FString& Parameters)
 		FBossPhaseDefinition External;
 		External.PhaseId = FName(*FString::Printf(TEXT("External%d"), Index));
 		External.Kind = Index == 1 ? EBossPhaseKind::Barrier : EBossPhaseKind::Combat;
-		External.TransitionAbility = UGameplayAbility::StaticClass();
+		External.bUseTransitionSequence = true;
 		External.AllowedPatternIds.Add(TEXT("UnimplementedPattern"));
 		Config->Phases.Add(External);
 	}
@@ -219,13 +219,24 @@ bool FBossExternalPlaceholderTest::RunTest(const FString& Parameters)
 	Phases->EvaluateHealth(70.f, 100.f);
 	int64 TransitionId = 0;
 	TestTrue(TEXT("External phase transition starts"), Phases->BeginPendingTransition(TransitionId));
-	TestEqual(TEXT("External transition ability is not activated"), Phases->GetTransitionResult(TransitionId), EEnemyPatternResult::Completed);
-	TestTrue(TEXT("All external phases are skipped"), Phases->CompleteTransition(TransitionId));
+	TestEqual(TEXT("Log-only phase does not wait for a sequence"), Phases->GetTransitionResult(TransitionId), EEnemyPatternResult::Completed);
+	TestTrue(TEXT("Log-only phase entry succeeds without gimmicks"), Phases->CompleteTransition(TransitionId));
 	Boss->FinishPhaseTransition();
-	TestEqual(TEXT("Last placeholder reached"), Phases->GetCurrentPhaseId(), FName(TEXT("External3")));
-	TestEqual(TEXT("No immortal health floor after skipping"), Boss->CalculateHealthAfterDamage(70.f, 100.f, 100.f), 0.f);
+	TestEqual(TEXT("First log-only phase waits instead of skipping"), Phases->GetCurrentPhaseId(), FName(TEXT("External1")));
+	TestEqual(TEXT("Health remains unchanged while waiting"), Boss->CalculateHealthAfterDamage(70.f, 100.f, 100.f), 70.f);
 	TestFalse(TEXT("Previous phase attacks stay disabled"), Patterns->TryStartPattern(Placeholder.PatternId, nullptr, RequestId));
 	TestFalse(TEXT("Stale transition completion ignored"), Phases->CompleteTransition(TransitionId));
+	for (int32 Index = 1; Index < 3; ++Index)
+	{
+		const int64 ExecutionId = Phases->GetCurrentPhaseExecutionId();
+		TestFalse(TEXT("Stale manual completion rejected"), Phases->RequestNextPhaseFromGimmick(Phases->GetCurrentPhaseId(), ExecutionId + 1));
+		TestTrue(TEXT("Manual completion accepted for log-only barrier or combat"), Phases->RequestNextPhaseFromGimmick(Phases->GetCurrentPhaseId(), ExecutionId));
+		TestTrue(TEXT("Next log-only transition starts"), Phases->BeginPendingTransition(TransitionId));
+		TestTrue(TEXT("Next log-only phase entered"), Phases->CompleteTransition(TransitionId));
+		Boss->FinishPhaseTransition();
+		TestEqual(TEXT("Manual completion advances exactly one phase"), Phases->GetCurrentPhaseId(), Config->Phases[Index + 1].PhaseId);
+	}
+	TestFalse(TEXT("Final log-only phase has no next phase"), Phases->RequestNextPhaseFromGimmick(Phases->GetCurrentPhaseId(), Phases->GetCurrentPhaseExecutionId()));
 	return true;
 }
 
