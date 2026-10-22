@@ -1,8 +1,8 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Enemy/Datas/EnemyPatternSetData.h"
+#include "Enemy/Datas/EnemyMeleePatternSettings.h"
 #include "EnemyMeleeTraceComponent.generated.h"
 
 class UMeshComponent;
@@ -30,7 +30,7 @@ public:
 	void StopAttack(int64 ExpectedRequestId = 0);
 	FEnemyMeleePlayerHit OnPlayerHit;
 
-	// 판정 구간 동안 소켓별 반지름과 이름을 표시. 캐릭터 BP에서 끌 수 있음
+	// 활성 소켓 Sweep(청록) 및 RushAttack 돌진 Sweep(주황)을 표시. 캐릭터 BP에서 끌 수 있음
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Melee")
 	bool bDrawDebugTraces = true;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;

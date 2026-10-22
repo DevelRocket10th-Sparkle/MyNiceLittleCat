@@ -71,6 +71,7 @@ void UJellyComponent::OnHealthChanged(const FOnAttributeChangeData& Data)
 	if (Data.NewValue < Data.OldValue)
 	{
 		StartJelly();
+		StartFlash();
 	}
 }
 
@@ -81,5 +82,28 @@ void UJellyComponent::StopJelly()
 		Mesh->SetRelativeScale3D(BaseScale);
 	}
 	SetComponentTickEnabled(false);
+}
+
+void UJellyComponent::StartFlash()
+{
+	if (!Mesh || !FlashMaterial) return;
+
+	FTimerManager& TimerManager = GetWorld()->GetTimerManager();
+
+	if (!TimerManager.IsTimerActive(FlashTimer))
+	{
+		OriginalOverlay = Mesh->GetOverlayMaterial();
+	}
+
+	Mesh->SetOverlayMaterial(FlashMaterial);
+	TimerManager.SetTimer(FlashTimer, this, &UJellyComponent::EndFlash, FlashDuration, false);
+}
+
+void UJellyComponent::EndFlash()
+{
+	if (Mesh)
+	{
+		Mesh->SetOverlayMaterial(OriginalOverlay);
+	}
 }
 

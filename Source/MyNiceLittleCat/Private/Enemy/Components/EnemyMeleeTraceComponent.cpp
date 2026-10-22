@@ -94,7 +94,7 @@ void UEnemyMeleeTraceComponent::BeginWindow(const UObject* NotifyKey)
 		Point.PreviousPosition = Point.Mesh->GetSocketLocation(Point.Socket);
 	}
 	ActiveNotify = NotifyKey;
-	HitActors.Reset();
+	// Deduplicate for the entire request, including separate notify windows.
 	++Generation;
 	SetComponentTickEnabled(true);
 	// 시작 시 이미 겹쳐 있는 캡슐도 검사
@@ -157,6 +157,11 @@ void UEnemyMeleeTraceComponent::SampleSockets()
 		if (bDrawDebugTraces)
 		{
 			DrawDebugSphere(GetWorld(), Current, Point.Radius, 16, FColor::Cyan, false, 0.f);
+			const FVector SweepDelta = Current - Point.PreviousPosition;
+			if (!SweepDelta.IsNearlyZero())
+				DrawDebugCapsule(GetWorld(), (Point.PreviousPosition + Current) * 0.5f,
+					Point.Radius + SweepDelta.Size() * 0.5f, Point.Radius,
+					FQuat::FindBetweenNormals(FVector::UpVector, SweepDelta.GetSafeNormal()), FColor::Cyan, false, 0.f);
 			DrawDebugLine(GetWorld(), Point.PreviousPosition, Current, FColor::Cyan, false, 0.f);
 			DrawDebugString(GetWorld(), Current + FVector(0.f, 0.f, Point.Radius + 8.f),
 				FString::Printf(TEXT("%s.%s (%.1f cm)"), *Point.SourceName.ToString(), *Point.Socket.ToString(), Point.Radius),

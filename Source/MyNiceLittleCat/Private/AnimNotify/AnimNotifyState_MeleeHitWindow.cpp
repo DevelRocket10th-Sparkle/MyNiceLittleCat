@@ -163,6 +163,12 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
             *SpecHandle.Data.Get()
         );
 
+        // 효과음
+        if (HitSound)
+        {
+            UGameplayStatics::PlaySoundAtLocation(World, HitSound, Target->GetActorLocation());
+        }
+
         // 카메라 셰이크
         if (APlayerCharacter* Player = Cast<APlayerCharacter>(Attacker))
         {

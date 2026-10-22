@@ -127,11 +127,11 @@ void AEnemyCharacter::BeginPlay()
 
 // Called every frame
 // 활성 상태의 매 프레임 처리
-void AEnemyCharacter::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-
-}
+//void AEnemyCharacter::Tick(float DeltaTime)
+//{
+//	Super::Tick(DeltaTime);
+//
+//}
 
 // 설정 데이터의 능력치 및 이동 속도를 캐릭터에 적용
 void AEnemyCharacter::ApplyEnemyConfig()

@@ -45,7 +45,8 @@ float ABossCharacter::CalculateHealthAfterDamage(float CurrentHealth, float MaxH
 	//const float HealthFloor = PhaseComponent->GetDamageHealthFloor(MaxHealth);
 
 	//return 0.0f;
-	if (!IsAlive() || !IsEncounterActive() || !PhaseComponent->IsActive()) return CurrentHealth;
+	if (!IsAlive() || !IsEncounterActive() || !PhaseComponent->IsActive()
+		|| PhaseComponent->IsCurrentPhaseLogOnly()) return CurrentHealth;
 	// 이미 하한보다 낮은 경우 체력을 올리지 않도록 현재 체력과 비교
 	const float EffectiveFloor = FMath::Min(CurrentHealth, PhaseComponent->GetDamageHealthFloor(MaxHealth));
 	return FMath::Clamp(CurrentHealth - FMath::Max(0.f, Damage), EffectiveFloor, CurrentHealth);
@@ -222,7 +223,21 @@ bool ABossCharacter::InitializeGimmickConnection()
 		}
 		PhaseGimmickComponent = Component;
 	}
+	// BP 컴포넌트는 FinishSpawning에서 생성되므로 연결 직후 매니저가 넘긴 참조 전달
+	if (PhaseGimmickComponent)
+	{
+		TMap<FName, AActor*> PhaseActors;
+		for (const auto& Pair : LevelGimmickActors) PhaseActors.Add(Pair.Key, Pair.Value);
+		IBossPhaseGimmickInterface::Execute_ReceiveLevelGimmickReferences(PhaseGimmickComponent, PhaseActors, GimmickAreaCenter);
+	}
 	return true;
+}
+
+// 매니저의 지연 스폰 중 호출: 실제 전달은 기믹 컴포넌트 연결 시 수행
+void ABossCharacter::SetLevelGimmickReferences(const TMap<FName, TObjectPtr<AActor>>& PhaseActors, AActor* AreaCenter)
+{
+	LevelGimmickActors = PhaseActors;
+	GimmickAreaCenter = AreaCenter;
 }
 
 // 정지 상태를 무효화한 뒤 호출하므로 정리 중 발생한 완료 알림도 페이즈를 진행시키지 못함

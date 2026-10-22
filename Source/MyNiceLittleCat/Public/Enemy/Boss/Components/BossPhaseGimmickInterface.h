@@ -21,4 +21,7 @@ public:
 	// 전환·사망·초기화 시 남은 기믹과 타이머·구독 정리; 여러 번 호출해도 안전해야 함
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Boss|Gimmick")
 	void StopBossGimmicks();
+	// 보스 초기화 중 매니저가 넘긴 레벨 기믹 참조 전달: 키는 PhaseId, 첫 페이즈 진입 전에 호출
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Boss|Gimmick")
+	void ReceiveLevelGimmickReferences(const TMap<FName, AActor*>& PhaseActors, AActor* AreaCenter);
 };
