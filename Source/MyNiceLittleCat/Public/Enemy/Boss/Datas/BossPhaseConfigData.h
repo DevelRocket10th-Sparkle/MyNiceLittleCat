@@ -11,8 +11,6 @@
 #include "Engine/DataAsset.h"
 #include "BossPhaseConfigData.generated.h"
 
-// 페이즈 진입 전환 연출을 수행할 능력
-class UGameplayAbility;
 class ULevelSequence;
 
 // 체력으로 진행하는 전투와 기믹 완료로 진행하는 배리어 구분
@@ -45,11 +43,6 @@ struct FBossPhaseDefinition
 	// 해당 페이즈에서 허용할 PatternSet의 패턴 ID
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TArray<FName> AllowedPatternIds;
-
-	// 이 페이즈에 진입하기 전에 실행할 전환 GA: 비워두면 즉시 진입
-	// 이전 에셋 호환용으로만 보관; 현재 전환에서는 부여하거나 실행하지 않음
-	UPROPERTY()
-	TSubclassOf<UGameplayAbility> TransitionAbility;
 
 	// 전환 연출을 사용할지 설정; false면 시퀀스를 만들지 않고 다음 페이즈 적용
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Transition")

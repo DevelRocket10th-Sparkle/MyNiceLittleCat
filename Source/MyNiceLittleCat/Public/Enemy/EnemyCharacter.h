@@ -109,7 +109,7 @@ protected:
 	
 	// Called every frame
 	// 활성 상태의 매 프레임 처리
-	virtual void Tick(float DeltaTime) override;
+	//virtual void Tick(float DeltaTime) override;
 
 	// Enemy 능력치 적용
 	// 설정 데이터의 능력치 및 이동 속도를 캐릭터에 적용
@@ -139,11 +139,6 @@ protected:
 	// 제거 중 이전 공격의 이벤트가 동작하지 않도록 실행 무효화
 	// 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-
-public :
-
-	// 기본 공격 능력
-	TSubclassOf<UGameplayAbility> BasicAttackAbility;
 
 protected :
 

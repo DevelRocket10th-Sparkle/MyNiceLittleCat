@@ -25,13 +25,13 @@ UBossPhaseComponent::UBossPhaseComponent()
 
 // Called when the game starts
 // 컴포넌트 초기화 후 실행 준비
-void UBossPhaseComponent::BeginPlay()
-{
-	Super::BeginPlay();
-
-	// ...
-	
-}
+//void UBossPhaseComponent::BeginPlay()
+//{
+//	Super::BeginPlay();
+//
+//	// ...
+//
+//}
 
 
 // Called every frame

@@ -87,7 +87,7 @@ public:
 protected:
 	// Called when the game starts
 	// 컴포넌트 초기화 후 실행 준비
-	virtual void BeginPlay() override;
+	//virtual void BeginPlay() override;
 
 public:	
 	// Called every frame
