@@ -223,7 +223,21 @@ bool ABossCharacter::InitializeGimmickConnection()
 		}
 		PhaseGimmickComponent = Component;
 	}
+	// BP 컴포넌트는 FinishSpawning에서 생성되므로 연결 직후 매니저가 넘긴 참조 전달
+	if (PhaseGimmickComponent)
+	{
+		TMap<FName, AActor*> PhaseActors;
+		for (const auto& Pair : LevelGimmickActors) PhaseActors.Add(Pair.Key, Pair.Value);
+		IBossPhaseGimmickInterface::Execute_ReceiveLevelGimmickReferences(PhaseGimmickComponent, PhaseActors, GimmickAreaCenter);
+	}
 	return true;
+}
+
+// 매니저의 지연 스폰 중 호출: 실제 전달은 기믹 컴포넌트 연결 시 수행
+void ABossCharacter::SetLevelGimmickReferences(const TMap<FName, TObjectPtr<AActor>>& PhaseActors, AActor* AreaCenter)
+{
+	LevelGimmickActors = PhaseActors;
+	GimmickAreaCenter = AreaCenter;
 }
 
 // 정지 상태를 무효화한 뒤 호출하므로 정리 중 발생한 완료 알림도 페이즈를 진행시키지 못함
