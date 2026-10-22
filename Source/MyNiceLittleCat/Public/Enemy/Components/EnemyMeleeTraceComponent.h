@@ -1,8 +1,8 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Enemy/Datas/EnemyPatternSetData.h"
+#include "Enemy/Datas/EnemyMeleePatternSettings.h"
 #include "EnemyMeleeTraceComponent.generated.h"
 
 class UMeshComponent;

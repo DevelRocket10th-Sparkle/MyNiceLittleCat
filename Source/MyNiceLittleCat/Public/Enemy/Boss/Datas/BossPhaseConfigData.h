@@ -11,8 +11,7 @@
 #include "Engine/DataAsset.h"
 #include "BossPhaseConfigData.generated.h"
 
-// 페이즈 진입 전환 연출을 수행할 능력
-class UGameplayAbility;
+class ULevelSequence;
 
 // 체력으로 진행하는 전투와 기믹 완료로 진행하는 배리어 구분
 UENUM(BlueprintType)
@@ -45,15 +44,19 @@ struct FBossPhaseDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TArray<FName> AllowedPatternIds;
 
-	// 이 페이즈에 진입하기 전에 실행할 전환 GA: 비워두면 즉시 진입
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	TSubclassOf<UGameplayAbility> TransitionAbility;
+	// 전환 연출을 사용할지 설정; false면 시퀀스를 만들지 않고 다음 페이즈 적용
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Transition")
+	bool bUseTransitionSequence = false;
+
+	// 진입 전에 한 번 재생할 연출; 미지정 또는 재생 실패 시 연출을 건너뜀
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Transition", meta = (EditCondition = "bUseTransitionSequence"))
+	TObjectPtr<ULevelSequence> TransitionSequence;
 
 	// 전환 GA가 종료되지 않는 경우 실패 처리할 제한 시간
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.1"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.1", EditCondition = "bUseTransitionSequence"))
 	float TransitionTimeout = 15.f;
 
-	// 다른 담당자의 페이즈: 기믹과 전환 능력 대신 로그만 출력
+	// 기믹과 전환 연출 없이 진입 로그를 출력하고 수동 완료 요청까지 대기
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	bool bLogOnly = false;
 };
@@ -72,7 +75,7 @@ public :
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Phases")
 	TArray<FBossPhaseDefinition> Phases;
 
-	// 현재 담당 범위인 첫 페이즈 이후는 로그만 출력; 전체 전투 구현 시 해제
+	// 첫 페이즈 이후는 기믹 없이 로그만 출력하고 각 페이즈에서 수동 완료까지 대기
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Phases")
 	bool bLogOnlyAfterFirstPhase = false;
 

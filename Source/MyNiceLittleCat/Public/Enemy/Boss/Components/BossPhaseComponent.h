@@ -9,13 +9,13 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "GameplayAbilitySpec.h"
 #include "Enemy/Datas/EnemyPatternSetData.h"
 #include "Enemy/Boss/Datas/BossPhaseConfigData.h"
 #include "BossPhaseComponent.generated.h"
 
 class UAbilitySystemComponent;
-struct FAbilityEndedData;
+class ULevelSequencePlayer;
+class ALevelSequenceActor;
 
 // 현재 페이즈와 별개로 관리하는 전환 진행 상태
 UENUM(BlueprintType)
@@ -53,6 +53,9 @@ public:
 	// 대기 중인 전환 시작: 성공하면 요청 ID를 반환
 	// 대기 중인 요청의 전환 GA 시작
 	bool BeginPendingTransition(int64& OutTransitionId);
+	// 재생 취소도 연출 종료로 처리하여 해당 요청의 다음 페이즈 진입 허용
+	UFUNCTION(BlueprintCallable, Category = "Boss|Phase")
+	bool CancelTransitionSequence(int64 TransitionId);
 	// 요청 ID가 일치하는 전환 결과 조회
 	// 현재 전환 번호와 일치하는 결과만 반환
 	EEnemyPatternResult GetTransitionResult(int64 TransitionId) const;
@@ -84,7 +87,7 @@ public:
 protected:
 	// Called when the game starts
 	// 컴포넌트 초기화 후 실행 준비
-	virtual void BeginPlay() override;
+	//virtual void BeginPlay() override;
 
 public:	
 	// Called every frame
@@ -101,26 +104,31 @@ private :
 	void RequestNextPhase();
 	// 적용 중 즉시 완료되는 기믹도 페이즈 활성화 이후 진행하도록 적용 구간 관리
 	bool ApplyCurrentPhase();
-	// 현재 전환 GA의 종료만 받아 정상 완료 또는 취소 기록
-	// 현재 능력의 종료 이벤트만 받아 완료 또는 취소 기록
-	void HandleAbilityEnded(const FAbilityEndedData& EndedData);
-	// 전환 종료 누락을 실패 처리하고 GA 취소
+	// 정상 종료와 외부 Stop 모두 전환 완료 결과로 처리
+	UFUNCTION()
+	void HandleTransitionSequenceFinished();
+	UFUNCTION()
+	void HandleTransitionSequenceStopped();
+	// 제한 시간 초과 시 시퀀스를 정리하고 연출 없이 진행
 	void HandleTransitionTimeout();
-	// 이 컴포넌트가 부여한 전환 GA만 제거
-	// 이 컴포넌트가 부여한 GA를 중복 없이 서버에서 제거
-	void ClearGrantedAbilities();
+	// 재생 종료 이유를 기록하고 구독 및 시퀀스 액터 정리
+	void FinishTransitionSequence(const TCHAR* Reason);
+	// 정지 콜백을 먼저 분리한 후 재생 상태와 임시 액터 제거
+	void CleanupTransitionSequence();
 
 	// 공유 페이즈 설정 데이터
 	UPROPERTY(Transient)
 	TObjectPtr<UBossPhaseConfigData> Config;
 	// 보스의 능력 실행 컴포넌트에 대한 약한 참조
 	TWeakObjectPtr<UAbilitySystemComponent> ASC;
-	// 다음 페이즈 인덱스별 전환 GA 핸들
-	TMap<int32, FGameplayAbilitySpecHandle> TransitionHandles;
-	// 현재 전환에서 실행한 GA 핸들
-	FGameplayAbilitySpecHandle ActiveTransitionHandle;
-	// ASC 종료 이벤트 구독 핸들
-	FDelegateHandle AbilityEndedDelegateHandle;
+	// 현재 전환만 소유하는 시퀀스 플레이어
+	UPROPERTY(Transient)
+	TObjectPtr<ULevelSequencePlayer> TransitionSequencePlayer;
+	// 생성한 임시 시퀀스 액터; 초기화와 종료 시 제거
+	UPROPERTY(Transient)
+	TObjectPtr<ALevelSequenceActor> TransitionSequenceActor;
+	// 이 플레이어가 속한 요청 번호; 전투 정지 시 먼저 무효화
+	int64 SequenceTransitionId = 0;
 	// 전환 제한 시간 타이머
 	FTimerHandle TransitionTimeoutHandle;
 	// 현재 적용된 페이즈 인덱스

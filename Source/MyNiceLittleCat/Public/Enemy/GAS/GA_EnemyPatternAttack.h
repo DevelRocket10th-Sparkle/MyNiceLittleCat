@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbility.h"
 #include "Enemy/Datas/EnemyPatternSetData.h"
@@ -43,6 +43,9 @@ protected :
 	UPROPERTY(BlueprintReadOnly, Category = "Pattern")
 	TObjectPtr<AActor> ExecutionTarget;
 private :
+	// 이 GA만 해석하는 근접 실행 설정; 공통 패턴 선택 정보와 분리
+	UPROPERTY(Transient)
+	TObjectPtr<UEnemyMeleePatternSettings> MeleeSettings;
 	// 공격 주체: 사망 또는 제거 여부 검사에 사용
 	TWeakObjectPtr<AEnemyCharacter> Enemy;
 	// 현재 요청의 유효성을 확인할 컴포넌트
