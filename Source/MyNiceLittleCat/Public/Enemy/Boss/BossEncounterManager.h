@@ -64,6 +64,12 @@ protected :
 	// 보스방의 현재 진행 상태
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss")
 	EBossEncounterState EncounterState = EBossEncounterState::Resetting;
+	// PhaseId별 레벨 기믹 액터 (배리어 등): 보스 생성마다 기믹 컴포넌트에 전달
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Boss|Gimmick")
+	TMap<FName, TObjectPtr<AActor>> PhaseGimmickActors;
+	// 기믹 영역 중심 (코인 스폰 기준 등): 비우면 기믹 쪽 기본값 사용
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Boss|Gimmick")
+	TObjectPtr<AActor> GimmickAreaCenter;
 private :
 	// 이번 전투의 단일 플레이어
 	UPROPERTY(Transient)
