@@ -46,7 +46,10 @@ EStateTreeRunStatus FPetFollowTask::EnterState(FStateTreeExecutionContext& Conte
         Controller->MoveToActor(Target, Data.FollowDistance, false);
 
     if (EPathFollowingRequestResult::Failed == Result)
+    {
+        Data.Pet->SetAnimationMovementStyle(EPetMovementStyle::Normal);
         return EStateTreeRunStatus::Failed;
+    }
 
     // Task 성공 ~
     Data.MoveTarget = Target;
@@ -92,6 +95,15 @@ EStateTreeRunStatus FPetFollowTask::Tick(FStateTreeExecutionContext& Context, co
     if (false == IsValid(Movement))
         return EStateTreeRunStatus::Failed;
 
+    // 설치 후 복귀가 실제 도착으로 끝났다면 일반 이동으로 복원
+    if (Data.Pet->GetRequestedBehavior() == EPetBehavior::Follow && 
+        Data.Pet->GetAnmationMovementStyle() == EPetMovementStyle::ReflectPlacement)
+    {
+        const UPathFollowingComponent* PathFollowing = Controller->GetPathFollowingComponent();
+        if (PathFollowing && PathFollowing->DidMoveReachGoal())
+            Data.Pet->SetAnimationMovementStyle(EPetMovementStyle::Normal);
+    }
+
     //! 뒤쳐진 거리를 가속/감속으로 따라잡기
     // 높이 차이를 제외한 거리, 플레이어 속도
     const float Distance = FVector::Dist2D(Data.Pet->GetActorLocation(), Target->GetActorLocation());
@@ -133,7 +145,10 @@ EStateTreeRunStatus FPetFollowTask::Tick(FStateTreeExecutionContext& Context, co
         Controller->MoveToActor(Target, Data.FollowDistance, false);
     
     if (Result == EPathFollowingRequestResult::Failed)
+    {
+        Data.Pet->SetAnimationMovementStyle(EPetMovementStyle::Normal);
         return EStateTreeRunStatus::Failed;
+    }
 
     Data.MoveTarget = Target;
     return EStateTreeRunStatus::Running;
