@@ -45,7 +45,8 @@ float ABossCharacter::CalculateHealthAfterDamage(float CurrentHealth, float MaxH
 	//const float HealthFloor = PhaseComponent->GetDamageHealthFloor(MaxHealth);
 
 	//return 0.0f;
-	if (!IsAlive() || !IsEncounterActive() || !PhaseComponent->IsActive()) return CurrentHealth;
+	if (!IsAlive() || !IsEncounterActive() || !PhaseComponent->IsActive()
+		|| PhaseComponent->IsCurrentPhaseLogOnly()) return CurrentHealth;
 	// 이미 하한보다 낮은 경우 체력을 올리지 않도록 현재 체력과 비교
 	const float EffectiveFloor = FMath::Min(CurrentHealth, PhaseComponent->GetDamageHealthFloor(MaxHealth));
 	return FMath::Clamp(CurrentHealth - FMath::Max(0.f, Damage), EffectiveFloor, CurrentHealth);

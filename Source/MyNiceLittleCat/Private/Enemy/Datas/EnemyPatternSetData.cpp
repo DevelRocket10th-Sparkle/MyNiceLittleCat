@@ -1,80 +1,51 @@
-#include "Enemy/Datas/EnemyPatternSetData.h"
+﻿#include "Enemy/Datas/EnemyPatternSetData.h"
+#include "Animation/AnimMontage.h"
 
+// 기존 에셋의 근접 필드만 전용 설정으로 이전; 이미 전용 설정이 있으면 덮어쓰지 않음
 void UEnemyPatternSetData::PostLoad()
 {
 	Super::PostLoad();
 	for (FEnemyPatternDefinition& Pattern : Patterns)
 	{
-		if (Pattern.MeleeTraceSettings.IsEmpty())
+		if (!Pattern.ExecutionSettings && (Pattern.Montage || !Pattern.MeleeTraceSettings.IsEmpty() || !Pattern.MeleeTraces.IsEmpty()))
 		{
-			for (const FEnemyMeleeTraceDefinition& Previous : Pattern.MeleeTraces)
+			// 기존 몽타주와 피해 배율을 보관할 근접 전용 객체
+			UEnemyMeleePatternSettings* Melee = NewObject<UEnemyMeleePatternSettings>(this, NAME_None, RF_Transactional);
+			Melee->Montage = Pattern.Montage;
+			Melee->MontageSection = Pattern.MontageSection;
+			Melee->DamageMultiplier = Pattern.DamageMultiplier;
+			for (const UEnemyMeleeTraceSettings* Previous : Pattern.MeleeTraceSettings)
+				if (Previous) Melee->MeleeTraceSettings.Add(DuplicateObject<UEnemyMeleeTraceSettings>(Previous, Melee));
+			if (Melee->MeleeTraceSettings.IsEmpty())
 			{
-				UEnemyMeleeTraceSettings* Settings = NewObject<UEnemyMeleeTraceSettings>(this, NAME_None, RF_Transactional);
-				Settings->SourceName = Previous.SourceName;
-				Settings->SocketNames = Previous.SocketNames;
-				Settings->Radius = Previous.Radius;
+				for (const FEnemyMeleeTraceDefinition& Previous : Pattern.MeleeTraces)
+				{
+					UEnemyMeleeTraceSettings* Settings = NewObject<UEnemyMeleeTraceSettings>(Melee, NAME_None, RF_Transactional);
+					Settings->SourceName = Previous.SourceName;
+					Settings->SocketNames = Previous.SocketNames;
+					Settings->Radius = Previous.Radius;
 #if WITH_EDITORONLY_DATA
-				Settings->SocketSourceMesh = Previous.SocketSourceMesh;
+					Settings->SocketSourceMesh = Previous.SocketSourceMesh;
 #endif
-				Pattern.MeleeTraceSettings.Add(Settings);
+					Melee->MeleeTraceSettings.Add(Settings);
+				}
 			}
+			Pattern.ExecutionSettings = Melee;
 		}
+		Pattern.Montage = nullptr;
+		Pattern.MontageSection = NAME_None;
+		Pattern.MeleeTraceSettings.Reset();
 		Pattern.MeleeTraces.Reset();
 	}
 }
 
 #if WITH_EDITOR
-#include "Engine/SkeletalMesh.h"
-#include "Engine/SkeletalMeshSocket.h"
-#include "Engine/StaticMesh.h"
-#include "Engine/StaticMeshSocket.h"
-#include "UObject/UnrealType.h"
-
+// 전용 객체의 판정 배열은 해당 설정 클래스에서 편집 처리
 void UEnemyPatternSetData::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent)
 {
-	// 배열 추가/붙여넣기로 생긴 빈 항목은 고정된 설정 클래스로 바로 생성.
+	// GA별 설정의 편집 처리는 전용 객체에 위임하여 공통 에셋이 판정 방식을 알 필요가 없게 함
 	for (FEnemyPatternDefinition& Pattern : Patterns)
-	{
-		for (TObjectPtr<UEnemyMeleeTraceSettings>& Settings : Pattern.MeleeTraceSettings)
-		{
-			if (!Settings)
-			{
-				Settings = NewObject<UEnemyMeleeTraceSettings>(this, NAME_None, RF_Transactional);
-			}
-		}
-	}
+		if (Pattern.ExecutionSettings) Pattern.ExecutionSettings->PostEditChangeChainProperty(PropertyChangedEvent);
 	Super::PostEditChangeChainProperty(PropertyChangedEvent);
-}
-
-TArray<FName> UEnemyMeleeTraceSettings::GetSocketOptions() const
-{
-	TArray<FName> Names;
-	UObject* Mesh = SocketSourceMesh.LoadSynchronous();
-	if (const USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(Mesh))
-	{
-		for (const USkeletalMeshSocket* Socket : SkeletalMesh->GetActiveSocketList())
-		{
-			if (Socket) Names.AddUnique(Socket->SocketName);
-		}
-	}
-	else if (const UStaticMesh* StaticMesh = Cast<UStaticMesh>(Mesh))
-	{
-		for (const UStaticMeshSocket* Socket : StaticMesh->Sockets)
-		{
-			if (Socket) Names.AddUnique(Socket->SocketName);
-		}
-	}
-	Names.Sort(FNameLexicalLess());
-	return Names;
-}
-
-void UEnemyMeleeTraceSettings::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
-{
-	if (PropertyChangedEvent.GetPropertyName() == GET_MEMBER_NAME_CHECKED(UEnemyMeleeTraceSettings, SocketSourceMesh))
-	{
-		const TArray<FName> Available = GetSocketOptions();
-		SocketNames.RemoveAll([&Available](FName Name) { return !Available.Contains(Name); });
-	}
-	Super::PostEditChangeProperty(PropertyChangedEvent);
 }
 #endif
