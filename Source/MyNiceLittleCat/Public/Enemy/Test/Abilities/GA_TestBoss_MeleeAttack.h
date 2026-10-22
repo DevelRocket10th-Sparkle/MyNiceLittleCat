@@ -1,8 +1,8 @@
-﻿#pragma once
+#pragma once
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbility.h"
 #include "Enemy/Datas/EnemyPatternSetData.h"
-#include "GA_EnemyPatternAttack.generated.h"
+#include "GA_TestBoss_MeleeAttack.generated.h"
 
 class AEnemyCharacter;
 class UEnemyPatternComponent;
@@ -10,17 +10,15 @@ class UEnemyMeleeTraceComponent;
 
 // 패턴 데이터의 몽타주를 사용하는 기본 근접 공격: 원거리 및 아레나 공격은 별도 GA로 확장
 UCLASS()
-class MYNICELITTLECAT_API UGA_EnemyPatternAttack : public UGameplayAbility
+class MYNICELITTLECAT_API UGA_TestBoss_MeleeAttack : public UGameplayAbility
 {
 	GENERATED_BODY()
 public :
 	// 서버 실행 및 Enemy별 인스턴스 설정
-	UGA_EnemyPatternAttack();
-	// 실행 컨텍스트 복사 후 이동과 회전을 제한하고 몽타주 실행
+	UGA_TestBoss_MeleeAttack();
 	// 요청 컨텍스트를 복사하고 판정 이벤트 및 몽타주 실행
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
-	// 정상 완료 및 취소 모두 이동과 회전 제한을 정리
 	// 정상 완료와 취소 모두 이 능력이 획득한 제한 및 참조 정리
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
@@ -35,14 +33,19 @@ protected :
 	void HandleWindowBegin(FGameplayEventData Payload);
 	UFUNCTION()
 	void HandleWindowEnd(FGameplayEventData Payload);
-	void HandlePlayerHit(const FHitResult& Hit);
+	virtual void HandlePlayerHit(const FHitResult& Hit);
+	virtual float GetDamageMultiplier() const;
+	// Shared by all hit sources and notify windows of this ability execution.
+	TSet<TWeakObjectPtr<AActor>> DamagedActors;
+	// Derived patterns validate their configuration before committing and start after montage activation.
+	virtual bool ValidatePattern() const { return true; }
+	virtual void OnMontageStarted() {}
 	// 현재 실행용으로 복사한 불변 패턴 설정
 	UPROPERTY(BlueprintReadOnly, Category = "Pattern")
 	FEnemyPatternDefinition ExecutionPattern;
 	// 실행 시작 시 타깃: Blackboard 변경과 독립적으로 유지
 	UPROPERTY(BlueprintReadOnly, Category = "Pattern")
 	TObjectPtr<AActor> ExecutionTarget;
-private :
 	// 이 GA만 해석하는 근접 실행 설정; 공통 패턴 선택 정보와 분리
 	UPROPERTY(Transient)
 	TObjectPtr<UEnemyMeleePatternSettings> MeleeSettings;
