@@ -290,6 +290,19 @@ void APetCharacter::CancelAbilityMove(const FGuid& RequestId)
 	CompleteAbilityMove(RequestId, false);
 }
 
+bool APetCharacter::IsModeAbilityActive(EPetMode _mode) const
+{
+	if (false == IsValid(AbilitySystemComponent.Get()))
+		return false;
+
+	FGameplayAbilitySpecHandle Handle;
+	if (false == TryGetModeAbilityHandle(_mode, Handle))
+		return false;
+
+	const FGameplayAbilitySpec* Spec = AbilitySystemComponent->FindAbilitySpecFromHandle(Handle);
+	return (nullptr != Spec && true == Spec->IsActive());
+}
+
 void APetCharacter::GrantModeAbilities()
 {
 	if (false == IsValid(AbilitySystemComponent.Get()))

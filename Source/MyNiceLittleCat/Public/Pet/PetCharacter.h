@@ -96,6 +96,11 @@ public:
 	void CancelAbilityMove(const FGuid& RequestId);
 
 	FGuid GetActiveAbilityMoveRequestId() const { return ActiveAbilityMoveRequestId; }
+
+	// 해당 모드의 능력이 실제 실행 중인지 확인
+	UFUNCTION(BlueprintPure, Category = "Pet|Mode")
+	bool IsModeAbilityActive(EPetMode _mode) const;
+
 private:
 	void GrantModeAbilities();
 	// =============================================================================

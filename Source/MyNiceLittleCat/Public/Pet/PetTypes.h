@@ -53,3 +53,12 @@ struct MYNICELITTLECAT_API FPetInitializationData
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pet")
     EPetBehavior InitialBehavior = EPetBehavior::Idle;
 };
+
+// 애니메이션을 선택할 이동 상황
+UENUM(BlueprintType)
+enum class EPetMovementStyle : uint8
+{
+    Normal           UMETA(DisplayName = "Normal"),
+    Magnet           UMETA(DisplayName = "Magnet"),
+    ReflectPlacement UMETA(DisplayName = "Reflect Placement")
+};
