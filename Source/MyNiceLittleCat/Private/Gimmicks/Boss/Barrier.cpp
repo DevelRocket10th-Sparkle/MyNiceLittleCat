@@ -4,6 +4,7 @@
 /// 보스전 배리어 구현
 
 #include "Gimmicks/Boss/Barrier.h"
+#include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/World.h"
@@ -59,11 +60,85 @@ ABarrier::ABarrier()
 
 	// 피해 무효는 상태 플래그로 처리하므로 메시는 시각용
 	Mesh->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+
+	// 배리어 메시 스케일과 상관없이 실제 반경으로 보이도록 절대 스케일
+	CollectRadiusPreview = CreateDefaultSubobject<USphereComponent>(TEXT("CollectRadiusPreview"));
+	CollectRadiusPreview->SetupAttachment(Mesh);
+	CollectRadiusPreview->SetAbsolute(false, false, true);
+	CollectRadiusPreview->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+	CollectRadiusPreview->SetGenerateOverlapEvents(false);
+	CollectRadiusPreview->SetHiddenInGame(true);
+	CollectRadiusPreview->ShapeColor = FColor(80, 200, 255);
+}
+
+void ABarrier::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+
+	if (CollectRadiusPreview)
+	{
+		CollectRadiusPreview->SetSphereRadius(GeneratorCollectRadius);
+		// 직접 지정한 목록을 쓰거나 자동 수집이 꺼져 있으면 반경 표시도 숨김
+		CollectRadiusPreview->SetVisibility(bAutoCollectGenerators && Generators.IsEmpty());
+	}
+}
+
+void ABarrier::CollectNearbyGenerators()
+{
+	Modify();
+	Generators.Reset();
+	for (ABarrierGenerator* Generator : FindNearbyGenerators())
+	{
+		Generators.Add(Generator);
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("%s: 생성장치 %d개 수집 (반경 %.0f)"), *GetName(), Generators.Num(), GeneratorCollectRadius);
+}
+
+TArray<ABarrierGenerator*> ABarrier::FindNearbyGenerators() const
+{
+	TArray<ABarrierGenerator*> Found;
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return Found;
+	}
+
+	const FVector Center = GetActorLocation();
+	for (TActorIterator<ABarrierGenerator> It(World); It; ++It)
+	{
+		ABarrierGenerator* Generator = *It;
+		if (!IsValid(Generator)
+			|| (!GeneratorCollectTag.IsNone() && !Generator->ActorHasTag(GeneratorCollectTag))
+			|| FVector::Dist2D(Center, Generator->GetActorLocation()) > GeneratorCollectRadius)
+		{
+			continue;
+		}
+
+		Found.Add(Generator);
+	}
+
+	Found.Sort([&Center](const ABarrierGenerator& A, const ABarrierGenerator& B)
+	{
+		return FVector::DistSquared2D(Center, A.GetActorLocation()) < FVector::DistSquared2D(Center, B.GetActorLocation());
+	});
+	return Found;
 }
 
 void ABarrier::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 직접 지정한 목록이 우선, 비어 있을 때만 근처 생성장치 수집
+	if (bAutoCollectGenerators && Generators.IsEmpty())
+	{
+		for (ABarrierGenerator* Generator : FindNearbyGenerators())
+		{
+			Generators.Add(Generator);
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("%s: 근처 생성장치 %d개 자동 수집 (반경 %.0f)"), *GetName(), Generators.Num(), GeneratorCollectRadius);
+	}
 
 	for (ABarrierGenerator* Generator : Generators)
 	{

@@ -9,7 +9,7 @@
 /// - Interval:     SpawnInterval마다 한 웨이브(CoinsPerWave개)
 /// - WhenDepleted: 남은 코인(낙하 중 + 바닥)이 RespawnThreshold 이하가 된 뒤 RespawnDelay가 지나면 한 웨이브
 /// 두 방식 모두 남은 코인이 MaxActiveCoins 이상이면 더 스폰하지 않습니다.
-/// TODO(합의): 보스 페이즈 매니저가 70% 페이즈 시작 시 StartPattern, 배리어 붕괴 시 StopPattern 호출하는 방식은 보스 담당과 확정 필요
+/// 보스전에서는 UBossGimmickComponent가 배리어 페이즈 진입 시 StartPattern, 페이즈 종료 시 StopPattern을 호출합니다.
 
 #pragma once
 
@@ -68,6 +68,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "MagneticCoinPattern")
 	FVector GetSpawnCenter() const;
+
+	// 스폰 영역 중심 액터 지정 (런타임 생성 보스처럼 레벨에서 지정할 수 없을 때, nullptr이면 소유 액터 위치)
+	UFUNCTION(BlueprintCallable, Category = "MagneticCoinPattern")
+	void SetSpawnCenterActor(AActor* InCenterActor) { SpawnCenterActor = InCenterActor; }
 
 	UFUNCTION(BlueprintPure, Category = "MagneticCoinPattern")
 	FVector GetSpawnAreaExtent() const { return SpawnAreaExtent; }

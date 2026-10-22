@@ -3,6 +3,8 @@
 ///
 /// 보스전 배리어입니다.
 /// 에디터에서 지정한 생성장치(Generators)를 구독하고, 배리어가 켜져 있는 동안 전부 무력화되면 붕괴합니다.
+/// Generators를 비워 두면 BeginPlay에서 GeneratorCollectRadius(수평 거리) 안의 생성장치를 자동으로 모읍니다.
+/// 같은 아레나에 배리어가 여러 개면 GeneratorCollectTag로 구분하거나 Generators를 직접 지정합니다.
 /// 비활성 상태로 시작하며, 켜질 때 생성장치를 가동하고 붕괴/해제 시 생성장치도 정지합니다.
 /// 보스 페이즈(70%, 30%)마다 별도 인스턴스를 배치하고 각각 생성장치를 연결해서 사용합니다.
 /// 보스와는 느슨하게 연결합니다: 보스 페이즈가 ActivateBarrier()를 호출하고 OnBarrierBroken을 구독하며,
@@ -17,6 +19,7 @@
 #include "Barrier.generated.h"
 
 class UStaticMeshComponent;
+class USphereComponent;
 class ABarrierGenerator;
 class ABarrier;
 
@@ -46,6 +49,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Barrier")
 	bool IsBarrierActive() const { return bBarrierActive; }
 
+	// 수집 반경 안의 생성장치로 Generators를 채움 (에디터 디테일 버튼으로 미리 확인·고정용)
+	UFUNCTION(CallInEditor, Category = "Barrier")
+	void CollectNearbyGenerators();
+
 public:
 	UPROPERTY(BlueprintAssignable, Category = "Barrier")
 	FOnBarrierStateChanged OnBarrierActivated;
@@ -55,7 +62,11 @@ public:
 	FOnBarrierStateChanged OnBarrierBroken;
 
 protected:
+	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
+
+	// 수집 반경(수평)·태그 조건에 맞는 월드의 생성장치, 가까운 순
+	TArray<ABarrierGenerator*> FindNearbyGenerators() const;
 
 	UFUNCTION()
 	void HandleGeneratorDisabled(ABarrierGenerator* Generator);
@@ -76,9 +87,25 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> Mesh;
 
-	// 이 배리어를 유지하는 생성장치들 (레벨에서 지정)
+	// 수집 반경 표시용 (에디터에서만 보임, 콜리전 없음)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USphereComponent> CollectRadiusPreview;
+
+	// 이 배리어를 유지하는 생성장치들 (레벨에서 지정, 비우면 자동 수집)
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Barrier")
 	TArray<TObjectPtr<ABarrierGenerator>> Generators;
+
+	// Generators가 비어 있으면 BeginPlay에서 근처 생성장치를 자동 수집
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Barrier|AutoCollect")
+	bool bAutoCollectGenerators = true;
+
+	// 자동 수집 반경 (배리어 위치 기준 수평 거리, cm)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Barrier|AutoCollect", meta = (ClampMin = "0.0", Units = "cm"))
+	float GeneratorCollectRadius = 1500.f;
+
+	// 비어 있지 않으면 이 액터 태그를 가진 생성장치만 수집 (배리어 여러 개를 한 아레나에 둘 때 구분용)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Barrier|AutoCollect")
+	FName GeneratorCollectTag;
 
 	// 시작하자마자 켤지 여부 (보스전에선 보통 false, 보스 페이즈가 켬)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Barrier")

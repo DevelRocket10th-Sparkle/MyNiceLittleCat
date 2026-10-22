@@ -1,4 +1,4 @@
-﻿#include "Enemy/GAS/GA_EnemyPatternAttack.h"
+#include "Enemy/Test/Abilities/GA_TestBoss_MeleeAttack.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
 #include "Enemy/GAS/EnemyCombatTags.h"
@@ -12,14 +12,14 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
 
-UGA_EnemyPatternAttack::UGA_EnemyPatternAttack()
+UGA_TestBoss_MeleeAttack::UGA_TestBoss_MeleeAttack()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
 }
 
 // 요청 컨텍스트를 복사하고 판정 이벤트 및 몽타주 실행
-void UGA_EnemyPatternAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
+void UGA_TestBoss_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
@@ -35,7 +35,8 @@ void UGA_EnemyPatternAttack::ActivateAbility(const FGameplayAbilitySpecHandle Ha
 		return;
 	}
 	MeleeSettings = Cast<UEnemyMeleePatternSettings>(ExecutionPattern.ExecutionSettings);
-	if (!MeleeSettings || !MeleeSettings->Montage || !CommitAbility(Handle, ActorInfo, ActivationInfo))
+	ExecutionTarget = Target;
+	if (!MeleeSettings || !MeleeSettings->Montage || !ValidatePattern() || !CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
@@ -48,7 +49,7 @@ void UGA_EnemyPatternAttack::ActivateAbility(const FGameplayAbilitySpecHandle Ha
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
-	PlayerHitDelegateHandle = MeleeTraceComponent->OnPlayerHit.AddUObject(this, &UGA_EnemyPatternAttack::HandlePlayerHit);
+	PlayerHitDelegateHandle = MeleeTraceComponent->OnPlayerHit.AddUObject(this, &UGA_TestBoss_MeleeAttack::HandlePlayerHit);
 	if (AAIController* AI = Cast<AAIController>(Enemy->GetController())) AI->StopMovement();
 	Enemy->GetCharacterMovement()->StopMovementImmediately();
 	if (ExecutionPattern.bFaceTargetOnStart && IsValid(Target))
@@ -68,22 +69,23 @@ void UGA_EnemyPatternAttack::ActivateAbility(const FGameplayAbilitySpecHandle Ha
 	// Notify 이벤트는 몽타주 시작 전에 구독
 	UAbilityTask_WaitGameplayEvent* BeginTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
 		this, EnemyCombatTags::MeleeWindowBegin, nullptr, false, true);
-	BeginTask->EventReceived.AddDynamic(this, &UGA_EnemyPatternAttack::HandleWindowBegin);
+	BeginTask->EventReceived.AddDynamic(this, &UGA_TestBoss_MeleeAttack::HandleWindowBegin);
 	BeginTask->ReadyForActivation();
 	UAbilityTask_WaitGameplayEvent* EndTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
 		this, EnemyCombatTags::MeleeWindowEnd, nullptr, false, true);
-	EndTask->EventReceived.AddDynamic(this, &UGA_EnemyPatternAttack::HandleWindowEnd);
+	EndTask->EventReceived.AddDynamic(this, &UGA_TestBoss_MeleeAttack::HandleWindowEnd);
 	EndTask->ReadyForActivation();
 	// Ability가 취소되면 몽타주도 정지
 	UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
 		this, NAME_None, MeleeSettings->Montage, 1.f, MeleeSettings->MontageSection, true);
-	MontageTask->OnCompleted.AddDynamic(this, &UGA_EnemyPatternAttack::HandleMontageCompleted);
-	MontageTask->OnInterrupted.AddDynamic(this, &UGA_EnemyPatternAttack::HandleMontageCancelled);
-	MontageTask->OnCancelled.AddDynamic(this, &UGA_EnemyPatternAttack::HandleMontageCancelled);
+	MontageTask->OnCompleted.AddDynamic(this, &UGA_TestBoss_MeleeAttack::HandleMontageCompleted);
+	MontageTask->OnInterrupted.AddDynamic(this, &UGA_TestBoss_MeleeAttack::HandleMontageCancelled);
+	MontageTask->OnCancelled.AddDynamic(this, &UGA_TestBoss_MeleeAttack::HandleMontageCancelled);
 	MontageTask->ReadyForActivation();
+	if (IsActive()) OnMontageStarted();
 }
 
-void UGA_EnemyPatternAttack::HandleWindowBegin(FGameplayEventData Payload)
+void UGA_TestBoss_MeleeAttack::HandleWindowBegin(FGameplayEventData Payload)
 {
 	if (!IsActive() || !Enemy.IsValid() || !Enemy->IsAlive() || !PatternComponent.IsValid()
 		|| !PatternComponent->IsRequestRunning(RequestId) || !MeleeTraceComponent.IsValid()
@@ -93,43 +95,50 @@ void UGA_EnemyPatternAttack::HandleWindowBegin(FGameplayEventData Payload)
 	MeleeTraceComponent->BeginWindow(Payload.OptionalObject.Get());
 }
 
-void UGA_EnemyPatternAttack::HandleWindowEnd(FGameplayEventData Payload)
+void UGA_TestBoss_MeleeAttack::HandleWindowEnd(FGameplayEventData Payload)
 {
 	if (MeleeTraceComponent.IsValid() && Enemy.IsValid() && Payload.Instigator == Enemy.Get()
 		&& Payload.OptionalObject2 == Enemy->GetMesh())
 		MeleeTraceComponent->EndWindow(Payload.OptionalObject.Get());
 }
 
-void UGA_EnemyPatternAttack::HandlePlayerHit(const FHitResult& Hit)
+void UGA_TestBoss_MeleeAttack::HandlePlayerHit(const FHitResult& Hit)
 {
 	if (!IsActive() || !Enemy.IsValid() || !Enemy->IsAlive() || !PatternComponent.IsValid()
 		|| !MeleeSettings || !PatternComponent->IsRequestRunning(RequestId)) return;
 	APlayerCharacter* Player = Cast<APlayerCharacter>(Hit.GetActor());
-	if (!IsValid(Player) || Player->GetbIsDead()) return;
+	if (!IsValid(Player) || Player->GetbIsDead() || DamagedActors.Contains(Player)) return;
 	if (ExecutionPattern.bRequiresLineOfSight)
 	{
 		AAIController* AI = Cast<AAIController>(Enemy->GetController());
 		if (!AI || !AI->LineOfSightTo(Player)) return;
 	}
-	const float Damage = Enemy->GetAttributeSet()->GetAttackPower() * MeleeSettings->DamageMultiplier;
+	const float Damage = Enemy->GetAttributeSet()->GetAttackPower() * GetDamageMultiplier();
 	if (!FMath::IsFinite(Damage) || Damage <= 0.f) return;
 	FVector Direction = (Player->GetActorLocation() - Enemy->GetActorLocation()).GetSafeNormal2D();
 	if (Direction.IsNearlyZero()) Direction = Enemy->GetActorForwardVector().GetSafeNormal2D();
+	// Insert after validation and before damage: hit callbacks may synchronously reenter/cancel.
+	DamagedActors.Add(Player);
 	Player->ApplyPlayerHit(Damage, Direction);
 }
 
-void UGA_EnemyPatternAttack::HandleMontageCompleted()
+float UGA_TestBoss_MeleeAttack::GetDamageMultiplier() const
+{
+	return MeleeSettings ? MeleeSettings->DamageMultiplier : 0.f;
+}
+
+void UGA_TestBoss_MeleeAttack::HandleMontageCompleted()
 {
 	if (IsActive()) EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
-void UGA_EnemyPatternAttack::HandleMontageCancelled()
+void UGA_TestBoss_MeleeAttack::HandleMontageCancelled()
 {
 	if (IsActive()) EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 }
 
 // 정상 완료와 취소 모두 이 능력이 획득한 제한 및 참조 정리
-void UGA_EnemyPatternAttack::EndAbility(const FGameplayAbilitySpecHandle Handle,
+void UGA_TestBoss_MeleeAttack::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
 	bool bReplicateEndAbility, bool bWasCancelled)
 {
@@ -150,5 +159,6 @@ void UGA_EnemyPatternAttack::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	MeleeSettings = nullptr;
 	ExecutionTarget = nullptr;
 	RequestId = 0;
+	DamagedActors.Reset();
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

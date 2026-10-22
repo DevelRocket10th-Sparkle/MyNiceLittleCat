@@ -58,17 +58,17 @@ bool FEnemyMeleeSweepTest::RunTest(const FString& Parameters)
 	Trace->BeginWindow(Window);
 	Weapon->SetWorldLocation(Center + FVector(200.f, 0.f, 0.f));
 	Trace->TickComponent(0.016f, LEVELTICK_All, nullptr);
-	TestEqual(TEXT("A new hit window may hit the player again"), HitCount, 2);
+	TestEqual(TEXT("A second window in one attack cannot hit the player again"), HitCount, 1);
 	Trace->StopAttack(1);
 	Weapon->SetWorldLocation(Center);
 	Trace->TickComponent(0.016f, LEVELTICK_All, nullptr);
-	TestEqual(TEXT("Cancelled attack cannot hit"), HitCount, 2);
+	TestEqual(TEXT("Cancelled attack cannot hit"), HitCount, 1);
 	// 피해 이벤트가 공격을 즉시 취소해도 다른 소켓 결과를 계속 전달하지 않음
 	Trace->OnPlayerHit.Clear();
 	Trace->OnPlayerHit.AddLambda([&](const FHitResult&) { ++HitCount; Trace->StopAttack(2); });
 	TestTrue(TEXT("Next request can prepare"), Trace->PrepareAttack({Definition}, 2));
 	Trace->BeginWindow(Window);
-	TestEqual(TEXT("Initial overlap supports synchronous cancellation"), HitCount, 3);
+	TestEqual(TEXT("New attack resets deduplication and supports synchronous cancellation"), HitCount, 2);
 	Trace->OnPlayerHit.Clear();
 	World->DestroyWorld(false);
 	return true;
