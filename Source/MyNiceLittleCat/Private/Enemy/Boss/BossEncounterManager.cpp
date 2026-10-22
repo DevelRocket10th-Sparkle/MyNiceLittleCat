@@ -33,6 +33,7 @@ bool ABossEncounterManager::SpawnBoss()
 	CurrentBoss = Boss;
 	Boss->OnDefeated.AddUniqueDynamic(this, &ABossEncounterManager::HandleBossDefeated);
 	Boss->OnEncounterFailed.AddUniqueDynamic(this, &ABossEncounterManager::HandleBossFailed);
+	Boss->SetLevelGimmickReferences(PhaseGimmickActors, GimmickAreaCenter);
 	Boss->FinishSpawning(SpawnTransform);
 	if (!Boss->GetController()) Boss->SpawnDefaultController();
 	if (!Boss->IsEnemyInitialized() || !Cast<AEnemyAIController>(Boss->GetController()))

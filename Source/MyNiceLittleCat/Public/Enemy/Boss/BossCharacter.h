@@ -57,6 +57,8 @@ public :
 	// 현재 연결한 기믹 컴포넌트의 완료만 페이즈 관리에 전달
 	UFUNCTION(BlueprintCallable, Category = "Boss|Gimmick")
 	bool NotifyPhaseGimmickCompleted(UActorComponent* SourceComponent, FName PhaseId, int64 PhaseExecutionId);
+	// 매니저가 FinishSpawning 전에 레벨 기믹 참조 저장: 기믹 컴포넌트 연결 시 전달
+	void SetLevelGimmickReferences(const TMap<FName, TObjectPtr<AActor>>& PhaseActors, AActor* AreaCenter);
 	// 보스방 관리자가 보스 사망을 받아 클리어 처리하는 이벤트
 	UPROPERTY(BlueprintAssignable, Category = "Boss")
 	FBossEncounterSignal OnDefeated;
@@ -98,6 +100,12 @@ private :
 	// 같은 보스에 붙은 계약 구현 컴포넌트; 매니저의 레벨 참조 전달은 별도 작업
 	UPROPERTY(Transient)
 	TObjectPtr<UActorComponent> PhaseGimmickComponent;
+	// 매니저가 넘긴 PhaseId별 레벨 기믹 액터 (배리어 등)
+	UPROPERTY(Transient)
+	TMap<FName, TObjectPtr<AActor>> LevelGimmickActors;
+	// 매니저가 넘긴 기믹 영역 중심 액터
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> GimmickAreaCenter;
 	// 안전한 다음 Tick 실패 처리용 타이머
 	FTimerHandle FailureTimerHandle;
 	// 초기화 및 사망 시 증가시켜 이전 전투의 지연 콜백 무효화
