@@ -101,6 +101,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pet|Mode")
 	bool IsModeAbilityActive(EPetMode _mode) const;
 
+	UFUNCTION(BlueprintPure, Category = "Pet|Animation")
+	EPetMovementStyle GetAnmationMovementStyle() const { return AnimationMovementStyle; }
+
+	void SetAnimationMovementStyle(EPetMovementStyle _newStyle) { AnimationMovementStyle = _newStyle; }
+
 private:
 	void GrantModeAbilities();
 	// =============================================================================
@@ -149,6 +154,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pet|Carry")
 	TObjectPtr<class USceneComponent> CarryPoint;
+
+	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Pet|Animation")
+	EPetMovementStyle AnimationMovementStyle = EPetMovementStyle::Normal;
 private:
 	// 초기화 됨?
 	UPROPERTY(Transient)

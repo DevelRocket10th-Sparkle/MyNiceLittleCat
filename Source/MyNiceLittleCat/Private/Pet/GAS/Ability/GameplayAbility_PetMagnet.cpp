@@ -53,6 +53,8 @@ void UGameplayAbility_PetMagnet::ActivateAbility(const FGameplayAbilitySpecHandl
 
 void UGameplayAbility_PetMagnet::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
 {
+    StopPolarityChangeAnimation();
+
     // 우클릭 해제·모드 변경 등 모든 종료 경로에서 정리
     ReleaseHeldTarget(100.f);
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
@@ -258,6 +260,8 @@ bool UGameplayAbility_PetMagnet::IsMagnetCandidate(const AActor* _actor) const
 void UGameplayAbility_PetMagnet::HandleSpecialAction(FGameplayEventData Payload)
 {
     CurrentPolarity = (CurrentPolarity == EPetMagnetPolarity::N) ? EPetMagnetPolarity::S: EPetMagnetPolarity::N;
+
+    PlayPolarityChangeAnimation();
 }
 
 bool UGameplayAbility_PetMagnet::TryGetTargetPolarity(const AActor* Target, EPetMagnetPolarity& OutPolarity) const

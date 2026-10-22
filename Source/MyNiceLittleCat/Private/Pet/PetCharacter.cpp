@@ -117,6 +117,7 @@ bool APetCharacter::RequestBehavior(EPetBehavior NewBehavior)
 
 	CancelAbilityMove(ActiveAbilityMoveRequestId);
 	RequestedBehavior = NewBehavior;
+	AnimationMovementStyle = EPetMovementStyle::Normal;
 	return true;
 }
 
@@ -144,6 +145,7 @@ bool APetCharacter::RequestMoveTo(const FVector& _destination)
 
 	MoveDestination = _destination;
 	RequestedBehavior = EPetBehavior::MoveTo;
+	AnimationMovementStyle = EPetMovementStyle::Normal;
 
 	return true; // MoveTo 명령 접수 완료
 }
@@ -266,6 +268,7 @@ FGuid APetCharacter::RequestAbilityMoveTo(const FVector& Destination)
 	// 기존 이동 Task에서 읽는 목적지 재사용
 	MoveDestination = Destination;
 	RequestedBehavior = EPetBehavior::AbilityMoveTo;
+	AnimationMovementStyle = EPetMovementStyle::Normal;
 
 	return ActiveAbilityMoveRequestId;
 }
