@@ -43,7 +43,7 @@ public:
 	void SetDodgeInvincible(bool bNewDodgeInvincible) { bIsDodgeInvincible = bNewDodgeInvincible; }
 
 	UStaticMeshComponent* GetWeaponMesh() const{ return WeaponMesh; }
-
+	UStaticMeshComponent* GetPotionMesh() const { return PotionMesh; }
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -195,6 +195,8 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Weapon")
 	TObjectPtr<UStaticMeshComponent> WeaponMesh;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
+	TObjectPtr<UStaticMeshComponent> PotionMesh;
 
 private:
 	bool bIsDodging = false;

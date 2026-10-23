@@ -62,6 +62,12 @@ APlayerCharacter::APlayerCharacter()
     WeaponMesh->SetupAttachment(GetMesh(), TEXT("R_Hand_Socket"));
     WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
+    // 표션 메쉬
+    //PotionMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PotionMesh"));
+    //PotionMesh->SetupAttachment(GetMesh(), TEXT("L_Hand_Socket"));
+    //PotionMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    //PotionMesh->SetVisibility(false);
+
     // 락온 컴포넌트
     LockOnComponent = CreateDefaultSubobject<ULockOnComponent>(TEXT("LockOnComponent"));
 
