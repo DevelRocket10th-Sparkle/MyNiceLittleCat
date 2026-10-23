@@ -11,7 +11,6 @@
 #include "AbilitySystemComponent.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
 #include "Enemy/Datas/EnemyConfigData.h"
-#include "Abilities/GameplayAbility.h"
 
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -90,25 +89,12 @@ void AEnemyCharacter::BeginPlay()
 	// Health 변경 델리게이트 구독
 	AttributeSet->OnHealthChange.AddUObject(this, &AEnemyCharacter::HandleHealthChanged);
 	
-	// 초기 Ability 부여
-	if (HasAuthority() && IsValid(ASC) && IsValid(EnemyConfig) && !EnemyConfig->PatternSet && EnemyConfig->BasicAttackAbility)
-	{
-		BasicAttackHandle =ASC->GiveAbility(
-			FGameplayAbilitySpec(
-				EnemyConfig->BasicAttackAbility,
-				1,
-				INDEX_NONE,
-				this
-			)
-		);
-	}
-
 	if (UEnemyCharacterMovementComponent* Movement = Cast<UEnemyCharacterMovementComponent>(GetCharacterMovement()))
 	{
 		Movement->InitializeHoverHeight();
 	}
 
-	// PatternSet을 지정한 Enemy만 새 패턴 경로를 사용하여 기존 테스트 BP와 공존
+	// 공격은 잡몹과 보스 모두 패턴 컴포넌트에서 실행
 	if (HasAuthority() && EnemyConfig && EnemyConfig->PatternSet
 		&& !PatternComponent->InitializePatterns(ASC, EnemyConfig->PatternSet))
 	{

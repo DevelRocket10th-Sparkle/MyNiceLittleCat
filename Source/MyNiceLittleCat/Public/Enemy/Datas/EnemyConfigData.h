@@ -12,7 +12,6 @@
 #include "EnemyConfigData.generated.h"
 
 class UBehaviorTree;
-class UGameplayAbility;
 class UEnemyPatternSetData;
 
 /**
@@ -45,15 +44,7 @@ public :
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Home", meta = (ClampMin = "0.0"))
 	float HomeArrivalRadius = 100.f;
 	
-	// 기존 테스트 공격 경로의 거리 기준
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat", meta = (ClampMin = "0.0"))
-	float AttackRange = 150.f;
-
-	// PatternSet이 없을 때 사용하는 기존 테스트 GA
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
-	TSubclassOf<UGameplayAbility> BasicAttackAbility;
-
-	// 패턴별 공격 및 몽타주 설정: 미지정 시 기존 테스트 공격 사용
+	// 공격 목록 및 실행 조건. 비워 두면 공격하지 않음.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
 	TObjectPtr<UEnemyPatternSetData> PatternSet;
 

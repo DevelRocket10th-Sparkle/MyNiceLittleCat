@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbility.h"
 #include "Enemy/Datas/EnemyPatternSetData.h"
+#include "Enemy/Datas/EnemyMeleePatternSettings.h"
 #include "GA_TestBoss_MeleeAttack.generated.h"
 
 class AEnemyCharacter;

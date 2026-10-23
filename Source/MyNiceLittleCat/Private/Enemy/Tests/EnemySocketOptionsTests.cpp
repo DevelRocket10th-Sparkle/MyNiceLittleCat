@@ -1,6 +1,6 @@
 ﻿#if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
 #include "Misc/AutomationTest.h"
-#include "Enemy/Datas/EnemyPatternSetData.h"
+#include "Enemy/Datas/EnemyMeleePatternSettings.h"
 #include "Animation/Skeleton.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"
@@ -44,32 +44,6 @@ bool FEnemySocketOptionsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Clearing mesh clears selections"), Trace->SocketNames.IsEmpty());
 	TestTrue(TEXT("No mesh offers no sockets"), Trace->GetSocketOptions().IsEmpty());
 
-	UEnemyPatternSetData* Data = NewObject<UEnemyPatternSetData>();
-	FEnemyPatternDefinition& Pattern = Data->Patterns.AddDefaulted_GetRef();
-	FEnemyMeleeTraceDefinition& Old = Pattern.MeleeTraces.AddDefaulted_GetRef();
-	Old.SourceName = TEXT("Weapon");
-	Old.SocketNames = {TEXT("StaffTip")};
-	Old.SocketSourceMesh = Staff;
-	Old.Radius = 37.f;
-	Data->PostLoad();
-	UEnemyMeleePatternSettings* Melee = Cast<UEnemyMeleePatternSettings>(Pattern.ExecutionSettings);
-	TestNotNull(TEXT("Legacy trace migrates to GA-specific execution settings"), Melee);
-	if (!Melee) return false;
-	TestEqual(TEXT("Legacy trace migrates to an inline object"), Melee->MeleeTraceSettings.Num(), 1);
-	if (!Melee->MeleeTraceSettings.IsEmpty())
-	{
-		const UEnemyMeleeTraceSettings* Migrated = Melee->MeleeTraceSettings[0];
-		TestEqual(TEXT("Migration retains source"), Migrated->SourceName, FName(TEXT("Weapon")));
-		TestEqual(TEXT("Migration retains sockets"), Migrated->SocketNames[0], FName(TEXT("StaffTip")));
-		TestEqual(TEXT("Migration retains radius"), Migrated->Radius, 37.f);
-		TestTrue(TEXT("Migration retains mesh"), Migrated->SocketSourceMesh.Get() == Staff);
-		TestTrue(TEXT("Inline traces belong to the melee settings"), Migrated->GetOuter() == Melee);
-	}
-	TestTrue(TEXT("Legacy array is cleared after migration"), Pattern.MeleeTraces.IsEmpty());
-	Data->PostLoad();
-	TestEqual(TEXT("Migration does not duplicate settings"), Melee->MeleeTraceSettings.Num(), 1);
-	TestTrue(TEXT("Legacy visible array is cleared"), Pattern.MeleeTraceSettings.IsEmpty());
-	TestTrue(TEXT("Migration keeps the new settings object"), Pattern.ExecutionSettings == Melee);
 	return true;
 }
 #endif

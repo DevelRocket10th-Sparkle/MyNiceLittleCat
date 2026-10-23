@@ -10,12 +10,9 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "Enemy/Datas/EnemyPatternExecutionSettings.h"
-// 기존 에셋 이전용 필드의 타입; 공통 실행 로직에서는 근접 설정을 사용하지 않음
-#include "Enemy/Datas/EnemyMeleePatternSettings.h"
 #include "EnemyPatternSetData.generated.h"
 
 class UGameplayAbility;
-class UAnimMontage;
 
 UENUM(BlueprintType)
 enum class EEnemyPatternResult : uint8
@@ -48,16 +45,6 @@ struct FEnemyPatternDefinition
 	// GA별 전용 설정; 몽타주와 근접 판정이 필요 없는 패턴은 비워도 됨
 	UPROPERTY(EditDefaultsOnly, Instanced, BlueprintReadOnly, Category = "Execution")
 	TObjectPtr<UEnemyPatternExecutionSettings> ExecutionSettings;
-
-	// 캐릭터 및 패턴별 공격 몽타주
-	// 이전 에셋 호환용: PostLoad에서 ExecutionSettings로 이전
-	UPROPERTY()
-	TObjectPtr<UAnimMontage> Montage;
-
-	// 공격 몽타주 시작 섹션; None이면 기본 위치
-	// 이전 에셋 호환용: 새 설정은 GA 전용 객체에서 편집
-	UPROPERTY()
-	FName MontageSection;
 
 	// 타깃과의 수평 최소 거리
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.0"))
@@ -100,16 +87,6 @@ struct FEnemyPatternDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.1"))
 	float MaxExecutionSeconds = 15.f;
 
-	// NotifyState 구간 동안 각 소켓의 이전 위치에서 현재 위치까지 Sphere Sweep
-	UPROPERTY(Instanced)
-	TArray<TObjectPtr<UEnemyMeleeTraceSettings>> MeleeTraceSettings;
-	// 기존 에셋의 설정을 잃지 않도록 PostLoad에서 이전. 에디터에는 표시하지 않음.
-	UPROPERTY()
-	TArray<FEnemyMeleeTraceDefinition> MeleeTraces;
-	// SetByCaller 피해량에 곱할 공격력 배율
-	// 이전 에셋 호환용 배율; 현재 근접 GA는 전용 설정 값을 사용
-	UPROPERTY()
-	float DamageMultiplier = 1.f;
 };
 
 /**
@@ -122,7 +99,6 @@ class MYNICELITTLECAT_API UEnemyPatternSetData : public UDataAsset
 
 public :
 
-	virtual void PostLoad() override;
 #if WITH_EDITOR
 	virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
 #endif

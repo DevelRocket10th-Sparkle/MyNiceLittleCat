@@ -11,8 +11,6 @@
 #include "MovieScene.h"
 #include "TimerManager.h"
 #include "UObject/UnrealType.h"
-#include "Enemy/Datas/EnemyPatternSetData.h"
-#include "Animation/AnimMontage.h"
 
 namespace EnemyPhaseSequenceTests
 {
@@ -157,31 +155,4 @@ bool FEnemyManualBarrierPhaseTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnemyPatternSettingsMigrationTest, "MyNiceLittleCat.Enemy.PatternSettingsMigration",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-// 기존 근접 에셋의 몽타주와 배율 보존 및 새 실행 설정을 덮어쓰지 않는지 확인
-bool FEnemyPatternSettingsMigrationTest::RunTest(const FString& Parameters)
-{
-	UEnemyPatternSetData* Data = NewObject<UEnemyPatternSetData>();
-	FEnemyPatternDefinition& Pattern = Data->Patterns.AddDefaulted_GetRef();
-	UAnimMontage* Montage = NewObject<UAnimMontage>(Data);
-	Pattern.Montage = Montage;
-	Pattern.MontageSection = TEXT("Attack");
-	Pattern.DamageMultiplier = 2.5f;
-	Data->PostLoad();
-	UEnemyMeleePatternSettings* Settings = Cast<UEnemyMeleePatternSettings>(Pattern.ExecutionSettings);
-	TestNotNull(TEXT("Legacy montage migrates into melee-only settings"), Settings);
-	if (!Settings) return false;
-	TestTrue(TEXT("Montage retained"), Settings->Montage == Montage);
-	TestEqual(TEXT("Section retained"), Settings->MontageSection, FName(TEXT("Attack")));
-	TestEqual(TEXT("Damage multiplier retained"), Settings->DamageMultiplier, 2.5f);
-	Settings->DamageMultiplier = 4.f;
-	Data->PostLoad();
-	TestEqual(TEXT("Migration never overwrites edited settings"), Settings->DamageMultiplier, 4.f);
-	FEnemyPatternDefinition& Arena = Data->Patterns.AddDefaulted_GetRef();
-	Data->PostLoad();
-	TestNull(TEXT("Montage-free patterns require no melee settings"), Arena.ExecutionSettings.Get());
-	return true;
-}
 #endif
