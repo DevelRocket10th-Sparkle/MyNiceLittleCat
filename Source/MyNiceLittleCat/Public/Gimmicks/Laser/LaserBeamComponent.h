@@ -101,6 +101,9 @@ public:
 	void SetBeamRadius(float NewBeamRadius) { BeamRadius = FMath::Max(NewBeamRadius, 0.f); }
 
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
+	float GetBeamRadius() const { return BeamRadius; }
+
+	UFUNCTION(BlueprintPure, Category = "LaserBeam")
 	bool IsLaserActive() const { return bLaserActive; }
 
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
