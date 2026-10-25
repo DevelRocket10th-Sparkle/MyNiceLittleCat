@@ -1,5 +1,11 @@
 #include "Gimmicks/Boss/Abilities/GA_BossLaserBeam.h"
+#include "Gimmicks/Boss/Abilities/AbilityTask_BossMoveToPoint.h"
 #include "Gimmicks/Boss/Abilities/BossLaserPatternSettings.h"
+#include "Gimmicks/Boss/BossGimmickComponent.h"
+#include "Gimmicks/Boss/LaserGridPattern.h"
+#include "Enemy/Boss/BossCharacter.h"
+#include "Enemy/GAS/EnemyAttributeSet.h"
+#include "Enemy/Boss/Components/BossPhaseComponent.h"
 #include "Gimmicks/Laser/LaserBeamComponent.h"
 #include "Gimmicks/Warning/AttackWarningDecal.h"
 #include "Enemy/EnemyCharacter.h"
@@ -69,6 +75,45 @@ void UGA_BossLaserBeam::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		return;
 	}
 
+	ShotsFired = 0;
+
+	// 근접 패턴과 같은 공식으로 피해량 적용 (이 패턴 동안만)
+	if (LaserSettings->bUseBossAttackPower && Enemy->GetAttributeSet())
+	{
+		OriginalDamagePerHit = Laser->GetDamagePerHit();
+		bOverrodeDamage = true;
+		Laser->SetDamagePerHit(Enemy->GetAttributeSet()->GetAttackPower() * LaserSettings->DamageMultiplier);
+		UE_LOG(LogTemp, Log, TEXT("[BossLaser] %s: 피해 %.1f (공격력 %.1f × %.2f)"), *Enemy->GetName(), Laser->GetDamagePerHit(),
+			Enemy->GetAttributeSet()->GetAttackPower(), LaserSettings->DamageMultiplier);
+	}
+
+	// 이동 잠금이 걸리면 경로 이동이 막히므로 이동을 먼저
+	FTransform BeamPoint;
+	if (LaserSettings->bMoveToGridBeamPoint && FindGridBeamPoint(BeamPoint))
+	{
+		UAbilityTask_BossMoveToPoint* MoveTask = UAbilityTask_BossMoveToPoint::BossMoveToPoint(this, BeamPoint.GetLocation(),
+			BeamPoint.Rotator().Yaw, LaserSettings->MoveAcceptanceRadius, LaserSettings->MoveTimeLimit);
+		MoveTask->OnArrived.AddDynamic(this, &UGA_BossLaserBeam::HandleArrived);
+		MoveTask->ReadyForActivation();
+		return;
+	}
+
+	if (LaserSettings->bMoveToGridBeamPoint)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BossLaser] %s: 격자 액터를 찾지 못해 제자리에서 쏩니다. 매니저 PhaseGimmickActors를 확인하세요."), *Enemy->GetName());
+	}
+
+	HandleArrived();
+}
+
+void UGA_BossLaserBeam::HandleArrived()
+{
+	if (!IsExecutionValid())
+	{
+		EndWithResult(true);
+		return;
+	}
+
 	if (AAIController* AI = Cast<AAIController>(Enemy->GetController()))
 	{
 		AI->StopMovement();
@@ -83,10 +128,29 @@ void UGA_BossLaserBeam::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		bOwnsRotationLock = true;
 	}
 
+	// 이동하는 동안 플레이어가 움직였을 수 있으므로 지점을 다시 잡음
+	FindTargetFloorPoint(AimPoint);
+
 	if (ExecutionPattern.bFaceTargetOnStart)
 	{
 		FaceAimPoint();
 	}
+
+	Enemy->GetWorldTimerManager().SetTimer(UpdateTimerHandle,
+		FTimerDelegate::CreateUObject(this, &UGA_BossLaserBeam::UpdateAim), AimUpdateInterval, true);
+
+	StartShot();
+}
+
+void UGA_BossLaserBeam::StartShot()
+{
+	if (!IsExecutionValid())
+	{
+		EndWithResult(true);
+		return;
+	}
+
+	FindTargetFloorPoint(AimPoint);
 
 	if (LaserSettings->ChargeMontage)
 	{
@@ -98,10 +162,8 @@ void UGA_BossLaserBeam::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	// 1단계: 추적
 	Stage = EBossLaserBeamStage::Tracking;
 	ShowAimWarning(0.f);
-	Enemy->GetWorldTimerManager().SetTimer(UpdateTimerHandle,
-		FTimerDelegate::CreateUObject(this, &UGA_BossLaserBeam::UpdateAim), AimUpdateInterval, true);
 
-	UE_LOG(LogTemp, Log, TEXT("[BossLaser] %s: 추적 시작 (%.2f초)"), *Enemy->GetName(), LaserSettings->AimTrackTime);
+	UE_LOG(LogTemp, Log, TEXT("[BossLaser] %s: %d/%d발 추적 시작 (%.2f초)"), *Enemy->GetName(), ShotsFired + 1, LaserSettings->ShotCount, LaserSettings->AimTrackTime);
 
 	if (LaserSettings->AimTrackTime > 0.f)
 	{
@@ -163,8 +225,85 @@ void UGA_BossLaserBeam::HandleLockFinished()
 
 void UGA_BossLaserBeam::HandleLaserStopped(ULaserBeamComponent* InLaser)
 {
-	UE_LOG(LogTemp, Log, TEXT("[BossLaser] 발사 종료"));
-	EndWithResult(false);
+	if (IsValid(Laser))
+	{
+		Laser->OnLaserStopped.RemoveDynamic(this, &UGA_BossLaserBeam::HandleLaserStopped);
+	}
+	Stage = EBossLaserBeamStage::None;
+
+	if (!IsExecutionValid())
+	{
+		EndWithResult(true);
+		return;
+	}
+
+	++ShotsFired;
+	UE_LOG(LogTemp, Log, TEXT("[BossLaser] %d/%d발 발사 종료"), ShotsFired, LaserSettings->ShotCount);
+
+	if (ShotsFired >= LaserSettings->ShotCount)
+	{
+		if (UBossGimmickComponent* Gimmick = Enemy->FindComponentByClass<UBossGimmickComponent>())
+		{
+			Gimmick->CompleteLaserTurn(EBossLaserTurn::Beam);
+		}
+		EndWithResult(false);
+		return;
+	}
+
+	if (LaserSettings->ShotInterval > 0.f)
+	{
+		UAbilityTask_WaitDelay* WaitTask = UAbilityTask_WaitDelay::WaitDelay(this, LaserSettings->ShotInterval);
+		WaitTask->OnFinish.AddDynamic(this, &UGA_BossLaserBeam::StartShot);
+		WaitTask->ReadyForActivation();
+	}
+	else
+	{
+		StartShot();
+	}
+}
+
+bool UGA_BossLaserBeam::FindGridBeamPoint(FTransform& OutTransform) const
+{
+	if (!Enemy.IsValid() || !LaserSettings)
+	{
+		return false;
+	}
+
+	const UBossGimmickComponent* Gimmick = Enemy->FindComponentByClass<UBossGimmickComponent>();
+	if (!Gimmick)
+	{
+		return false;
+	}
+
+	FName Key = LaserSettings->GridActorKey;
+	if (Key.IsNone())
+	{
+		const ABossCharacter* Boss = Cast<ABossCharacter>(Enemy.Get());
+		const UBossPhaseComponent* Phase = Boss ? Boss->GetPhaseComponent() : nullptr;
+		Key = Phase ? Phase->GetCurrentPhaseId() : NAME_None;
+	}
+
+	const ALaserGridPattern* Grid = Cast<ALaserGridPattern>(Gimmick->GetPhaseActor(Key));
+	if (!Grid)
+	{
+		return false;
+	}
+
+	OutTransform = Grid->GetBossBeamTransform();
+	return true;
+}
+
+bool UGA_BossLaserBeam::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
+{
+	if (!Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags))
+	{
+		return false;
+	}
+
+	const AActor* Avatar = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
+	const UBossGimmickComponent* Gimmick = Avatar ? Avatar->FindComponentByClass<UBossGimmickComponent>() : nullptr;
+	return !Gimmick || Gimmick->IsLaserTurnAllowed(EBossLaserTurn::Beam);
 }
 
 void UGA_BossLaserBeam::UpdateAim()
@@ -343,7 +482,13 @@ void UGA_BossLaserBeam::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	{
 		Laser->OnLaserStopped.RemoveDynamic(this, &UGA_BossLaserBeam::HandleLaserStopped);
 		Laser->StopLaser();
+
+		if (bOverrodeDamage)
+		{
+			Laser->SetDamagePerHit(OriginalDamagePerHit);
+		}
 	}
+	bOverrodeDamage = false;
 
 	HideAimWarning();
 
@@ -355,7 +500,7 @@ void UGA_BossLaserBeam::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	bOwnsRotationLock = false;
 	bOwnsMovementLock = false;
 
-	if (bWasCancelled && Enemy.IsValid())
+	if (bWasCancelled && IsActive() && Enemy.IsValid())
 	{
 		UE_LOG(LogTemp, Log, TEXT("[BossLaser] %s: 취소"), *Enemy->GetName());
 	}
@@ -364,6 +509,7 @@ void UGA_BossLaserBeam::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	LaserSettings = nullptr;
 	ExecutionTarget = nullptr;
 	RequestId = 0;
+	ShotsFired = 0;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

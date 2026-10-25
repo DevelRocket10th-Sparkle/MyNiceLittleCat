@@ -4,7 +4,7 @@
 /// 보스 단일 레이저 패턴(UGA_BossLaserBeam) 전용 실행 설정입니다.
 /// PatternSet의 패턴 항목 ExecutionSettings에서 이 클래스를 골라 편집합니다 (근접의 UEnemyMeleePatternSettings와 같은 방식).
 /// 레이저 굵기·사거리·피해량·발사 위치(눈·가슴 높이)는 보스 BP에 붙인 ULaserBeamComponent 값을 그대로 쓰고,
-/// 여기서는 공격 지점 추적·확정·발사 시간과 발사 중 추적 여부만 정합니다.
+/// 여기서는 공격 지점 추적·확정·발사 시간, 발사 중 추적 여부, 반복 횟수, (교대 페이즈용) 격자 안쪽 지점 이동만 정합니다.
 /// 보스 BP의 레이저 컴포넌트는 bPlanarAim을 꺼야 위에서 바닥으로 내리쏩니다.
 
 #pragma once
@@ -50,6 +50,39 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Fire", meta = (ClampMin = "0.0", Units = "cm/s", EditCondition = "bTrackDuringFire"))
 	float FireTrackSpeed = 250.f;
 
+	// true면 한 번 맞을 때 피해량 = 보스 AttackPower × DamageMultiplier (근접 패턴과 같은 공식, 패턴 동안만 적용)
+	// false면 보스 BP의 레이저 컴포넌트 DamagePerHit 그대로
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Damage")
+	bool bUseBossAttackPower = true;
+
+	// 보스 AttackPower에 곱할 배율. 레이저는 닿아 있으면 DamageInterval마다 다시 맞으므로 근접보다 낮게 잡는 것을 권장
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Damage", meta = (ClampMin = "0.0", EditCondition = "bUseBossAttackPower"))
+	float DamageMultiplier = 1.f;
+
+	// 패턴 한 번에 추적→확정→발사를 반복하는 횟수
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Repeat", meta = (ClampMin = "1"))
+	int32 ShotCount = 2;
+
+	// 한 발사가 끝난 뒤 다음 추적 시작까지 간격 (초)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Repeat", meta = (ClampMin = "0.0", Units = "s"))
+	float ShotInterval = 0.5f;
+
+	// true면 시작 전에 격자 액터의 BossBeamPoint(격자 안쪽)로 이동 (격자 레이저와 교대하는 페이즈용)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Move")
+	bool bMoveToGridBeamPoint = false;
+
+	// 매니저 PhaseGimmickActors에서 격자 액터를 찾을 키 (None이면 현재 페이즈 ID)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Move", meta = (EditCondition = "bMoveToGridBeamPoint"))
+	FName GridActorKey;
+
+	// 지점 도착으로 볼 거리 (cm)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Move", meta = (ClampMin = "1.0", Units = "cm", EditCondition = "bMoveToGridBeamPoint"))
+	float MoveAcceptanceRadius = 50.f;
+
+	// 이 시간 안에 도착하지 못하면 순간이동 (0이면 제한 없음)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Move", meta = (ClampMin = "0.0", Units = "s", EditCondition = "bMoveToGridBeamPoint"))
+	float MoveTimeLimit = 3.f;
+
 	// 공격 지점 경고 데칼 (원형 머티리얼 BP). 비어 있으면 경고 없이 진행
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Warning")
 	TSubclassOf<AAttackWarningDecal> WarningDecalClass;
@@ -61,7 +94,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Warning", meta = (ClampMin = "0.0", Units = "cm"))
 	float WarningRadiusPadding = 35.f;
 
-	// 추적·확정 동안 재생할 충전 몽타주 (선택, 끝나도 패턴은 계속)
+	// 매 발사의 추적·확정 동안 재생할 충전 몽타주 (선택, 끝나도 패턴은 계속)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Animation")
 	TObjectPtr<UAnimMontage> ChargeMontage;
 };

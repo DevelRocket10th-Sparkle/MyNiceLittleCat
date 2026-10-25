@@ -7,10 +7,13 @@
 ///       1. 추적(AimTrackTime): 공격 지점이 플레이어 발밑을 따라가고 원형 경고도 따라감, 보스는 지점 쪽으로 회전
 ///       2. 확정(LockDelay): 지점 고정, 경고가 차오름
 ///       3. 발사(FireDuration): 보스의 ULaserBeamComponent로 지점을 향해 발사. bTrackDuringFire면 지점이 플레이어 쪽으로 이동
-///       → 레이저가 꺼지면(OnLaserStopped) 정상 종료
+///       → 레이저가 꺼지면(OnLaserStopped) ShotInterval 뒤 1단계부터 다시, ShotCount번 쏘면 정상 종료
+/// (옵션) bMoveToGridBeamPoint면 시작 전에 격자 액터의 BossBeamPoint(격자 안쪽)로 이동한 뒤 잠금
+/// 레이저 교대 페이즈에서는 단일 레이저 차례일 때만 실행되고(CanActivateAbility), 정상 종료 시 순번을 격자로 넘깁니다.
 /// 취소(페이즈 전환·사망·리셋)와 정상 종료 모두 EndAbility에서 레이저·경고·잠금을 정리합니다.
-/// 피해는 레이저 컴포넌트가 처리합니다 (플레이어는 ApplyPlayerHit). 레이저 컴포넌트는 bPlanarAim을 꺼야 합니다.
-/// TODO(합의): 쿨다운·광역 레이저와의 교대는 보스 담당 패턴 수정 후 연결
+/// 피해는 레이저 컴포넌트가 처리합니다 (플레이어는 ApplyPlayerHit → 플레이어 피해 GE). 레이저 컴포넌트는 bPlanarAim을 꺼야 합니다.
+/// bUseBossAttackPower면 패턴 동안 레이저 피해량 = 보스 AttackPower × DamageMultiplier (근접 패턴과 같은 공식), 종료 시 원래 값으로 복구합니다.
+/// MaxExecutionSeconds는 이동 + ShotCount번 전체 시간보다 길게 잡아야 합니다.
 
 #pragma once
 
@@ -42,6 +45,11 @@ class MYNICELITTLECAT_API UGA_BossLaserBeam : public UGameplayAbility
 public:
 	UGA_BossLaserBeam();
 
+	// 레이저 교대 페이즈에서는 단일 레이저 차례일 때만 실행
+	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr,
+		FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 
@@ -49,6 +57,17 @@ public:
 		const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
 
 protected:
+	// 격자 안쪽 지점 도착 (이동하지 않으면 바로): 잠금 후 첫 발사
+	UFUNCTION()
+	void HandleArrived();
+
+	// 한 발사의 1단계(추적) 시작
+	UFUNCTION()
+	void StartShot();
+
+	// 격자 액터의 BossBeamPoint (못 찾으면 false)
+	bool FindGridBeamPoint(FTransform& OutTransform) const;
+
 	// 1단계 끝: 공격 지점 확정
 	UFUNCTION()
 	void HandleAimFinished();
@@ -115,6 +134,14 @@ protected:
 
 	// 이번 GA가 실행하는 요청 번호
 	int64 RequestId = 0;
+
+	// 이번 실행에서 끝난 발사 수
+	int32 ShotsFired = 0;
+
+	// 보스 공격력으로 바꾸기 전 레이저 컴포넌트 피해량 (종료 시 복구)
+	float OriginalDamagePerHit = 0.f;
+
+	bool bOverrodeDamage = false;
 
 	bool bOwnsMovementLock = false;
 

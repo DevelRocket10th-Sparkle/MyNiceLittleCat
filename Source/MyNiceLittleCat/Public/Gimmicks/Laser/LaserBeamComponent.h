@@ -103,6 +103,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
 	float GetBeamRadius() const { return BeamRadius; }
 
+	// 한 번 맞을 때 피해량 변경 (보스 패턴 GA가 보스 공격력으로 계산한 값을 넣음)
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam")
+	void SetDamagePerHit(float NewDamagePerHit) { DamagePerHit = FMath::Max(NewDamagePerHit, 0.f); }
+
+	UFUNCTION(BlueprintPure, Category = "LaserBeam")
+	float GetDamagePerHit() const { return DamagePerHit; }
+
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
 	bool IsLaserActive() const { return bLaserActive; }
 
