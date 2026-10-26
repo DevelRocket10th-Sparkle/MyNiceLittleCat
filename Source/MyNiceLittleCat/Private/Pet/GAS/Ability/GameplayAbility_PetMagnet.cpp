@@ -10,6 +10,8 @@
 #include "GameplayTagContainer.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Gimmicks/Magnetic/MagneticComponent.h"
+#include "Animation/AnimMontage.h"
+#include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 
 UGameplayAbility_PetMagnet::UGameplayAbility_PetMagnet()
 {
@@ -51,6 +53,8 @@ void UGameplayAbility_PetMagnet::ActivateAbility(const FGameplayAbilitySpecHandl
 
 void UGameplayAbility_PetMagnet::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
 {
+    StopPolarityChangeAnimation();
+
     // 우클릭 해제·모드 변경 등 모든 종료 경로에서 정리
     ReleaseHeldTarget(100.f);
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
@@ -256,6 +260,8 @@ bool UGameplayAbility_PetMagnet::IsMagnetCandidate(const AActor* _actor) const
 void UGameplayAbility_PetMagnet::HandleSpecialAction(FGameplayEventData Payload)
 {
     CurrentPolarity = (CurrentPolarity == EPetMagnetPolarity::N) ? EPetMagnetPolarity::S: EPetMagnetPolarity::N;
+
+    PlayPolarityChangeAnimation();
 }
 
 bool UGameplayAbility_PetMagnet::TryGetTargetPolarity(const AActor* Target, EPetMagnetPolarity& OutPolarity) const
@@ -401,4 +407,28 @@ void UGameplayAbility_PetMagnet::ReleaseHeldTarget(float ReleaseSpeed, float Upw
     HeldTarget.Reset();
     HeldBody.Reset();
     bAttachedToCarryPoint = false;
+}
+
+void UGameplayAbility_PetMagnet::PlayPolarityChangeAnimation()
+{
+    if (false == IsActive() || false == IsValid(PolarityChangeMontage.Get()))
+        return;
+
+    StopPolarityChangeAnimation(); // Q 연타했을 때 고려
+
+    PolarityChangeTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy
+    (this, NAME_None, PolarityChangeMontage.Get(), 1.f, NAME_None, true);
+
+    if (true == IsValid(PolarityChangeTask.Get()))
+        PolarityChangeTask->ReadyForActivation();
+}
+
+void UGameplayAbility_PetMagnet::StopPolarityChangeAnimation()
+{
+    MontageStop(0.1f); // 재생 중인 Montage
+
+    if (true == IsValid(PolarityChangeTask.Get()))
+        PolarityChangeTask->EndTask();
+
+    PolarityChangeTask = nullptr;
 }

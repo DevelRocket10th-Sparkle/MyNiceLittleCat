@@ -48,6 +48,10 @@ protected:
     FVector CalculateCarryOffset(const UPrimitiveComponent* Body) const;
     void ReleaseHeldTarget(float ReleaseSpeed, float UpwardRatio = 0.f);
 
+    // 극변환 시 애니메이션 몽타주
+    void PlayPolarityChangeAnimation();
+    void StopPolarityChangeAnimation();
+
     // ========================================================================================
 protected:  
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Magnet|Range", meta = (ClampMin = "1.0", Units = "cm"))
@@ -89,4 +93,10 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Magnet|Test", meta = (ClampMin = "0.0", Units = "cm/s^2"))
     float NearbyRepelMaxAcceleration = 1200.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Magnet|Animation")
+    TObjectPtr<class UAnimMontage> PolarityChangeMontage;
+
+    UPROPERTY(Transient)
+    TObjectPtr<class UAbilityTask_PlayMontageAndWait> PolarityChangeTask;
 };

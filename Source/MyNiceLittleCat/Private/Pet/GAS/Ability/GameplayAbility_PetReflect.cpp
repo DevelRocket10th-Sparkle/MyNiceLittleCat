@@ -100,6 +100,9 @@ void UGameplayAbility_PetReflect::EndAbility(const FGameplayAbilitySpecHandle Ha
         PlacementMoveRequestId.Invalidate();
 
         Pet->CancelAbilityMove(RequestId);
+
+        if (EPetMovementStyle::ReflectPlacement == Pet->GetAnmationMovementStyle())
+            Pet->SetAnimationMovementStyle(EPetMovementStyle::Normal);
     }
 
     PlacementMoveRequestId.Invalidate();
@@ -335,7 +338,10 @@ bool UGameplayAbility_PetReflect::BeginPlacementMove()
     if (false == bFoundNavPoint) return false;
 
     PlacementMoveRequestId = Pet->RequestAbilityMoveTo(NavLocation.Location);
-    return (true == PlacementMoveRequestId.IsValid());
+    if (false == PlacementMoveRequestId.IsValid()) return false;
+
+    Pet->SetAnimationMovementStyle(EPetMovementStyle::ReflectPlacement);
+    return true;
 }
 
 void UGameplayAbility_PetReflect::HandlePlacementMoveFinished(FGuid RequestId, bool bSucceeded)
@@ -352,6 +358,9 @@ void UGameplayAbility_PetReflect::HandlePlacementMoveFinished(FGuid RequestId, b
     }
     else
     {
+        if (APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo()))
+            Pet->SetAnimationMovementStyle(EPetMovementStyle::Normal);
+
         UE_LOG(LogTemp, Log, TEXT("Reflect: placement move failed or canceled."));
     }
 

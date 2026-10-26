@@ -96,6 +96,16 @@ public:
 	void CancelAbilityMove(const FGuid& RequestId);
 
 	FGuid GetActiveAbilityMoveRequestId() const { return ActiveAbilityMoveRequestId; }
+
+	// 해당 모드의 능력이 실제 실행 중인지 확인
+	UFUNCTION(BlueprintPure, Category = "Pet|Mode")
+	bool IsModeAbilityActive(EPetMode _mode) const;
+
+	UFUNCTION(BlueprintPure, Category = "Pet|Animation")
+	EPetMovementStyle GetAnmationMovementStyle() const { return AnimationMovementStyle; }
+
+	void SetAnimationMovementStyle(EPetMovementStyle _newStyle) { AnimationMovementStyle = _newStyle; }
+
 private:
 	void GrantModeAbilities();
 	// =============================================================================
@@ -144,6 +154,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pet|Carry")
 	TObjectPtr<class USceneComponent> CarryPoint;
+
+	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Pet|Animation")
+	EPetMovementStyle AnimationMovementStyle = EPetMovementStyle::Normal;
 private:
 	// 초기화 됨?
 	UPROPERTY(Transient)
