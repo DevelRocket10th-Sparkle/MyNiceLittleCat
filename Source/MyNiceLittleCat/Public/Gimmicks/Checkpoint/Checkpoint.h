@@ -9,16 +9,24 @@
 /// 이미 활성인 체크포인트에도 다시 상호작용할 수 있고, 그때마다 다시 저장합니다.
 /// bPlayRestTransition이면 저장 후 휴식 연출(입력 잠금 + 화면 어둡게 → 밝게, UScreenTransitionSubsystem)을 재생하고,
 /// 화면이 완전히 어두울 때 On Rest Screen Dark, 끝나면 On Rest Finished BP 이벤트를 호출합니다. 연출 중에는 상호작용할 수 없습니다.
-/// TODO(합의): 휴식 중 체력 회복·몬스터 리셋 여부는 기획 확정 후 On Rest Screen Dark에 연결
+///
+/// [메뉴·빠른 이동] (2026-10-26 추가)
+/// 상호작용하면 체크포인트를 발견 목록에 등록하고, MenuWidgetClass가 있으면 메뉴(휴식 / 이동 / 나가기)를 엽니다.
+/// 휴식(Rest): 마지막 체크포인트로 등록·저장 + 휴식 연출 + 화면이 어두울 때 체력 회복과 OnPlayerRested 방송.
+/// 이동(TravelTo): 발견한 체크포인트로 빠른 이동. 같은 맵이면 리스폰, 다른 맵이면 그 맵을 열어 체크포인트에서 시작.
+/// MenuWidgetClass가 비어 있으면 상호작용 즉시 휴식합니다 (기존 동작).
+/// TODO(합의): 몬스터 리셋은 OnPlayerRested에 연결
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Gimmicks/InteractableBase.h"
 #include "Frameworks/Transition/ScreenTransitionSubsystem.h"
+#include "Frameworks/Save/GameProgressSaveGame.h"
 #include "Checkpoint.generated.h"
 
 class UArrowComponent;
+class UCheckpointMenuWidget;
 
 UCLASS()
 class MYNICELITTLECAT_API ACheckpoint : public AInteractableBase
@@ -40,6 +48,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Checkpoint")
 	FTransform GetRespawnTransform() const;
 
+	// 빠른 이동 목록에 표시할 이름 (비어 있으면 Id)
+	UFUNCTION(BlueprintPure, Category = "Checkpoint")
+	FText GetCheckpointDisplayName() const;
+
+	// 휴식: 마지막 체크포인트로 등록·저장 + 휴식 연출 + 체력 회복
+	UFUNCTION(BlueprintCallable, Category = "Checkpoint")
+	void Rest(AActor* InteractInstigator);
+
+	// 발견한 체크포인트로 빠른 이동 (화면 어두울 때 리스폰 / 맵 이동)
+	UFUNCTION(BlueprintCallable, Category = "Checkpoint")
+	void TravelTo(AActor* InteractInstigator, const FCheckpointSaveData& Destination);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -60,8 +80,11 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Checkpoint", meta = (DisplayName = "On Rest Finished"))
 	void K2_OnRestFinished(AActor* InteractInstigator);
 
-	// 상호작용한 폰의 플레이어 컨트롤러로 휴식 연출 재생
-	void PlayRestTransition(AActor* InteractInstigator);
+	// 상호작용한 폰의 플레이어 컨트롤러로 휴식 연출 재생 (재생 못 하면 false)
+	bool PlayRestTransition(AActor* InteractInstigator);
+
+	// 체력 회복 + OnPlayerRested 방송
+	void RestorePlayer(AActor* InteractInstigator);
 
 protected:
 	// 부활 지점. 화살표 위치를 바닥(발 위치)에, 방향을 부활 후 바라볼 방향으로 맞춤
@@ -72,6 +95,18 @@ protected:
 	// (액터 이름은 복제·재배치하면 바뀌므로 정식 맵에서는 지정 권장)
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Checkpoint")
 	FName CheckpointId;
+
+	// 빠른 이동 목록에 보일 이름 (예: "저택 현관")
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Checkpoint")
+	FText DisplayName;
+
+	// 상호작용 시 열 메뉴 (휴식 / 이동 / 나가기). 비우면 바로 휴식
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Menu")
+	TSubclassOf<UCheckpointMenuWidget> MenuWidgetClass;
+
+	// 빠른 이동 화면 전환 설정
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Travel")
+	FScreenTransitionSettings TravelTransition;
 
 	// 상호작용 시 바로 세이브 슬롯에 저장
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint")
