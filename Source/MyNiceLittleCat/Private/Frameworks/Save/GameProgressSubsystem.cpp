@@ -39,6 +39,34 @@ void UGameProgressSubsystem::SetCheckpoint(const UObject* WorldContextObject, FN
 	}
 }
 
+bool UGameProgressSubsystem::DiscoverCheckpoint(const UObject* WorldContextObject, FName CheckpointId, const FText& DisplayName, const FTransform& RespawnTransform)
+{
+	const FString LevelName = GetLevelName(WorldContextObject);
+	FCheckpointSaveData* Found = CurrentSave->DiscoveredCheckpoints.FindByPredicate([&](const FCheckpointSaveData& Data)
+	{
+		return Data.LevelName == LevelName && Data.CheckpointId == CheckpointId;
+	});
+
+	FCheckpointSaveData& Data = Found ? *Found : CurrentSave->DiscoveredCheckpoints.AddDefaulted_GetRef();
+	Data.bValid = true;
+	Data.LevelName = LevelName;
+	Data.CheckpointId = CheckpointId;
+	Data.DisplayName = DisplayName;
+	Data.RespawnTransform = RespawnTransform;
+	return Found == nullptr;
+}
+
+void UGameProgressSubsystem::SetCheckpointData(const FCheckpointSaveData& Data, bool bSave)
+{
+	CurrentSave->LastCheckpoint = Data;
+	OnCheckpointChanged.Broadcast(Data.CheckpointId);
+
+	if (bSave)
+	{
+		SaveProgress();
+	}
+}
+
 bool UGameProgressSubsystem::IsCurrentCheckpoint(const UObject* WorldContextObject, FName CheckpointId) const
 {
 	const FCheckpointSaveData& Data = CurrentSave->LastCheckpoint;

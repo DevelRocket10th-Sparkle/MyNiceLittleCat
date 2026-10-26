@@ -136,10 +136,11 @@ protected:
 	float BlinkInterval = 0.08f;
 
 	UPROPERTY(EditAnywhere, Category = "Hit Reaction")
-	float KnockbackStrength = 500.f;
+	float KnockbackStrength = 800.f;
 
 	UPROPERTY(EditAnywhere, Category = "Hit Reaction")
 	float KnockbackUpwardStrength = 150.f;
+
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<USpringArmComponent> CameraBoom;

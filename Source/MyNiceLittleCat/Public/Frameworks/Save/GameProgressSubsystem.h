@@ -16,6 +16,7 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCheckpointChanged, FName, CheckpointId);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnProgressSaved, bool, bSuccess);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPlayerRested);
 
 UCLASS()
 class MYNICELITTLECAT_API UGameProgressSubsystem : public UGameInstanceSubsystem
@@ -41,6 +42,16 @@ public:
 	// 현재 맵에 등록된 체크포인트의 부활 위치 (없으면 false)
 	UFUNCTION(BlueprintCallable, Category = "Progress|Checkpoint", meta = (WorldContext = "WorldContextObject"))
 	bool GetRespawnTransform(const UObject* WorldContextObject, FTransform& OutTransform) const;
+
+	// 체크포인트를 발견 목록에 추가 (이미 있으면 갱신). 새로 발견했으면 true
+	UFUNCTION(BlueprintCallable, Category = "Progress|Checkpoint", meta = (WorldContext = "WorldContextObject"))
+	bool DiscoverCheckpoint(const UObject* WorldContextObject, FName CheckpointId, const FText& DisplayName, const FTransform& RespawnTransform);
+
+	UFUNCTION(BlueprintPure, Category = "Progress|Checkpoint")
+	const TArray<FCheckpointSaveData>& GetDiscoveredCheckpoints() const { return CurrentSave->DiscoveredCheckpoints; }
+
+	// 저장된 체크포인트 데이터를 그대로 마지막 체크포인트로 지정 (다른 맵 체크포인트로 빠른 이동할 때)
+	void SetCheckpointData(const FCheckpointSaveData& Data, bool bSave = true);
 
 	// ---- 진행 플래그 ----
 
@@ -76,6 +87,10 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Progress")
 	FOnProgressSaved OnProgressSaved;
+
+	// 체크포인트에서 휴식했을 때 (포션 충전, 몬스터 리셋 등을 여기에 연결)
+	UPROPERTY(BlueprintAssignable, Category = "Progress")
+	FOnPlayerRested OnPlayerRested;
 
 	// 세이브 슬롯 (TODO(합의): 슬롯 여러 개 / 이어하기 UI 생기면 조정)
 	FString SaveSlotName = TEXT("GameProgress");
