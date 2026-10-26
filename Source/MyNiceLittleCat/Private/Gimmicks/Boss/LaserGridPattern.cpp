@@ -7,6 +7,7 @@
 #include "Gimmicks/Boss/LaserGridSequenceData.h"
 #include "Gimmicks/Laser/LaserBeamComponent.h"
 #include "Gimmicks/Warning/AttackWarningDecal.h"
+#include "Components/ArrowComponent.h"
 #include "Components/BoxComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
@@ -25,6 +26,29 @@ ALaserGridPattern::ALaserGridPattern()
 	ArenaBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ArenaBox->SetHiddenInGame(true);
 	ArenaBox->ShapeColor = FColor::Red;
+
+	// 기본 위치: 대기 지점은 경기장(절반 1000) 바깥 -X 쪽, 단일 레이저 지점은 안쪽. 둘 다 +X(경기장 중앙)를 바라봄
+	BossStandPoint = CreateDefaultSubobject<UArrowComponent>(TEXT("BossStandPoint"));
+	BossStandPoint->SetupAttachment(Root);
+	BossStandPoint->SetRelativeLocation(FVector(-1300.f, 0.f, 0.f));
+	BossStandPoint->ArrowColor = FColor::Orange;
+	BossStandPoint->ArrowSize = 2.f;
+
+	BossBeamPoint = CreateDefaultSubobject<UArrowComponent>(TEXT("BossBeamPoint"));
+	BossBeamPoint->SetupAttachment(Root);
+	BossBeamPoint->SetRelativeLocation(FVector(-600.f, 0.f, 0.f));
+	BossBeamPoint->ArrowColor = FColor::Cyan;
+	BossBeamPoint->ArrowSize = 2.f;
+}
+
+FTransform ALaserGridPattern::GetBossStandTransform() const
+{
+	return BossStandPoint->GetComponentTransform();
+}
+
+FTransform ALaserGridPattern::GetBossBeamTransform() const
+{
+	return BossBeamPoint->GetComponentTransform();
 }
 
 void ALaserGridPattern::OnConstruction(const FTransform& Transform)
@@ -48,6 +72,11 @@ void ALaserGridPattern::BeginPlay()
 		Laser->SetupAttachment(Root);
 		Laser->RegisterComponent();
 		Slots[Index].Laser = Laser;
+	}
+
+	if (!Slots.IsEmpty() && IsValid(Slots[0].Laser))
+	{
+		DefaultDamagePerHit = Slots[0].Laser->GetDamagePerHit();
 	}
 
 	if (bAutoStart)
@@ -90,10 +119,45 @@ void ALaserGridPattern::StartPattern()
 	GetWorldTimerManager().SetTimer(StrikeTimerHandle, this, &ALaserGridPattern::HandleStrikeTick, StrikeInterval, true);
 }
 
+bool ALaserGridPattern::PlaySequenceOnce(ULaserGridSequenceData* Sequence, float DamagePerHitOverride)
+{
+	if (bPatternActive)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[LaserGrid] %s: 이미 실행 중이라 1회 실행을 건너뜁니다."), *GetName());
+		return false;
+	}
+
+	if (!Sequence)
+	{
+		Sequence = PickNextSequence();
+	}
+	if (!Sequence || Sequence->Steps.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[LaserGrid] %s: 1회 실행할 시퀀스가 없습니다."), *GetName());
+		return false;
+	}
+
+	bPatternActive = true;
+	bPlayingOnce = true;
+	bSequenceStepsDone = false;
+	CurrentSequence = Sequence;
+	StepIndex = 0;
+	ActiveDamageOverride = DamagePerHitOverride;
+
+	UE_LOG(LogTemp, Log, TEXT("[LaserGrid] 1회 실행 시작: %s (%d단계)"), *GetNameSafe(CurrentSequence), CurrentSequence->Steps.Num());
+
+	RunSequenceSteps();
+	return true;
+}
+
 void ALaserGridPattern::StopPattern()
 {
+	// 먼저 끄면 아래 ReleaseSlot에서 완료 통지가 나가지 않음
 	bPatternActive = false;
+	bPlayingOnce = false;
+	bSequenceStepsDone = false;
 	CurrentSequence = nullptr;
+	ActiveDamageOverride = -1.f;
 
 	UWorld* World = GetWorld();
 	if (World)
@@ -195,9 +259,22 @@ void ALaserGridPattern::HandleStrikeTick()
 
 void ALaserGridPattern::StartNextSequence()
 {
-	CurrentSequence = nullptr;
 	StepIndex = 0;
+	CurrentSequence = PickNextSequence();
 
+	if (!CurrentSequence)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[LaserGrid] %s: Sequence 모드인데 실행할 시퀀스가 없습니다."), *GetName());
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[LaserGrid] 시퀀스 시작: %s (%d단계)"), *GetNameSafe(CurrentSequence), CurrentSequence->Steps.Num());
+
+	RunSequenceSteps();
+}
+
+ULaserGridSequenceData* ALaserGridPattern::PickNextSequence()
+{
 	TArray<int32> ValidIndices;
 	for (int32 Index = 0; Index < Sequences.Num(); ++Index)
 	{
@@ -209,8 +286,7 @@ void ALaserGridPattern::StartNextSequence()
 
 	if (ValidIndices.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[LaserGrid] %s: Sequence 모드인데 실행할 시퀀스가 없습니다."), *GetName());
-		return;
+		return nullptr;
 	}
 
 	if (bRandomSequenceOrder)
@@ -228,10 +304,7 @@ void ALaserGridPattern::StartNextSequence()
 		SequenceIndex = ValidIndices[(Position + 1) % ValidIndices.Num()];
 	}
 
-	CurrentSequence = Sequences[SequenceIndex];
-	UE_LOG(LogTemp, Log, TEXT("[LaserGrid] 시퀀스 시작: %s (%d단계)"), *GetNameSafe(CurrentSequence), CurrentSequence->Steps.Num());
-
-	RunSequenceSteps();
+	return Sequences[SequenceIndex];
 }
 
 void ALaserGridPattern::RunSequenceSteps()
@@ -270,6 +343,14 @@ void ALaserGridPattern::RunSequenceSteps()
 			GetWorldTimerManager().SetTimer(StrikeTimerHandle, this, &ALaserGridPattern::RunSequenceSteps, Step.DelayToNext, false);
 			return;
 		}
+	}
+
+	// 1회 실행: 다음 시퀀스로 가지 않고 남은 공격이 끝나기를 기다림
+	if (bPlayingOnce)
+	{
+		bSequenceStepsDone = true;
+		TryFinishSequenceOnce();
+		return;
 	}
 
 	// 시퀀스 끝: 마지막 단계의 DelayToNext + RestAfter 뒤에 다음 시퀀스 (0초 타이머는 걸리지 않으므로 최소값)
@@ -396,6 +477,7 @@ void ALaserGridPattern::FireSlot(int32 SlotIndex)
 		Slot.Laser->SetWorldLocation(Start);
 		Slot.Laser->SetBeamRadius(LaneWidth * 0.5f);
 		Slot.Laser->SetMaxRange(AlongHalf * 2.f);
+		Slot.Laser->SetDamagePerHit(ActiveDamageOverride >= 0.f ? ActiveDamageOverride : DefaultDamagePerHit);
 		Slot.Laser->StartLaser(End, Slot.FireDuration);
 	}
 
@@ -424,6 +506,34 @@ void ALaserGridPattern::ReleaseSlot(int32 SlotIndex)
 	}
 
 	Slot.bBusy = false;
+
+	TryFinishSequenceOnce();
+}
+
+void ALaserGridPattern::TryFinishSequenceOnce()
+{
+	if (!bPlayingOnce || !bSequenceStepsDone)
+	{
+		return;
+	}
+
+	if (Slots.ContainsByPredicate([](const FLaserGridSlot& Slot) { return Slot.bBusy; }))
+	{
+		return;
+	}
+
+	ULaserGridSequenceData* FinishedSequence = CurrentSequence;
+
+	bPatternActive = false;
+	bPlayingOnce = false;
+	bSequenceStepsDone = false;
+	CurrentSequence = nullptr;
+	ActiveDamageOverride = -1.f;
+	GetWorldTimerManager().ClearTimer(StrikeTimerHandle);
+
+	UE_LOG(LogTemp, Log, TEXT("[LaserGrid] 1회 실행 끝: %s"), *GetNameSafe(FinishedSequence));
+
+	OnSequenceFinished.Broadcast(FinishedSequence);
 }
 
 int32 ALaserGridPattern::FindFreeSlot() const

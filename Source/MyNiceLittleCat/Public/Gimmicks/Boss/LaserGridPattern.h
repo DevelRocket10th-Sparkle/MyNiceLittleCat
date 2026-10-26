@@ -10,7 +10,10 @@
 /// StrikeInterval마다 다음 공격을 시작하므로 앞 공격이 끝나기 전에 다음 예고가 겹칠 수 있습니다 (동시 공격 수는 MaxConcurrentStrikes).
 /// Sequence 모드: Sequences(ULaserGridSequenceData)의 Steps를 순서대로 실행합니다. 단계마다 축·줄·나오는 쪽·다음까지 시간을 지정하고,
 /// 시퀀스가 끝나면 RestAfter만큼 쉬고 목록에서 다음 시퀀스를 고릅니다 (bRandomSequenceOrder면 무작위, 아니면 차례로).
-/// TODO(합의): 보스 2페이즈 진입·종료 때 StartPattern/StopPattern 호출 위치는 보스 담당과 확정 (UBossGimmickComponent 연결 예정)
+/// 1회 실행(PlaySequenceOnce): 시퀀스 하나만 실행하고 마지막 레이저까지 끝나면 OnSequenceFinished를 알립니다 (RestAfter는 쓰지 않음).
+/// 보스 패턴 GA(UGA_BossLaserGrid)가 이 방식으로 사용합니다. 반복 실행 중에는 시작할 수 없고, StopPattern은 두 방식 모두 정리합니다.
+/// 보스 지점(화살표): BossStandPoint = 격자 패턴 동안 보스가 서 있는 곳(격자 바깥), BossBeamPoint = 단일 레이저 패턴 때 보스가 들어오는 곳(격자 안쪽).
+/// 화살표 방향이 도착 후 보스가 바라보는 방향이며, 레벨 인스턴스에서 컴포넌트를 옮겨 조정합니다.
 /// TODO: 레이저 그래픽(지금은 디버그 라인), 경고·발사 사운드
 
 #pragma once
@@ -20,12 +23,14 @@
 #include "Gimmicks/Boss/LaserGridTypes.h"
 #include "LaserGridPattern.generated.h"
 
+class UArrowComponent;
 class UBoxComponent;
 class ULaserBeamComponent;
 class AAttackWarningDecal;
 class ULaserGridSequenceData;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLaserGridStrike, ELaserGridAxis, Axis, int32, LaneIndex);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLaserGridSequenceFinished, ULaserGridSequenceData*, Sequence);
 
 // 공격 1회가 쓰는 레이저·경고 묶음 (풀로 돌려 씀)
 USTRUCT()
@@ -71,8 +76,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LaserGrid")
 	void StopPattern();
 
+	// 시퀀스 하나만 실행 (Sequence가 비면 Sequences 목록에서 고름). 이미 실행 중이거나 시퀀스가 없으면 false
+	// DamagePerHitOverride가 0 이상이면 이번 실행의 레이저 피해량으로 사용 (보스 공격력 연동), 음수면 레이저 기본값
+	UFUNCTION(BlueprintCallable, Category = "LaserGrid")
+	bool PlaySequenceOnce(ULaserGridSequenceData* Sequence = nullptr, float DamagePerHitOverride = -1.f);
+
 	UFUNCTION(BlueprintPure, Category = "LaserGrid")
 	bool IsPatternActive() const { return bPatternActive; }
+
+	UFUNCTION(BlueprintPure, Category = "LaserGrid")
+	bool IsPlayingOnce() const { return bPlayingOnce; }
 
 	// 줄 하나를 바로 공격 (예고부터 시작, 빈 슬롯이 없으면 false)
 	UFUNCTION(BlueprintCallable, Category = "LaserGrid")
@@ -85,6 +98,14 @@ public:
 	// 월드 위치가 속한 줄 번호 (영역 밖이면 가장 가까운 줄)
 	UFUNCTION(BlueprintPure, Category = "LaserGrid")
 	int32 GetLaneIndexAt(ELaserGridAxis Axis, const FVector& WorldLocation) const;
+
+	// 격자 패턴 동안 보스가 서 있을 지점 (바닥, 월드)
+	UFUNCTION(BlueprintPure, Category = "LaserGrid")
+	FTransform GetBossStandTransform() const;
+
+	// 단일 레이저 패턴 때 보스가 들어올 지점 (바닥, 월드)
+	UFUNCTION(BlueprintPure, Category = "LaserGrid")
+	FTransform GetBossBeamTransform() const;
 
 	// 테스트용: 패턴 시작/정지
 	UFUNCTION(CallInEditor, Category = "LaserGrid|Test")
@@ -99,6 +120,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "LaserGrid")
 	FOnLaserGridStrike OnStrikeFired;
 
+	// 1회 실행한 시퀀스의 마지막 레이저까지 끝났을 때 (StopPattern으로 멈추면 오지 않음)
+	UPROPERTY(BlueprintAssignable, Category = "LaserGrid")
+	FOnLaserGridSequenceFinished OnSequenceFinished;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -112,6 +137,12 @@ protected:
 
 	// Sequence 모드: 다음 시퀀스를 골라 처음부터 실행
 	void StartNextSequence();
+
+	// Sequences 목록에서 다음 시퀀스를 고름 (bRandomSequenceOrder 규칙, 없으면 nullptr)
+	ULaserGridSequenceData* PickNextSequence();
+
+	// 1회 실행: 모든 단계를 시작했고 진행 중인 공격이 없으면 완료 처리
+	void TryFinishSequenceOnce();
 
 	// Sequence 모드: 현재 단계부터 DelayToNext가 0인 단계까지 한 번에 실행하고 다음 단계 타이머를 걺
 	void RunSequenceSteps();
@@ -145,6 +176,14 @@ protected:
 	// 경기장 영역 표시 (콜리전 없음)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBoxComponent> ArenaBox;
+
+	// 격자 패턴 동안 보스 대기 지점 (격자 바깥, 화살표 = 바라볼 방향)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UArrowComponent> BossStandPoint;
+
+	// 단일 레이저 패턴 때 보스 지점 (격자 안쪽)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UArrowComponent> BossBeamPoint;
 
 	// 경기장 절반 크기 (로컬 X·Y, cm). 액터 위치 = 경기장 중앙 바닥
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Area", meta = (ClampMin = "50.0"))
@@ -233,4 +272,16 @@ private:
 	int32 SequenceIndex = INDEX_NONE;
 
 	int32 StepIndex = 0;
+
+	// PlaySequenceOnce로 실행 중
+	bool bPlayingOnce = false;
+
+	// 1회 실행 중 모든 단계를 시작함 (남은 공격이 끝나기를 기다리는 중)
+	bool bSequenceStepsDone = false;
+
+	// 레이저 기본 피해량 (BeginPlay에서 레이저 컴포넌트 값으로 저장)
+	float DefaultDamagePerHit = 1.f;
+
+	// 이번 1회 실행의 피해량 (음수면 기본값)
+	float ActiveDamageOverride = -1.f;
 };
