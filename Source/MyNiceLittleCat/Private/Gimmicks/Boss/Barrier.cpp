@@ -11,6 +11,8 @@
 #include "EngineUtils.h"
 #include "Gimmicks/Boss/BarrierGenerator.h"
 #include "HAL/IConsoleManager.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 
 #if !UE_BUILD_SHIPPING
 // 테스트용 콘솔 명령: Barrier.Debug <Activate|Deactivate> [이름 일부]
@@ -53,10 +55,14 @@ static FAutoConsoleCommandWithWorldAndArgs GBarrierDebugCommand(
 
 ABarrier::ABarrier()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// Dissolve 연출 중에만 틱
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
 	SetRootComponent(Mesh);
+	// 보스를 따라갈 수 있도록 이동 가능
+	Mesh->SetMobility(EComponentMobility::Movable);
 
 	// 피해 무효는 상태 플래그로 처리하므로 메시는 시각용
 	Mesh->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
@@ -129,6 +135,8 @@ void ABarrier::BeginPlay()
 {
 	Super::BeginPlay();
 
+	HomeTransform = GetActorTransform();
+
 	// 직접 지정한 목록이 우선, 비어 있을 때만 근처 생성장치 수집
 	if (bAutoCollectGenerators && Generators.IsEmpty())
 	{
@@ -145,6 +153,17 @@ void ABarrier::BeginPlay()
 		if (IsValid(Generator))
 		{
 			Generator->OnGeneratorDisabled.AddUniqueDynamic(this, &ABarrier::HandleGeneratorDisabled);
+		}
+	}
+
+	// 머티리얼에 Dissolve 파라미터가 있을 때만 연출 사용
+	if (Mesh && !DissolveParamName.IsNone())
+	{
+		float CurrentValue = 0.f;
+		UMaterialInterface* Material = Mesh->GetMaterial(0);
+		if (Material && Material->GetScalarParameterValue(FHashedMaterialParameterInfo(DissolveParamName), CurrentValue))
+		{
+			MeshMID = Mesh->CreateDynamicMaterialInstance(0);
 		}
 	}
 
@@ -187,7 +206,7 @@ void ABarrier::ActivateBarrier()
 	}
 
 	bBarrierActive = true;
-	ApplyVisualState();
+	ApplyVisualState(AppearDuration);
 	K2_OnBarrierStateChanged(true, false);
 	OnBarrierActivated.Broadcast(this);
 }
@@ -201,7 +220,7 @@ void ABarrier::DeactivateBarrier()
 
 	bBarrierActive = false;
 	DeactivateGenerators();
-	ApplyVisualState();
+	ApplyVisualState(DeactivateDissolveDuration);
 	K2_OnBarrierStateChanged(false, false);
 }
 
@@ -214,7 +233,7 @@ void ABarrier::BreakBarrier()
 
 	bBarrierActive = false;
 	DeactivateGenerators();
-	ApplyVisualState();
+	ApplyVisualState(BreakDissolveDuration);
 	K2_OnBarrierStateChanged(false, true);
 	OnBarrierBroken.Broadcast(this);
 }
@@ -260,10 +279,126 @@ bool ABarrier::AreAllGeneratorsDisabled() const
 	return bHasValidGenerator;
 }
 
-void ABarrier::ApplyVisualState()
+void ABarrier::ApplyVisualState(float DissolveDuration)
 {
-	if (Mesh)
+	if (!Mesh)
 	{
-		Mesh->SetVisibility(bBarrierActive, true);
+		return;
+	}
+
+	// 켜질 때는 먼저 보이게 한 뒤 1 → 0, 꺼질 때는 0 → 1 후 숨김
+	if (bBarrierActive)
+	{
+		Mesh->SetVisibility(true, true);
+	}
+
+	StartDissolve(bBarrierActive ? 0.f : 1.f, MeshMID ? DissolveDuration : 0.f);
+}
+
+void ABarrier::StartDissolve(float Target, float Duration)
+{
+	// 연출 도중에 반대로 바뀌면 지금 값에서 이어감 (BeginPlay에서 꺼진 상태 = 1로 시작)
+	DissolveFrom = DissolveValue;
+	DissolveTarget = Target;
+	DissolveDurationCurrent = Duration;
+	DissolveElapsed = 0.f;
+
+	if (Duration <= 0.f || FMath::IsNearlyEqual(DissolveFrom, DissolveTarget))
+	{
+		SetDissolveValue(DissolveTarget);
+		FinishDissolve();
+		return;
+	}
+
+	SetActorTickEnabled(true);
+}
+
+void ABarrier::FinishDissolve()
+{
+	SetActorTickEnabled(false);
+	if (DissolveTarget >= 1.f)
+	{
+		if (Mesh)
+		{
+			Mesh->SetVisibility(false, true);
+		}
+		// 다 사라진 뒤에 떼야 사라지는 동안에도 보스를 따라감
+		ReturnToHome();
+	}
+}
+
+void ABarrier::AttachToFollowTarget(AActor* Target)
+{
+	if (!IsValid(Target) || Target == this)
+	{
+		return;
+	}
+
+	if (AActor* PrevTarget = FollowTarget.Get(); PrevTarget && PrevTarget != Target)
+	{
+		PrevTarget->OnEndPlay.RemoveDynamic(this, &ABarrier::HandleFollowTargetEndPlay);
+	}
+
+	FollowTarget = Target;
+	// 보스가 먼저 사라지면(리셋 등) 붙은 채로 남지 않게 바로 복귀
+	Target->OnEndPlay.AddUniqueDynamic(this, &ABarrier::HandleFollowTargetEndPlay);
+
+	// 위치만 대상을 따라가고 회전·크기는 월드 값 고정 (회전까지 따라가면 보스가 돌 때 무늬가 같이 돔)
+	// 절대 회전·크기는 붙이기 전에 켜야 KeepWorld가 지금 월드 값을 그대로 유지함
+	if (USceneComponent* Root = GetRootComponent())
+	{
+		Root->SetUsingAbsoluteRotation(true);
+		Root->SetUsingAbsoluteScale(true);
+	}
+	const FAttachmentTransformRules Rules(EAttachmentRule::SnapToTarget, EAttachmentRule::KeepWorld, EAttachmentRule::KeepWorld, false);
+	AttachToActor(Target, Rules);
+	SetActorRelativeLocation(FollowOffset);
+}
+
+void ABarrier::ReturnToHome()
+{
+	if (AActor* Target = FollowTarget.Get())
+	{
+		Target->OnEndPlay.RemoveDynamic(this, &ABarrier::HandleFollowTargetEndPlay);
+	}
+	FollowTarget.Reset();
+
+	if (GetAttachParentActor())
+	{
+		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		if (USceneComponent* Root = GetRootComponent())
+		{
+			Root->SetUsingAbsoluteRotation(false);
+			Root->SetUsingAbsoluteScale(false);
+		}
+		SetActorTransform(HomeTransform);
+	}
+}
+
+void ABarrier::HandleFollowTargetEndPlay(AActor* Actor, EEndPlayReason::Type EndPlayReason)
+{
+	ReturnToHome();
+}
+
+void ABarrier::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	DissolveElapsed += DeltaSeconds;
+	const float Alpha = FMath::Clamp(DissolveElapsed / DissolveDurationCurrent, 0.f, 1.f);
+	SetDissolveValue(FMath::Lerp(DissolveFrom, DissolveTarget, Alpha));
+
+	if (Alpha >= 1.f)
+	{
+		FinishDissolve();
+	}
+}
+
+void ABarrier::SetDissolveValue(float Value)
+{
+	DissolveValue = Value;
+	if (MeshMID)
+	{
+		MeshMID->SetScalarParameterValue(DissolveParamName, Value);
 	}
 }

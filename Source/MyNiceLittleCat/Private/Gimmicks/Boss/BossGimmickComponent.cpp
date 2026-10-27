@@ -56,6 +56,11 @@ bool UBossGimmickComponent::EnterBossPhase_Implementation(FName PhaseId, int64 P
 		ActivePhaseExecutionId = PhaseExecutionId;
 		ActiveBarrier = Barrier;
 		Barrier->OnBarrierBroken.AddUniqueDynamic(this, &UBossGimmickComponent::HandleBarrierBroken);
+		// 나타나는 연출이 보스 위치에서 시작하도록 켜기 전에 붙임 (꺼지고 다 사라지면 배리어가 원래 자리로 복귀)
+		if (bAttachBarrierToBoss)
+		{
+			Barrier->AttachToFollowTarget(GetOwner());
+		}
 		Barrier->ActivateBarrier();
 		UE_LOG(LogTemp, Log, TEXT("[BossGimmick] %s 진입: 배리어 %s 활성"), *PhaseId.ToString(), *Barrier->GetName());
 	}

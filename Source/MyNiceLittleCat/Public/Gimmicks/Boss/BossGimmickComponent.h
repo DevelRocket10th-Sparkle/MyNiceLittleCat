@@ -4,7 +4,7 @@
 /// 보스 페이즈와 배리어·자성 코인 기믹을 잇는 컴포넌트입니다.
 /// 보스(ABossCharacter)에 붙이면 보스가 IBossPhaseGimmickInterface로 찾아 호출합니다 (보스당 1개).
 /// - ReceiveLevelGimmickReferences: 매니저가 넘긴 PhaseId별 레벨 액터(배리어)와 영역 중심 저장
-/// - EnterBossPhase: 배리어 페이즈면 PhaseId의 배리어를 켜고 붕괴를 구독, CoinPatternPhaseIds에 있으면 같은 액터의
+/// - EnterBossPhase: 배리어 페이즈면 PhaseId의 배리어를 켜고(bAttachBarrierToBoss면 보스에 붙여 따라가게 함) 붕괴를 구독, CoinPatternPhaseIds에 있으면 같은 액터의
 ///   UMagneticCoinPatternComponent 시작. 배리어 페이즈인데 배리어가 없으면 false (설정 오류로 전투 실패 처리)
 /// - 배리어 붕괴 시 진입 때 받은 PhaseId·실행 번호로 보스에 NotifyPhaseGimmickCompleted
 /// - StopBossGimmicks: 구독 해제, 남은 배리어 끄기, 코인 패턴 정지 (여러 번 호출해도 안전)
@@ -92,6 +92,11 @@ protected:
 	// 정지 시 아직 깨지지 않은 배리어 끄기 (생성장치도 정지)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick")
 	bool bDeactivateBarrierOnStop = true;
+
+	// 배리어를 켤 때 보스에 붙여 보스를 감싸고 따라가게 함 (끄면 레벨에 놓인 자리 그대로 켜짐)
+	// 높이는 배리어의 FollowOffset, 크기는 배리어 인스턴스 스케일로 조정
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick")
+	bool bAttachBarrierToBoss = true;
 
 	// 격자·단일 레이저를 번갈아 쓰는 페이즈 (TODO(합의): 2페이즈 PhaseId 이름)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick|Laser")
