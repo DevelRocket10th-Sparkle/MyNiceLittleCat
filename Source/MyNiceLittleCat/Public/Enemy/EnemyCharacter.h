@@ -33,7 +33,7 @@ class MYNICELITTLECAT_API AEnemyCharacter : public ACharacter, public IAbilitySy
 
 public:
 
-	// Sets default values for this character's properties
+	// 캐릭터의 기본 속성을 설정한다.
 	AEnemyCharacter(const FObjectInitializer& ObjectInitializer);
 
 	// Getter: 이 캐릭터의 능력 실행 컴포넌트
@@ -42,18 +42,18 @@ public:
 	// 사망 후처리 - 사망 연출 종료 시점에 실행
 	virtual void FinishDeath();
 
-	// Getter: AttributeSet
+	// 전투 속성 집합을 반환한다.
 	inline UEnemyAttributeSet* GetAttributeSet() const { return AttributeSet; }
 
-	// Getter: EnemyConfig
+	// 적 설정 데이터를 반환한다.
 	// 앞 const: 반환된 포인터를 사용한 EnemyConfig 내용 수정 방지
 	// 뒤 const: EnemyCharacter의 일반 멤버 변수인 EnemyConfig 변경 방지
 	UFUNCTION(BlueprintPure, Category = "Config")
 	const UEnemyConfigData* GetEnemyConfig() const { return EnemyConfig; }
 
-	// Getter: bWantsToMvoe
+	// 이동 의도 여부를 반환한다.
 	bool GetWantsToMove() const { return bWantsToMove; }
-	// Setter: bWantsToMove
+	// 이동 의도 여부를 설정한다.
 	void SetWantsToMove(bool bNewWantsToMove)	{ bWantsToMove = bNewWantsToMove; }
 
 	// AI가 실행될 준비가 되었는지 확인
@@ -99,11 +99,11 @@ public:
 
 protected:
 
-	// Called when the game starts or when spawned
+	// 게임 시작 시 초기화한다. or when spawned
 	// 컴포넌트 초기화 후 실행 준비
 	virtual void BeginPlay() override;
 	
-	// Called every frame
+	// 진행 중인 전환 시퀀스의 상태를 확인한다.
 	// 활성 상태의 매 프레임 처리
 	//virtual void Tick(float DeltaTime) override;
 

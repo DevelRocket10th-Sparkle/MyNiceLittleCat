@@ -3,7 +3,7 @@
 #include "Abilities/GameplayAbility.h"
 #include "Enemy/Datas/EnemyPatternSetData.h"
 #include "Enemy/Datas/EnemyMeleePatternSettings.h"
-#include "GA_TestBoss_MeleeAttack.generated.h"
+#include "GA_Enemy_MeleeAttack.generated.h"
 
 class AEnemyCharacter;
 class UEnemyPatternComponent;
@@ -11,12 +11,12 @@ class UEnemyMeleeTraceComponent;
 
 // 패턴 데이터의 몽타주를 사용하는 기본 근접 공격: 원거리 및 아레나 공격은 별도 GA로 확장
 UCLASS()
-class MYNICELITTLECAT_API UGA_TestBoss_MeleeAttack : public UGameplayAbility
+class MYNICELITTLECAT_API UGA_Enemy_MeleeAttack : public UGameplayAbility
 {
 	GENERATED_BODY()
 public :
 	// 서버 실행 및 Enemy별 인스턴스 설정
-	UGA_TestBoss_MeleeAttack();
+	UGA_Enemy_MeleeAttack();
 	// 요청 컨텍스트를 복사하고 판정 이벤트 및 몽타주 실행
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
@@ -36,9 +36,9 @@ protected :
 	void HandleWindowEnd(FGameplayEventData Payload);
 	virtual void HandlePlayerHit(const FHitResult& Hit);
 	virtual float GetDamageMultiplier() const;
-	// Shared by all hit sources and notify windows of this ability execution.
+	// 이번 실행의 모든 타격 경로와 판정 구간에서 공유한다.
 	TSet<TWeakObjectPtr<AActor>> DamagedActors;
-	// Derived patterns validate their configuration before committing and start after montage activation.
+	// 파생 패턴은 실행 확정 전에 설정을 검사하고 몽타주 활성화 후 동작을 시작한다.
 	virtual bool ValidatePattern() const { return true; }
 	virtual void OnMontageStarted() {}
 	// 현재 실행용으로 복사한 불변 패턴 설정

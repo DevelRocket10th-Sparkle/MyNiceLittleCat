@@ -113,7 +113,10 @@ void AEnemyAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulu
 		return;
 
 	// 보스의 타깃은 보스방 관리자가 선정하며 시야 상실로 초기화하지 않음
-	if (Cast<ABossCharacter>(Enemy)) return;
+	if (Cast<ABossCharacter>(Enemy))
+	{
+		return;
+	}
 	APawn* DetectedPawn = Cast<APawn>(Actor);
 	// 플레이어가 조종하는 Pawn만 공격 대상으로 선택
 	if (!IsValid(DetectedPawn) || !DetectedPawn->IsPlayerControlled())
@@ -176,7 +179,10 @@ void AEnemyAIController::TryStartEnemyAI()
 		return;
 
 	UBehaviorTree* Tree = Config->BehaviorTree;
-	if (!IsValid(Tree->BlackboardAsset)) return;
+	if (!IsValid(Tree->BlackboardAsset))
+	{
+		return;
+	}
 	// 캐릭터별 인지 범위를 Controller 인스턴스에 적용
 	SightConfig->SightRadius = Config->SightRadius;
 	SightConfig->LoseSightRadius = FMath::Max(Config->SightRadius, Config->LoseSightRadius);
@@ -206,7 +212,10 @@ void AEnemyAIController::TryStartEnemyAI()
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[%s] Failed to run BehaviorTree"), *GetName());
 	}
-	if (ABossCharacter* Boss = Cast<ABossCharacter>(Enemy)) Boss->RefreshBossBlackboard();
+	if (ABossCharacter* Boss = Cast<ABossCharacter>(Enemy))
+	{
+		Boss->RefreshBossBlackboard();
+	}
 }
 
 // 유효한 전투 타깃을 Blackboard에 전달

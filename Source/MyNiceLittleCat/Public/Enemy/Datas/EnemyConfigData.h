@@ -48,6 +48,13 @@ public :
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
 	TObjectPtr<UEnemyPatternSetData> PatternSet;
 
+	// 패턴별 후딜 정상 종료 후 추가하는 공통 공격 간격이다. 0초면 추가 대기를 사용하지 않는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat|Attack Interval", meta=(ClampMin="0", Units="s"))
+	float MinAttackInterval = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Combat|Attack Interval", meta=(ClampMin="0", Units="s"))
+	float MaxAttackInterval = 0.f;
+
 	// 최초로 플레이어를 감지하는 거리
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI|Perception", meta = (ClampMin = "0.0"))
 	float SightRadius = 1500.f;

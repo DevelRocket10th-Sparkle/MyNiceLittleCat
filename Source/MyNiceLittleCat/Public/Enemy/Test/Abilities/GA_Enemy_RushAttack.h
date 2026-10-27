@@ -2,13 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
-#include "Enemy/Test/Abilities/GA_TestBoss_MeleeAttack.h"
-#include "GA_TestBoss_RushAttack.generated.h"
+#include "Enemy/Test/Abilities/GA_Enemy_MeleeAttack.h"
+#include "GA_Enemy_RushAttack.generated.h"
 
-// Ready -> hold Rush's first pose while moving -> play Rush -> Attack.
-// Damage is limited to once per target across the entire ability execution.
+// 준비 동작 후 돌진의 첫 자세를 유지하며 이동하고, 돌진 동작과 공격을 차례로 재생한다.
+// 어빌리티 실행 전체에서 대상마다 피해를 한 번만 적용한다.
 UCLASS()
-class MYNICELITTLECAT_API UGA_TestBoss_RushAttack : public UGA_TestBoss_MeleeAttack
+class MYNICELITTLECAT_API UGA_Enemy_RushAttack : public UGA_Enemy_MeleeAttack
 {
 	GENERATED_BODY()
 public:
@@ -21,7 +21,7 @@ protected:
 	FName RushSection = TEXT("Rush");
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rush")
 	FName AttackSection = TEXT("Attack");
-	// Local-space offset from the character capsule center; X points forward.
+	// 캐릭터 캡슐 중심 기준의 로컬 오프셋이다. X축이 전방이다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rush|Hit")
 	FVector RushHitOffset = FVector(100.f, 0.f, 0.f);
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rush|Hit", meta = (ClampMin = "1", Units = "cm"))

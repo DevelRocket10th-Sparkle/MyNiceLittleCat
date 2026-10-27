@@ -20,7 +20,12 @@ bool FEnemyMeleeSweepTest::RunTest(const FString& Parameters)
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr, true, ERHIFeatureLevel::Num, &Values);
 	AEnemyCharacter* Enemy = World->SpawnActor<AEnemyCharacter>();
 	APlayerCharacter* Player = World->SpawnActor<APlayerCharacter>(FVector(500.f, 0.f, 100.f), FRotator::ZeroRotator);
-	if (!Enemy || !Player) { AddError(TEXT("Cannot spawn melee test actors")); World->DestroyWorld(false); return false; }
+	if (!Enemy || !Player)
+	{
+		AddError(TEXT("Cannot spawn melee test actors"));
+		World->DestroyWorld(false);
+		return false;
+	}
 	Player->GetCapsuleComponent()->SetCollisionProfileName(TEXT("Pawn"));
 	UEnemyMeleeTraceComponent* Trace = Enemy->GetMeleeTraceComponent();
 	UStaticMesh* MeshAsset = NewObject<UStaticMesh>(Enemy);

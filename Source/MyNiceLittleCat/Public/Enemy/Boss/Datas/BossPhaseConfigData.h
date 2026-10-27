@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.

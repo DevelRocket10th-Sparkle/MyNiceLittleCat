@@ -67,9 +67,15 @@ void UEnemyAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 			// 실제 Health 변경 전에 보스의 무적 및 페이즈 하한 정책 적용
 			UAbilitySystemComponent* OwnerASC = GetOwningAbilitySystemComponent();
 			AEnemyCharacter* Enemy = OwnerASC ? Cast<AEnemyCharacter>(OwnerASC->GetAvatarActor()) : nullptr;
-			if (!IsValid(Enemy) || !Enemy->HasAuthority() || !Enemy->IsAlive()) return;
+			if (!IsValid(Enemy) || !Enemy->HasAuthority() || !Enemy->IsAlive())
+			{
+				return;
+			}
 			const float NewHealth = Enemy->CalculateHealthAfterDamage(GetHealth(), GetMaxHealth(), FinalDamage);
-			if (NewHealth != GetHealth()) SetHealth(NewHealth);
+			if (NewHealth != GetHealth())
+			{
+				SetHealth(NewHealth);
+			}
 		}
 	}
 }

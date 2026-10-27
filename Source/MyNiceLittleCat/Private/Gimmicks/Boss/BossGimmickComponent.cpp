@@ -5,7 +5,7 @@
 
 #include "Gimmicks/Boss/BossGimmickComponent.h"
 #include "Enemy/Boss/BossCharacter.h"
-#include "Enemy/Boss/Components/BossPhaseComponent.h"
+#include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Gimmicks/Boss/Barrier.h"
 #include "Gimmicks/Boss/MagneticCoinPatternComponent.h"
 
@@ -24,14 +24,14 @@ void UBossGimmickComponent::ReceiveLevelGimmickReferences_Implementation(const T
 	AreaCenter = InAreaCenter;
 }
 
-bool UBossGimmickComponent::EnterBossPhase_Implementation(FName PhaseId, int64 PhaseExecutionId)
+bool UBossGimmickComponent::EnterPhase_Implementation(FName PhaseId, int64 PhaseExecutionId)
 {
 	// 이전 페이즈 기믹이 남아 있으면 먼저 정리
 	StopAll();
 
 	// 진입 중인 페이즈 종류는 보스 페이즈 컴포넌트에서 확인 (전투 페이즈도 진입 호출이 옴)
 	const ABossCharacter* Boss = Cast<ABossCharacter>(GetOwner());
-	const UBossPhaseComponent* PhaseComponent = Boss ? Boss->GetPhaseComponent() : nullptr;
+	const UEnemyPhaseComponent* PhaseComponent = Boss ? Boss->GetPhaseComponent() : nullptr;
 	const FBossPhaseDefinition* Phase = PhaseComponent ? PhaseComponent->GetCurrentPhase() : nullptr;
 	const bool bBarrierPhase = Phase && Phase->PhaseId == PhaseId && Phase->Kind == EBossPhaseKind::Barrier;
 
@@ -71,7 +71,7 @@ bool UBossGimmickComponent::EnterBossPhase_Implementation(FName PhaseId, int64 P
 	return true;
 }
 
-void UBossGimmickComponent::StopBossGimmicks_Implementation()
+void UBossGimmickComponent::StopGimmicks_Implementation()
 {
 	StopAll();
 }

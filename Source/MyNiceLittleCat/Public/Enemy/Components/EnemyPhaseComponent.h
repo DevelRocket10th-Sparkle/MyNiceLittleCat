@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
@@ -11,7 +11,7 @@
 #include "Components/ActorComponent.h"
 #include "Enemy/Datas/EnemyPatternSetData.h"
 #include "Enemy/Boss/Datas/BossPhaseConfigData.h"
-#include "BossPhaseComponent.generated.h"
+#include "EnemyPhaseComponent.generated.h"
 
 class UAbilitySystemComponent;
 class ULevelSequencePlayer;
@@ -26,13 +26,13 @@ DECLARE_DELEGATE_RetVal_OneParam(bool, FApplyBossPhase, const FBossPhaseDefiniti
 
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
-class MYNICELITTLECAT_API UBossPhaseComponent : public UActorComponent
+class MYNICELITTLECAT_API UEnemyPhaseComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
 public:	
-	// Sets default values for this component's properties
-	UBossPhaseComponent();
+	// 컴포넌트의 기본 실행 상태를 설정한다.
+	UEnemyPhaseComponent();
 
 	// 서버에서 페이즈 설정을 검사하고 전환 GA를 부여
 	bool InitializePhases(UAbilitySystemComponent* InASC, UBossPhaseConfigData* InConfig);
@@ -85,12 +85,12 @@ public:
 	FApplyBossPhase ApplyPhase;
 
 protected:
-	// Called when the game starts
+	// 게임 시작 시 초기화한다.
 	// 컴포넌트 초기화 후 실행 준비
 	//virtual void BeginPlay() override;
 
 public:	
-	// Called every frame
+	// 진행 중인 전환 시퀀스의 상태를 확인한다.
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 

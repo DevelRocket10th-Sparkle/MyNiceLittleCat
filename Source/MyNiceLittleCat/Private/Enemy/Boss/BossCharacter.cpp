@@ -1,9 +1,9 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Enemy/Boss/BossCharacter.h"
-#include "Enemy/Boss/Components/BossPhaseGimmickInterface.h"
-#include "Enemy/Boss/Components/BossPhaseComponent.h"
+#include "Enemy/Interfaces/EnemyPhaseGimmickInterface.h"
+#include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
 #include "Enemy/AI/EnemyAIController.h"
 #include "AbilitySystemComponent.h"
@@ -18,7 +18,7 @@ ABossCharacter::ABossCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	AIControllerClass = AEnemyAIController::StaticClass();
-	PhaseComponent = CreateDefaultSubobject<UBossPhaseComponent>(TEXT("PhaseComponent"));
+	PhaseComponent = CreateDefaultSubobject<UEnemyPhaseComponent>(TEXT("PhaseComponent"));
 }
 
 // 초기화와 생존 및 보스방 전투 상태를 포함한 AI 실행 가능 여부 확인
@@ -54,16 +54,28 @@ float ABossCharacter::CalculateHealthAfterDamage(float CurrentHealth, float MaxH
 // 기본 초기화 뒤 파생 캐릭터의 추가 설정 준비
 bool ABossCharacter::InitializeEnemyExtensions()
 {
-	if (!PhaseConfig || !GetPatternComponent()->HasPatterns()) return false;
+	if (!PhaseConfig || !GetPatternComponent()->HasPatterns())
+	{
+		return false;
+	}
 	for (int32 Index = 0; Index < PhaseConfig->Phases.Num(); ++Index)
 	{
-		if (PhaseConfig->IsLogOnlyPhase(Index)) continue;
+		if (PhaseConfig->IsLogOnlyPhase(Index))
+		{
+			continue;
+		}
 		const FBossPhaseDefinition& Phase = PhaseConfig->Phases[Index];
 		for (FName PatternId : Phase.AllowedPatternIds)
-			if (!GetPatternComponent()->HasPattern(PatternId)) return false;
+			if (!GetPatternComponent()->HasPattern(PatternId))
+			{
+				return false;
+			}
 
 	}
-	if (!InitializeGimmickConnection()) return false;
+	if (!InitializeGimmickConnection())
+	{
+		return false;
+	}
 	PhaseComponent->OnTransitionRequested.AddUObject(this, &ABossCharacter::HandleTransitionRequested);
 	PhaseComponent->ApplyPhase.BindUObject(this, &ABossCharacter::HandlePhaseEntered);
 	GetPatternComponent()->SetRequestsBlocked(true);
@@ -75,13 +87,24 @@ bool ABossCharacter::InitializeEnemyExtensions()
 // 준비된 보스방의 첫 페이즈와 타깃 선정 시작
 bool ABossCharacter::StartEncounter()
 {
-	if (!HasAuthority() || !IsEnemyInitialized() || !IsAlive() || bEncounterActive) return false;
+	if (!HasAuthority() || !IsEnemyInitialized() || !IsAlive() || bEncounterActive)
+	{
+		return false;
+	}
 	++EncounterGeneration;
 	bFailurePending = false;
 	bEncounterActive = true;
-	if (!PhaseComponent->StartPhases()) { StopEncounter(); return false; }
+	GetPatternComponent()->ResetAttackInterval();
+	if (!PhaseComponent->StartPhases())
+	{
+		StopEncounter();
+		return false;
+	}
 	FinishPhaseTransition();
-	if (AEnemyAIController* AI = Cast<AEnemyAIController>(GetController())) AI->TryStartEnemyAI();
+	if (AEnemyAIController* AI = Cast<AEnemyAIController>(GetController()))
+	{
+		AI->TryStartEnemyAI();
+	}
 	RefreshBossBlackboard();
 	return true;
 }
@@ -90,11 +113,19 @@ bool ABossCharacter::StartEncounter()
 
 void ABossCharacter::HandleTransitionRequested()
 {
-	if (!IsEncounterActive() || !IsAlive()) return;
+	if (!IsEncounterActive() || !IsAlive())
+	{
+		return;
+	}
 	GetPatternComponent()->SetRequestsBlocked(true);
 	GetPatternComponent()->CancelActiveRequest();
+	// 이전 페이즈의 대기를 새 페이즈 첫 공격에 넘기지 않는다.
+	GetPatternComponent()->ResetAttackInterval();
 	StopPhaseGimmicks();
-	if (AEnemyAIController* AI = Cast<AEnemyAIController>(GetController())) AI->StopMovement();
+	if (AEnemyAIController* AI = Cast<AEnemyAIController>(GetController()))
+	{
+		AI->StopMovement();
+	}
 	RefreshBossBlackboard();
 }
 
@@ -103,10 +134,13 @@ void ABossCharacter::HandleTransitionRequested()
 // 페이즈별 공격 목록 및 배리어와 코인 기믹 적용
 bool ABossCharacter::HandlePhaseEntered(const FBossPhaseDefinition& Phase)
 {
-	if (!IsEncounterActive()) return false;
+	if (!IsEncounterActive())
+	{
+		return false;
+	}
 	GetPatternComponent()->SetAvailablePatterns(Phase.AllowedPatternIds);
 	if (IsValid(PhaseGimmickComponent))
-		return IBossPhaseGimmickInterface::Execute_EnterBossPhase(PhaseGimmickComponent,
+		return IEnemyPhaseGimmickInterface::Execute_EnterPhase(PhaseGimmickComponent,
 			Phase.PhaseId, PhaseComponent->GetCurrentPhaseExecutionId());
 	// 기믹 구현이 빠진 배리어를 완료된 것처럼 진행하지 않음
 	if (Phase.Kind == EBossPhaseKind::Barrier)
@@ -119,7 +153,10 @@ bool ABossCharacter::HandlePhaseEntered(const FBossPhaseDefinition& Phase)
 
 void ABossCharacter::FinishPhaseTransition()
 {
-	if (!IsEncounterActive() || !PhaseComponent->IsActive()) return;
+	if (!IsEncounterActive() || !PhaseComponent->IsActive())
+	{
+		return;
+	}
 	// 마지막 로그 페이즈까지 통과했으면 이전 공격 목록을 재사용하지 않음
 	if (PhaseComponent->IsCurrentPhaseLogOnly()) GetPatternComponent()->SetAvailablePatterns({});
 	GetPatternComponent()->SetRequestsBlocked(PhaseComponent->IsCurrentPhaseLogOnly());
@@ -132,7 +169,10 @@ void ABossCharacter::FinishPhaseTransition()
 void ABossCharacter::HandleHealthChanged(float NewHealth, float MaxHealth)
 {
 	Super::HandleHealthChanged(NewHealth, MaxHealth);
-	if (IsAlive() && IsEncounterActive()) PhaseComponent->EvaluateHealth(NewHealth, MaxHealth);
+	if (IsAlive() && IsEncounterActive())
+	{
+		PhaseComponent->EvaluateHealth(NewHealth, MaxHealth);
+	}
 }
 
 // 현재 보스 상태를 일반 행동 및 전환 판단 키에 반영
@@ -141,7 +181,10 @@ void ABossCharacter::RefreshBossBlackboard()
 	// 보스의 AI와 BT 판단 데이터
 	AEnemyAIController* AI = Cast<AEnemyAIController>(GetController());
 	UBlackboardComponent* Blackboard = AI ? AI->GetBlackboardComponent() : nullptr;
-	if (!Blackboard) return;
+	if (!Blackboard)
+	{
+		return;
+	}
 	Blackboard->SetValueAsBool(TEXT("CanAct"), IsEncounterActive() && IsAlive() && PhaseComponent->IsActive() && !PhaseComponent->IsCurrentPhaseLogOnly());
 	if (Blackboard->GetKeyID(TEXT("PhaseTransitionRequested")) != FBlackboard::InvalidKey)
 		Blackboard->SetValueAsBool(TEXT("PhaseTransitionRequested"), IsEncounterActive()
@@ -151,7 +194,10 @@ void ABossCharacter::RefreshBossBlackboard()
 // 안전한 다음 Tick에 전투 실패를 전달하도록 예약
 void ABossCharacter::ScheduleEncounterFailure()
 {
-	if (!bEncounterActive || bFailurePending) return;
+	if (!bEncounterActive || bFailurePending)
+	{
+		return;
+	}
 	bFailurePending = true;
 	PhaseComponent->StopAndInvalidate();
 	GetPatternComponent()->SetRequestsBlocked(true);
@@ -162,7 +208,10 @@ void ABossCharacter::ScheduleEncounterFailure()
 	FailureTimerHandle = GetWorld()->GetTimerManager().SetTimerForNextTick(
 		FTimerDelegate::CreateWeakLambda(this, [this, ExpectedGeneration]()
 		{
-			if (!bEncounterActive || ExpectedGeneration != EncounterGeneration) return;
+			if (!bEncounterActive || ExpectedGeneration != EncounterGeneration)
+			{
+				return;
+			}
 			StopEncounter();
 			OnEncounterFailed.Broadcast(this);
 		}));
@@ -174,13 +223,19 @@ void ABossCharacter::StopEncounter()
 	bEncounterActive = false;
 	bFailurePending = false;
 	++EncounterGeneration;
-	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(FailureTimerHandle);
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(FailureTimerHandle);
+	}
 	PhaseComponent->StopAndInvalidate();
 	GetPatternComponent()->StopAndInvalidate();
 	StopPhaseGimmicks();
 	if (AEnemyAIController* AI = Cast<AEnemyAIController>(GetController()))
 	{
-		if (UBrainComponent* Brain = AI->GetBrainComponent()) Brain->StopLogic(TEXT("Boss encounter stopped"));
+		if (UBrainComponent* Brain = AI->GetBrainComponent())
+		{
+			Brain->StopLogic(TEXT("Boss encounter stopped"));
+		}
 		AI->StopMovement();
 		AI->ClearCombatTarget();
 	}
@@ -192,7 +247,10 @@ void ABossCharacter::StopEncounter()
 // 중복 사망을 막고 공격과 AI를 정리한 뒤 사망 연출 시작
 void ABossCharacter::BeginDeath()
 {
-	if (!IsAlive()) return;
+	if (!IsAlive())
+	{
+		return;
+	}
 	StopEncounter();
 	Super::BeginDeath();
 	OnDefeated.Broadcast(this);
@@ -215,7 +273,10 @@ bool ABossCharacter::InitializeGimmickConnection()
 	GetComponents(Components);
 	for (UActorComponent* Component : Components)
 	{
-		if (!IsValid(Component) || !Component->Implements<UBossPhaseGimmickInterface>()) continue;
+		if (!IsValid(Component) || !Component->Implements<UEnemyPhaseGimmickInterface>())
+		{
+			continue;
+		}
 		if (PhaseGimmickComponent)
 		{
 			UE_LOG(LogTemp, Error, TEXT("Boss requires at most one phase gimmick component: %s"), *GetName());
@@ -227,8 +288,11 @@ bool ABossCharacter::InitializeGimmickConnection()
 	if (PhaseGimmickComponent)
 	{
 		TMap<FName, AActor*> PhaseActors;
-		for (const auto& Pair : LevelGimmickActors) PhaseActors.Add(Pair.Key, Pair.Value);
-		IBossPhaseGimmickInterface::Execute_ReceiveLevelGimmickReferences(PhaseGimmickComponent, PhaseActors, GimmickAreaCenter);
+		for (const auto& Pair : LevelGimmickActors)
+		{
+			PhaseActors.Add(Pair.Key, Pair.Value);
+		}
+		IEnemyPhaseGimmickInterface::Execute_ReceiveLevelGimmickReferences(PhaseGimmickComponent, PhaseActors, GimmickAreaCenter);
 	}
 	return true;
 }
@@ -244,7 +308,7 @@ void ABossCharacter::SetLevelGimmickReferences(const TMap<FName, TObjectPtr<AAct
 void ABossCharacter::StopPhaseGimmicks()
 {
 	if (HasAuthority() && IsValid(PhaseGimmickComponent))
-		IBossPhaseGimmickInterface::Execute_StopBossGimmicks(PhaseGimmickComponent);
+		IEnemyPhaseGimmickInterface::Execute_StopGimmicks(PhaseGimmickComponent);
 }
 
 // 연결된 컴포넌트와 현재 전투에서 발생한 완료 통지만 수락

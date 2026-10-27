@@ -1,4 +1,4 @@
-﻿#if WITH_DEV_AUTOMATION_TESTS
+#if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
 #include "Engine/World.h"
@@ -8,11 +8,15 @@
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/Boss/BossCharacter.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
-#include "Enemy/Boss/Components/BossPhaseComponent.h"
+#include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Enemy/Boss/Datas/BossPhaseConfigData.h"
 #include "Enemy/Datas/EnemyConfigData.h"
 #include "Enemy/Datas/EnemyPatternSetData.h"
+#include "TimerManager.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
+#include "GA_Enemy_RecoveryTest.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Enemy/AI/Tasks/BTTask_Enemy_PatternMovement.h"
 
 namespace EnemyCombatTests
 {
@@ -56,6 +60,18 @@ namespace EnemyCombatTests
 		Config->PatternSet->Patterns.Add(Pattern);
 		return Config;
 	}
+
+	bool FinishTestAbility(UAbilitySystemComponent* ASC)
+	{
+		FGameplayAbilitySpec* Spec = ASC->FindAbilitySpecFromClass(UGA_Enemy_RecoveryTest::StaticClass());
+		UGA_Enemy_RecoveryTest* Ability = Spec ? Cast<UGA_Enemy_RecoveryTest>(Spec->GetPrimaryInstance()) : nullptr;
+		if (!Ability)
+		{
+			return false;
+		}
+		Ability->FinishNormally();
+		return true;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnemyPatternLifecycleTest, "MyNiceLittleCat.Enemy.PatternLifecycle",
@@ -89,6 +105,363 @@ bool FEnemyPatternLifecycleTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Release cancels a running GA"), Patterns->IsIdle());
 	Patterns->StopAndInvalidate();
 	TestFalse(TEXT("Stopped component rejects new requests"), Patterns->TryStartPattern(TEXT("Arena"), nullptr, SecondId));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnemyPatternRecoveryTest, "MyNiceLittleCat.Enemy.PatternRecovery",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// GA 정상 종료와 요청 완료를 분리하고 후딜 취소 후 남은 콜백이 실행되지 않는지 검사한다.
+bool FEnemyPatternRecoveryTest::RunTest(const FString& Parameters)
+{
+	// 동기 테스트 안에서 프레임을 진행하되 다른 테스트와 에디터의 프레임 번호는 보존한다.
+	TGuardValue<uint64> RestoreFrameCounter(GFrameCounter, GFrameCounter);
+	EnemyCombatTests::FFixture Fixture;
+	AEnemyCharacter* Enemy = Fixture.World->SpawnActor<AEnemyCharacter>();
+	UEnemyConfigData* Config = EnemyCombatTests::MakeEnemyConfig(Enemy);
+	Config->PatternSet->Patterns[0].AbilityClass = UGA_Enemy_RecoveryTest::StaticClass();
+	// 전용 실행 설정이 없어도 공통 후딜이 적용되어야 한다.
+	Config->PatternSet->Patterns[0].RecoverySeconds = 0.5f;
+	EnemyCombatTests::SetObjectSetting(Enemy, TEXT("EnemyConfig"), Config);
+	Enemy->DispatchBeginPlay();
+	UEnemyPatternComponent* Patterns = Enemy->GetPatternComponent();
+	UAbilitySystemComponent* ASC = Enemy->GetAbilitySystemComponent();
+	int64 RequestId = 0;
+	if (!TestTrue(TEXT("Pattern starts"), Patterns->TryStartPattern(TEXT("Arena"), nullptr, RequestId)))
+	{
+		return false;
+	}
+	FGameplayAbilitySpec* Spec = ASC->FindAbilitySpecFromClass(UGA_Enemy_RecoveryTest::StaticClass());
+	UGA_Enemy_RecoveryTest* Ability = Spec ? Cast<UGA_Enemy_RecoveryTest>(Spec->GetPrimaryInstance()) : nullptr;
+	if (!TestNotNull(TEXT("Recovery test ability has an execution instance"), Ability))
+	{
+		return false;
+	}
+	Ability->FinishNormally();
+	// 첫 타이머 갱신은 대기 중인 후딜 타이머를 활성화하므로 경과 시간을 더하지 않는다.
+	Fixture.World->GetTimerManager().Tick(0.f);
+	TestTrue(TEXT("Recovery keeps request running"), Patterns->IsRequestRunning(RequestId));
+	TestFalse(TEXT("Recovery is not idle"), Patterns->IsIdle());
+	int64 RejectedId = 0;
+	TestFalse(TEXT("Recovery blocks next attack"), Patterns->TryStartPattern(TEXT("Arena"), nullptr, RejectedId));
+	++GFrameCounter;
+	Fixture.World->GetTimerManager().Tick(0.2f);
+	TestTrue(TEXT("Recovery waits full duration"), Patterns->IsRequestRunning(RequestId));
+	++GFrameCounter;
+	Fixture.World->GetTimerManager().Tick(0.4f);
+	TestEqual(TEXT("Recovery completes request"), Patterns->GetRequestResult(RequestId), EEnemyPatternResult::Completed);
+	Patterns->ReleaseRequest(RequestId);
+	if (!TestTrue(TEXT("Next pattern starts"), Patterns->TryStartPattern(TEXT("Arena"), nullptr, RequestId)))
+	{
+		return false;
+	}
+	Spec = ASC->FindAbilitySpecFromClass(UGA_Enemy_RecoveryTest::StaticClass());
+	Ability = Spec ? Cast<UGA_Enemy_RecoveryTest>(Spec->GetPrimaryInstance()) : nullptr;
+	if (!TestNotNull(TEXT("Next recovery test ability has an execution instance"), Ability))
+	{
+		return false;
+	}
+	Ability->FinishNormally();
+	Patterns->CancelRequest(RequestId);
+	++GFrameCounter;
+	Fixture.World->GetTimerManager().Tick(1.f);
+	TestEqual(TEXT("Cancelled recovery stays cancelled"), Patterns->GetRequestResult(RequestId), EEnemyPatternResult::Cancelled);
+	Patterns->ReleaseRequest(RequestId);
+	Config->PatternSet->Patterns[0].RecoverySeconds = -0.1f;
+	AddExpectedError(TEXT("Invalid pattern settings"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestFalse(TEXT("Negative common recovery is rejected"), Patterns->InitializePatterns(ASC, Config->PatternSet));
+	Config->PatternSet->Patterns[0].RecoverySeconds = 0.f;
+	TestTrue(TEXT("Zero common recovery is valid"), Patterns->InitializePatterns(ASC, Config->PatternSet));
+	if (!TestTrue(TEXT("Zero recovery pattern starts"), Patterns->TryStartPattern(TEXT("Arena"), nullptr, RequestId)))
+	{
+		return false;
+	}
+	Spec = ASC->FindAbilitySpecFromClass(UGA_Enemy_RecoveryTest::StaticClass());
+	Ability = Spec ? Cast<UGA_Enemy_RecoveryTest>(Spec->GetPrimaryInstance()) : nullptr;
+	if (!TestNotNull(TEXT("Zero recovery ability has an execution instance"), Ability))
+	{
+		return false;
+	}
+	Ability->FinishNormally();
+	TestEqual(TEXT("Zero recovery completes immediately"), Patterns->GetRequestResult(RequestId), EEnemyPatternResult::Completed);
+	Patterns->ReleaseRequest(RequestId);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnemyPatternMovementTest, "MyNiceLittleCat.Enemy.PatternMovement",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyPatternMovementTest::RunTest(const FString& Parameters)
+{
+	TGuardValue<uint64> RestoreFrameCounter(GFrameCounter, GFrameCounter);
+	EnemyCombatTests::FFixture Fixture;
+	AEnemyCharacter* Enemy = Fixture.World->SpawnActor<AEnemyCharacter>();
+	AActor* Target = Fixture.World->SpawnActor<AActor>();
+	UEnemyConfigData* Config = EnemyCombatTests::MakeEnemyConfig(Enemy);
+	FEnemyPatternDefinition& Definition = Config->PatternSet->Patterns[0];
+	Definition.AbilityClass = UGA_Enemy_RecoveryTest::StaticClass();
+	Definition.RecoverySeconds = 0.5f;
+	Definition.Movement.Policy = EEnemyPatternMovementPolicy::ChaseTarget;
+	Definition.Movement.AcceptanceRadius = 0.f;
+	Definition.Movement.bIncludeAgentRadius = false;
+	Definition.Movement.bIncludeGoalRadius = false;
+	EnemyCombatTests::SetObjectSetting(Enemy, TEXT("EnemyConfig"), Config);
+	Enemy->DispatchBeginPlay();
+	UEnemyPatternComponent* Patterns = Enemy->GetPatternComponent();
+	int64 RequestId = 0;
+	if (!TestTrue(TEXT("Movement pattern starts"), Patterns->TryStartPattern(TEXT("Arena"), Target, RequestId)))
+	{
+		return false;
+	}
+	FEnemyPatternMovementSettings Movement;
+	AActor* MovementTarget = nullptr;
+	int64 MovementRequestId = 0;
+	TestTrue(TEXT("Movement is available during ability"), Patterns->GetActiveMovement(Movement, MovementTarget, MovementRequestId));
+	TestEqual(TEXT("Chase policy"), Movement.Policy, EEnemyPatternMovementPolicy::ChaseTarget);
+	TestTrue(TEXT("Movement uses the attack target and request"), MovementTarget == Target && MovementRequestId == RequestId);
+	const FAIMoveRequest MoveRequest = UBTTask_Enemy_PatternMovement::BuildMoveRequest(MovementTarget, Movement);
+	TestEqual(TEXT("Zero acceptance radius is preserved"), MoveRequest.GetAcceptanceRadius(), 0.f);
+	TestFalse(TEXT("Agent radius inclusion is configurable"), MoveRequest.IsReachTestIncludingAgentRadius());
+	TestFalse(TEXT("Goal radius inclusion is configurable"), MoveRequest.IsReachTestIncludingGoalRadius());
+	TestFalse(TEXT("Partial paths are opt-in"), MoveRequest.IsUsingPartialPaths());
+	// 실행 중 원본 데이터가 바뀌어도 현재 요청의 이동 정책은 바뀌지 않아야 한다.
+	Definition.Movement.Policy = EEnemyPatternMovementPolicy::Stop;
+	Patterns->GetActiveMovement(Movement, MovementTarget, MovementRequestId);
+	TestEqual(TEXT("Active policy is a snapshot"), Movement.Policy, EEnemyPatternMovementPolicy::ChaseTarget);
+	UAbilitySystemComponent* ASC = Enemy->GetAbilitySystemComponent();
+	FGameplayAbilitySpec* Spec = ASC->FindAbilitySpecFromClass(UGA_Enemy_RecoveryTest::StaticClass());
+	UGA_Enemy_RecoveryTest* Ability = Spec ? Cast<UGA_Enemy_RecoveryTest>(Spec->GetPrimaryInstance()) : nullptr;
+	if (!TestNotNull(TEXT("Movement test ability exists"), Ability))
+	{
+		return false;
+	}
+	Enemy->GetCharacterMovement()->Velocity = FVector(300.f, 0.f, 0.f);
+	Ability->FinishNormally();
+	TestTrue(TEXT("Recovery keeps movement context"), Patterns->GetActiveMovement(Movement, MovementTarget, MovementRequestId));
+	TestEqual(TEXT("Chase always switches to stop during recovery"), Movement.Policy, EEnemyPatternMovementPolicy::Stop);
+	TestTrue(TEXT("Recovery immediately stops velocity"), Enemy->GetCharacterMovement()->Velocity.IsNearlyZero());
+	TestTrue(TEXT("Recovery blocks new navigation movement"), Enemy->IsAttackMovementLocked());
+	TestEqual(TEXT("Recovery retains request identity"), MovementRequestId, RequestId);
+	Patterns->CancelRequest(RequestId);
+	TestFalse(TEXT("Cancellation releases recovery movement lock"), Enemy->IsAttackMovementLocked());
+	TestFalse(TEXT("Cancelled request has no movement"), Patterns->GetActiveMovement(Movement, MovementTarget, MovementRequestId));
+	TestTrue(TEXT("Invalid context clears outputs"), MovementRequestId == 0 && MovementTarget == nullptr);
+	Patterns->ReleaseRequest(RequestId);
+
+	Definition.Movement.Policy = EEnemyPatternMovementPolicy::AbilityDriven;
+	if (!TestTrue(TEXT("Shared policy pattern starts"), Patterns->TryStartPattern(TEXT("Arena"), Target, RequestId)))
+	{
+		return false;
+	}
+	Enemy->AcquireAttackMovementLock();
+	Ability->FinishNormally();
+	Patterns->GetActiveMovement(Movement, MovementTarget, MovementRequestId);
+	TestEqual(TEXT("Ability-driven recovery also always stops"), Movement.Policy, EEnemyPatternMovementPolicy::Stop);
+	Fixture.World->GetTimerManager().Tick(0.f);
+	++GFrameCounter;
+	Fixture.World->GetTimerManager().Tick(0.6f);
+	TestFalse(TEXT("Completed recovery has no movement"), Patterns->GetActiveMovement(Movement, MovementTarget, MovementRequestId));
+	TestTrue(TEXT("Recovery preserves other movement locks"), Enemy->IsAttackMovementLocked());
+	Enemy->ReleaseAttackMovementLock();
+	TestFalse(TEXT("Recovery released only its own lock"), Enemy->IsAttackMovementLocked());
+	Patterns->ReleaseRequest(RequestId);
+	if (!TestTrue(TEXT("Stop cleanup pattern starts"), Patterns->TryStartPattern(TEXT("Arena"), Target, RequestId)))
+	{
+		return false;
+	}
+	Ability->FinishNormally();
+	TestTrue(TEXT("Stop cleanup begins in locked recovery"), Enemy->IsAttackMovementLocked());
+	Patterns->StopAndInvalidate();
+	TestFalse(TEXT("Full stop releases recovery lock"), Enemy->IsAttackMovementLocked());
+	Definition.Movement.AcceptanceRadius = -1.f;
+	AddExpectedError(TEXT("Invalid pattern settings"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestFalse(TEXT("Negative movement radius rejected"), Patterns->InitializePatterns(ASC, Config->PatternSet));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnemyAttackIntervalTest, "MyNiceLittleCat.Enemy.AttackInterval",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FEnemyAttackIntervalTest::RunTest(const FString& Parameters)
+{
+	TGuardValue<uint64> RestoreFrameCounter(GFrameCounter, GFrameCounter);
+	EnemyCombatTests::FFixture Fixture;
+	// 실제 게임 시간과 타이머 시간을 함께 진행해 대기 시작 시점을 결정적으로 검사한다.
+	Fixture.World->TimeSeconds = 10.0;
+	AEnemyCharacter* Enemy = Fixture.World->SpawnActor<AEnemyCharacter>();
+	UEnemyConfigData* Config = EnemyCombatTests::MakeEnemyConfig(Enemy);
+	Config->PatternSet->Patterns[0].AbilityClass = UGA_Enemy_RecoveryTest::StaticClass();
+	Config->PatternSet->Patterns[0].Weight = 1.f;
+	Config->PatternSet->Patterns[0].RecoverySeconds = 0.5f;
+	Config->MinAttackInterval = 2.f;
+	Config->MaxAttackInterval = 2.f;
+	EnemyCombatTests::SetObjectSetting(Enemy, TEXT("EnemyConfig"), Config);
+	Enemy->DispatchBeginPlay();
+	UEnemyPatternComponent* Patterns = Enemy->GetPatternComponent();
+	UAbilitySystemComponent* ASC = Enemy->GetAbilitySystemComponent();
+	TestTrue(TEXT("Enemy initializes interval from config data"), Enemy->IsEnemyInitialized());
+	TestTrue(TEXT("First attack has no added delay"), Patterns->CanStartAttack());
+	int64 RequestId = 0;
+	if (!TestTrue(TEXT("Interval test attack starts"), Patterns->TryStartPattern(TEXT("Arena"), nullptr, RequestId))
+		|| !TestTrue(TEXT("Ability ends normally"), EnemyCombatTests::FinishTestAbility(ASC)))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Interval is not started at ability end"), Patterns->GetAttackIntervalRemaining(), 0.f);
+	Fixture.World->GetTimerManager().Tick(0.f);
+	++GFrameCounter;
+	Fixture.World->TimeSeconds += 0.2;
+	Fixture.World->GetTimerManager().Tick(0.2f);
+	TestTrue(TEXT("Recovery still runs"), Patterns->IsRequestRunning(RequestId));
+	TestEqual(TEXT("Interval waits until full recovery"), Patterns->GetAttackIntervalRemaining(), 0.f);
+	++GFrameCounter;
+	Fixture.World->TimeSeconds += 0.4;
+	Fixture.World->GetTimerManager().Tick(0.4f);
+	TestEqual(TEXT("Recovery completes before attack interval"), Patterns->GetRequestResult(RequestId), EEnemyPatternResult::Completed);
+	TestTrue(TEXT("Ability is idle during added interval"), Patterns->IsIdle());
+	TestEqual(TEXT("Interval starts after recovery"), Patterns->GetAttackIntervalRemaining(), 2.f);
+	const double Deadline = Patterns->GetNextAttackAllowedTime();
+	Patterns->ReleaseRequest(RequestId);
+	TestTrue(TEXT("Release retains deadline"), Patterns->GetNextAttackAllowedTime() == Deadline);
+	for (int32 Index = 0; Index < 5; ++Index)
+	{
+		TestFalse(TEXT("Readiness checks remain blocked"), Patterns->CanStartAttack());
+		TestTrue(TEXT("Readiness does not resample interval"), Patterns->GetNextAttackAllowedTime() == Deadline);
+	}
+	int64 RejectedId = -1;
+	TestFalse(TEXT("Random selection cannot bypass interval"), Patterns->TryStartAttack(nullptr, RejectedId));
+	TestEqual(TEXT("Rejected random request clears ID"), RejectedId, int64(0));
+	TestFalse(TEXT("Explicit selection cannot bypass interval"), Patterns->TryStartPattern(TEXT("Arena"), nullptr, RejectedId));
+	Fixture.World->TimeSeconds = Deadline - 0.01;
+	TestFalse(TEXT("Still blocked before deadline"), Patterns->CanStartAttack());
+	Fixture.World->TimeSeconds = Deadline + 0.01;
+	TestTrue(TEXT("Next attack allowed after deadline"), Patterns->CanStartAttack());
+	if (!TestTrue(TEXT("Random selection resumes"), Patterns->TryStartAttack(nullptr, RequestId)))
+	{
+		return false;
+	}
+	Patterns->CancelRequest(RequestId);
+	Patterns->ReleaseRequest(RequestId);
+	TestEqual(TEXT("Cancelled ability does not start interval"), Patterns->GetAttackIntervalRemaining(), 0.f);
+	if (!TestTrue(TEXT("Recovery cancellation attack starts"), Patterns->TryStartPattern(TEXT("Arena"), nullptr, RequestId))
+		|| !TestTrue(TEXT("Recovery cancellation ability ends"), EnemyCombatTests::FinishTestAbility(ASC)))
+	{
+		return false;
+	}
+	Patterns->CancelRequest(RequestId);
+	++GFrameCounter;
+	Fixture.World->TimeSeconds += 5.0;
+	Fixture.World->GetTimerManager().Tick(5.f);
+	TestEqual(TEXT("Cancelled recovery stays cancelled"), Patterns->GetRequestResult(RequestId), EEnemyPatternResult::Cancelled);
+	TestEqual(TEXT("Cancelled recovery does not start interval later"), Patterns->GetAttackIntervalRemaining(), 0.f);
+	Patterns->ReleaseRequest(RequestId);
+
+	TestTrue(TEXT("Random interval configuration accepted"), Patterns->ConfigureAttackInterval(0.25f, 0.75f));
+	Config->PatternSet->Patterns[0].RecoverySeconds = 0.f;
+	if (!TestTrue(TEXT("Zero recovery attack starts"), Patterns->TryStartPattern(TEXT("Arena"), nullptr, RequestId))
+		|| !TestTrue(TEXT("Zero recovery ability ends"), EnemyCombatTests::FinishTestAbility(ASC)))
+	{
+		return false;
+	}
+	const float RandomInterval = Patterns->GetAttackIntervalRemaining();
+	TestTrue(TEXT("Sample is inside configured range"), RandomInterval >= 0.25f && RandomInterval <= 0.75f);
+	Patterns->ReleaseRequest(RequestId);
+	// 같은 데이터 에셋을 공유해도 실행 시각과 컴포넌트의 임시 설정은 공유하지 않는다.
+	const double FirstDeadline = Patterns->GetNextAttackAllowedTime();
+	AEnemyCharacter* OtherEnemy = Fixture.World->SpawnActor<AEnemyCharacter>();
+	EnemyCombatTests::SetObjectSetting(OtherEnemy, TEXT("EnemyConfig"), Config);
+	OtherEnemy->DispatchBeginPlay();
+	UEnemyPatternComponent* OtherPatterns = OtherEnemy->GetPatternComponent();
+	TestTrue(TEXT("Shared config enemy has no first attack delay"), OtherPatterns->CanStartAttack());
+	TestEqual(TEXT("Shared config has no shared runtime deadline"), OtherPatterns->GetNextAttackAllowedTime(), 0.0);
+	TestEqual(TEXT("Runtime tuning did not mutate shared config"), Config->MinAttackInterval, 2.f);
+	int64 OtherRequestId = 0;
+	if (!TestTrue(TEXT("Shared config enemy can attack"), OtherPatterns->TryStartPattern(TEXT("Arena"), nullptr, OtherRequestId))
+		|| !TestTrue(TEXT("Shared config enemy ends normally"), EnemyCombatTests::FinishTestAbility(OtherEnemy->GetAbilitySystemComponent())))
+	{
+		return false;
+	}
+	OtherPatterns->ReleaseRequest(OtherRequestId);
+	TestEqual(TEXT("Other enemy reads the original data interval"), OtherPatterns->GetAttackIntervalRemaining(), 2.f);
+	TestTrue(TEXT("Other enemy did not overwrite first deadline"), Patterns->GetNextAttackAllowedTime() == FirstDeadline);
+	Patterns->StopAndInvalidate();
+	TestEqual(TEXT("Full stop resets interval"), Patterns->GetAttackIntervalRemaining(), 0.f);
+	TestFalse(TEXT("Stopped component cannot attack"), Patterns->CanStartAttack());
+	TestTrue(TEXT("Reinitialization succeeds"), Patterns->InitializePatterns(ASC, Config->PatternSet));
+	TestTrue(TEXT("Reinitialization has no first attack delay"), Patterns->CanStartAttack());
+	TestTrue(TEXT("Zero interval can disable added delay"), Patterns->ConfigureAttackInterval(0.f, 0.f));
+	if (!TestTrue(TEXT("Disabled interval attack starts"), Patterns->TryStartPattern(TEXT("Arena"), nullptr, RequestId))
+		|| !TestTrue(TEXT("Disabled interval ability ends"), EnemyCombatTests::FinishTestAbility(ASC)))
+	{
+		return false;
+	}
+	Patterns->ReleaseRequest(RequestId);
+	TestTrue(TEXT("Zero interval allows immediate next attack"), Patterns->CanStartAttack());
+	TestFalse(TEXT("Negative interval rejected"), Patterns->ConfigureAttackInterval(-1.f, 1.f));
+	TestFalse(TEXT("Reversed interval range rejected"), Patterns->ConfigureAttackInterval(2.f, 1.f));
+	UEnemyConfigData* InvalidConfig = EnemyCombatTests::MakeEnemyConfig(Fixture.World);
+	InvalidConfig->MinAttackInterval = 2.f;
+	InvalidConfig->MaxAttackInterval = 1.f;
+	AEnemyCharacter* InvalidEnemy = Fixture.World->SpawnActor<AEnemyCharacter>();
+	EnemyCombatTests::SetObjectSetting(InvalidEnemy, TEXT("EnemyConfig"), InvalidConfig);
+	AddExpectedError(TEXT("attack interval configuration failed"), EAutomationExpectedErrorFlags::Contains, 1);
+	InvalidEnemy->DispatchBeginPlay();
+	TestFalse(TEXT("Invalid data interval blocks initialization"), InvalidEnemy->IsEnemyInitialized());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBossAttackIntervalTest, "MyNiceLittleCat.Enemy.AttackIntervalBoss",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBossAttackIntervalTest::RunTest(const FString& Parameters)
+{
+	EnemyCombatTests::FFixture Fixture;
+	ABossCharacter* Boss = Fixture.World->SpawnActor<ABossCharacter>();
+	UEnemyConfigData* Config = EnemyCombatTests::MakeEnemyConfig(Boss);
+	Config->PatternSet->Patterns[0].AbilityClass = UGA_Enemy_RecoveryTest::StaticClass();
+	Config->MinAttackInterval = 1.25f;
+	Config->MaxAttackInterval = 1.25f;
+	EnemyCombatTests::SetObjectSetting(Boss, TEXT("EnemyConfig"), Config);
+	UBossPhaseConfigData* Phases = NewObject<UBossPhaseConfigData>(Boss);
+	Phases->bLogOnlyAfterFirstPhase = false;
+	FBossPhaseDefinition First;
+	First.PhaseId = TEXT("First");
+	First.HealthFloorRatio = 0.7f;
+	First.AllowedPatternIds.Add(TEXT("Arena"));
+	Phases->Phases.Add(First);
+	FBossPhaseDefinition Final;
+	Final.PhaseId = TEXT("Final");
+	Final.AllowedPatternIds.Add(TEXT("Arena"));
+	Phases->Phases.Add(Final);
+	EnemyCombatTests::SetObjectSetting(Boss, TEXT("PhaseConfig"), Phases);
+	Boss->DispatchBeginPlay();
+	UEnemyPatternComponent* Patterns = Boss->GetPatternComponent();
+	TestFalse(TEXT("Idle encounter cannot attack"), Patterns->CanStartAttack());
+	if (!TestTrue(TEXT("Boss interval encounter starts"), Boss->StartEncounter()))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Boss first attack is immediately ready"), Patterns->CanStartAttack());
+	int64 RequestId = 0;
+	if (!TestTrue(TEXT("Boss interval attack starts"), Patterns->TryStartPattern(TEXT("Arena"), nullptr, RequestId))
+		|| !TestTrue(TEXT("Boss interval ability ends"), EnemyCombatTests::FinishTestAbility(Boss->GetAbilitySystemComponent())))
+	{
+		return false;
+	}
+	const float Interval = Patterns->GetAttackIntervalRemaining();
+	TestEqual(TEXT("Boss also initializes component from enemy config data"), Interval, 1.25f);
+	Patterns->ReleaseRequest(RequestId);
+	Boss->GetPhaseComponent()->EvaluateHealth(70.f, 100.f);
+	TestEqual(TEXT("Phase transition resets previous interval"), Patterns->GetAttackIntervalRemaining(), 0.f);
+	TestFalse(TEXT("Transition still blocks requests"), Patterns->CanStartAttack());
+	int64 TransitionId = 0;
+	TestTrue(TEXT("Interval transition begins"), Boss->GetPhaseComponent()->BeginPendingTransition(TransitionId));
+	TestTrue(TEXT("Interval transition completes"), Boss->GetPhaseComponent()->CompleteTransition(TransitionId));
+	Boss->FinishPhaseTransition();
+	TestTrue(TEXT("New phase does not inherit old interval"), Patterns->CanStartAttack());
+	Boss->StopEncounter();
+	TestFalse(TEXT("Stopped encounter cannot attack"), Patterns->CanStartAttack());
+	TestEqual(TEXT("Stopped encounter clears deadline"), Patterns->GetNextAttackAllowedTime(), 0.0);
 	return true;
 }
 
@@ -215,7 +588,7 @@ bool FBossExternalPlaceholderTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Placeholder completes immediately"), Patterns->GetRequestResult(RequestId), EEnemyPatternResult::Completed);
 	Patterns->ReleaseRequest(RequestId);
 	TestTrue(TEXT("No ability remains running"), Patterns->IsIdle());
-	UBossPhaseComponent* Phases = Boss->GetPhaseComponent();
+	UEnemyPhaseComponent* Phases = Boss->GetPhaseComponent();
 	Phases->EvaluateHealth(70.f, 100.f);
 	int64 TransitionId = 0;
 	TestTrue(TEXT("External phase transition starts"), Phases->BeginPendingTransition(TransitionId));
@@ -269,7 +642,7 @@ bool FBossBarrierPhaseTest::RunTest(const FString& Parameters)
 	EnemyCombatTests::SetObjectSetting(Boss, TEXT("PhaseConfig"), Config);
 	Boss->DispatchBeginPlay();
 	TestTrue(TEXT("Encounter starts"), Boss->StartEncounter());
-	UBossPhaseComponent* Phases = Boss->GetPhaseComponent();
+	UEnemyPhaseComponent* Phases = Boss->GetPhaseComponent();
 	// 기믹 액터 대신 페이즈 관리 계약만 검증; 실제 보스는 계약 구현 컴포넌트를 요구
 	Phases->ApplyPhase.BindLambda([](const FBossPhaseDefinition&) { return true; });
 	Phases->EvaluateHealth(70.f, 100.f);

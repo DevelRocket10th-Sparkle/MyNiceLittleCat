@@ -21,11 +21,11 @@
 #include "Enemy/Components/EnemyPatternComponent.h"
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
 
-// Sets default values
+// 캐릭터의 기본 상태를 설정한다.
 AEnemyCharacter::AEnemyCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UEnemyCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
- 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+	// 캐릭터의 프레임 갱신을 활성화한다.
 	PrimaryActorTick.bCanEverTick = true;
 
 	ASC = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("ASC"));
@@ -58,7 +58,7 @@ float AEnemyCharacter::CalculateHealthAfterDamage(float CurrentHealth, float Max
 	return FMath::Clamp(CurrentHealth - FMath::Max(0.f, Damage), 0.f, MaxHealth);
 }
 
-// Called when the game starts or when spawned
+// 게임 시작 시 초기화한다. or when spawned
 // 컴포넌트 초기화 후 실행 준비
 void AEnemyCharacter::BeginPlay()
 {
@@ -101,7 +101,17 @@ void AEnemyCharacter::BeginPlay()
 		UE_LOG(LogTemp, Error, TEXT("%s: pattern initialization failed"), *GetName());
 		return;
 	}
-	if (!HasAuthority() || !InitializeEnemyExtensions()) return;
+	// 보스 여부와 관계없이 데이터 에셋의 설정을 개체별 실행 컴포넌트에 전달한다.
+	if (HasAuthority() && EnemyConfig
+		&& !PatternComponent->ConfigureAttackInterval(EnemyConfig->MinAttackInterval, EnemyConfig->MaxAttackInterval))
+	{
+		UE_LOG(LogTemp, Error, TEXT("%s: attack interval configuration failed"), *GetName());
+		return;
+	}
+	if (!HasAuthority() || !InitializeEnemyExtensions())
+	{
+		return;
+	}
 	bEnemyInitialized = true;	// 초기화 완료 기록
 
 	// Controller가 먼저 빙의한 경우, 여기서 AI 시작 요청
@@ -111,7 +121,7 @@ void AEnemyCharacter::BeginPlay()
 	}
 }
 
-// Called every frame
+// 진행 중인 전환 시퀀스의 상태를 확인한다.
 // 활성 상태의 매 프레임 처리
 //void AEnemyCharacter::Tick(float DeltaTime)
 //{
@@ -217,7 +227,7 @@ void AEnemyCharacter::FinishDeath()
 	
 	LifeState = EEnemyLifeState::Dead;
 
-	// Capture root-motion/character velocity before stopping CharacterMovement.
+	// 이동을 중지하기 전에 루트 모션과 캐릭터의 속도를 저장한다.
 	const FVector RagdollVelocity = GetVelocity();
 
 	GetCharacterMovement()->StopMovementImmediately();	// 현재 움직임 제거
@@ -289,7 +299,10 @@ bool AEnemyCharacter::InitializeEnemyExtensions()
 // 공격 중 회전 제한을 존중하여 Controller 방향 반영
 void AEnemyCharacter::FaceRotation(FRotator NewControlRotation, float DeltaTime)
 {
-	if (!IsRotationLocked()) Super::FaceRotation(NewControlRotation, DeltaTime);
+	if (!IsRotationLocked())
+	{
+		Super::FaceRotation(NewControlRotation, DeltaTime);
+	}
 }
 
 // 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출
@@ -297,6 +310,9 @@ void AEnemyCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	bEnemyInitialized = false;
 	PatternComponent->StopAndInvalidate();
-	if (AttributeSet) AttributeSet->OnHealthChange.RemoveAll(this);
+	if (AttributeSet)
+	{
+		AttributeSet->OnHealthChange.RemoveAll(this);
+	}
 	Super::EndPlay(EndPlayReason);
 }

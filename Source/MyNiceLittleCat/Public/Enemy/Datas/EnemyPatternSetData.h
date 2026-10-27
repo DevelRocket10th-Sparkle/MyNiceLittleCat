@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
@@ -22,6 +22,49 @@ enum class EEnemyPatternResult : uint8
 	Completed,
 	Cancelled,
 	Failed
+};
+
+UENUM(BlueprintType)
+enum class EEnemyPatternMovementPolicy : uint8
+{
+	Stop,
+	ChaseTarget,
+	AbilityDriven
+};
+
+USTRUCT(BlueprintType)
+struct FEnemyPatternMovementSettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	EEnemyPatternMovementPolicy Policy = EEnemyPatternMovementPolicy::Stop;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0", Units="cm", EditCondition="Policy == EEnemyPatternMovementPolicy::ChaseTarget"))
+	float AcceptanceRadius = 150.f;
+
+	// 허용 반경이 0이어도 이 옵션이 켜져 있으면 캡슐 크기를 도착 판정에 더한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(EditCondition="Policy == EEnemyPatternMovementPolicy::ChaseTarget"))
+	bool bIncludeAgentRadius = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(EditCondition="Policy == EEnemyPatternMovementPolicy::ChaseTarget"))
+	bool bIncludeGoalRadius = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(EditCondition="Policy == EEnemyPatternMovementPolicy::ChaseTarget"))
+	bool bAllowPartialPath = false;
+
+	bool IsValid() const
+	{
+		return static_cast<uint8>(Policy) <= static_cast<uint8>(EEnemyPatternMovementPolicy::AbilityDriven)
+			&& FMath::IsFinite(AcceptanceRadius) && AcceptanceRadius >= 0.f;
+	}
+
+	bool operator==(const FEnemyPatternMovementSettings& Other) const
+	{
+		return Policy == Other.Policy && AcceptanceRadius == Other.AcceptanceRadius
+			&& bIncludeAgentRadius == Other.bIncludeAgentRadius && bIncludeGoalRadius == Other.bIncludeGoalRadius
+			&& bAllowPartialPath == Other.bAllowPartialPath;
+	}
 };
 
 USTRUCT(BlueprintType)
@@ -62,6 +105,13 @@ struct FEnemyPatternDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.0"))
 	float Weight = 1.f;
 
+	// GA 정상 종료 후 다음 패턴을 막는 추가 대기 시간이다. 몽타주의 후딜과 합산된다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.0", Units = "s"))
+	float RecoverySeconds = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Movement")
+	FEnemyPatternMovementSettings Movement;
+
 	// 타깃 없이 아레나 전체에 실행할 수 있는 패턴인지 설정
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	bool bRequiresTarget = true;
@@ -98,6 +148,8 @@ class MYNICELITTLECAT_API UEnemyPatternSetData : public UDataAsset
 	GENERATED_BODY()
 
 public :
+	virtual void Serialize(FArchive& Ar) override;
+	virtual void PostLoad() override;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;

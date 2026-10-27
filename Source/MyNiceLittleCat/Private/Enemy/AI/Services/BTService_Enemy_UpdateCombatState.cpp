@@ -16,6 +16,7 @@ namespace EnemyCombatKeys
 	const FName TargetActor(TEXT("TargetActor"));
 	const FName IsInAttackRange(TEXT("IsInAttackRange"));
 	const FName HasLineOfSight(TEXT("HasLineOfSight"));
+	const FName CanStartAttack(TEXT("CanStartAttack"));
 }
 
 UBTService_Enemy_UpdateCombatState::UBTService_Enemy_UpdateCombatState()
@@ -62,6 +63,7 @@ void UBTService_Enemy_UpdateCombatState::UpdateCombatState(UBehaviorTreeComponen
 
 	bool bInAttackRange = false;
 	bool bHasLineOfSight = false;
+	const bool bCanStartAttack = IsValid(Enemy) && Enemy->GetPatternComponent()->CanStartAttack();
 
 	if (IsValid(Enemy) && Enemy->IsAlive()
 		&& IsValid(Target) && Target != Enemy)
@@ -73,4 +75,9 @@ void UBTService_Enemy_UpdateCombatState::UpdateCombatState(UBehaviorTreeComponen
 	// Blackboard 값 설정: 참조한 값들이 nullptr이든 말든 Blackboard 값 업데이트는 해줘야 함
 	Blackboard->SetValueAsBool(EnemyCombatKeys::IsInAttackRange, bInAttackRange);
 	Blackboard->SetValueAsBool(EnemyCombatKeys::HasLineOfSight, bHasLineOfSight);
+	// 기존 블랙보드도 사용할 수 있도록 새 키를 추가한 BT에서만 준비 상태를 게시한다.
+	if (Blackboard->GetKeyID(EnemyCombatKeys::CanStartAttack) != FBlackboard::InvalidKey)
+	{
+		Blackboard->SetValueAsBool(EnemyCombatKeys::CanStartAttack, bCanStartAttack);
+	}
 }

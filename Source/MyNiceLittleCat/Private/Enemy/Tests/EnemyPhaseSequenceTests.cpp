@@ -1,10 +1,10 @@
-﻿#if WITH_DEV_AUTOMATION_TESTS
+#if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
 #include "Engine/World.h"
 #include "EngineGlobals.h"
 #include "AbilitySystemComponent.h"
-#include "Enemy/Boss/Components/BossPhaseComponent.h"
+#include "Enemy/Components/EnemyPhaseComponent.h"
 #include "LevelSequence.h"
 #include "LevelSequenceActor.h"
 #include "LevelSequencePlayer.h"
@@ -20,7 +20,7 @@ namespace EnemyPhaseSequenceTests
 		UWorld* World = nullptr;
 		AActor* Owner = nullptr;
 		UAbilitySystemComponent* ASC = nullptr;
-		UBossPhaseComponent* Phase = nullptr;
+		UEnemyPhaseComponent* Phase = nullptr;
 		UBossPhaseConfigData* Config = nullptr;
 		FFixture()
 		{
@@ -31,7 +31,7 @@ namespace EnemyPhaseSequenceTests
 			ASC = NewObject<UAbilitySystemComponent>(Owner);
 			ASC->RegisterComponent();
 			ASC->InitAbilityActorInfo(Owner, Owner);
-			Phase = NewObject<UBossPhaseComponent>(Owner);
+			Phase = NewObject<UEnemyPhaseComponent>(Owner);
 			Phase->RegisterComponent();
 			Phase->ApplyPhase.BindLambda([](const FBossPhaseDefinition&) { return true; });
 			Config = NewObject<UBossPhaseConfigData>(Owner);
@@ -83,7 +83,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnemyPhaseSequenceTest, "MyNiceLittleCat.Enemy
 bool FEnemyPhaseSequenceTest::RunTest(const FString& Parameters)
 {
 	EnemyPhaseSequenceTests::FFixture Fixture;
-	UBossPhaseComponent* Phase = Fixture.Phase;
+	UEnemyPhaseComponent* Phase = Fixture.Phase;
 	int64 Id = Fixture.Begin(false);
 	TestEqual(TEXT("Disabled sequence completes immediately"), Phase->GetTransitionResult(Id), EEnemyPatternResult::Completed);
 	TestTrue(TEXT("Disabled sequence enters next phase"), Phase->CompleteTransition(Id));
@@ -96,7 +96,10 @@ bool FEnemyPhaseSequenceTest::RunTest(const FString& Parameters)
 	Id = Fixture.Begin(true, Sequence);
 	ULevelSequencePlayer* Player = Fixture.Player();
 	TestNotNull(TEXT("Transition owns a sequence player"), Player);
-	if (!Player) return false;
+	if (!Player)
+	{
+		return false;
+	}
 	TestEqual(TEXT("Playing sequence waits"), Phase->GetTransitionResult(Id), EEnemyPatternResult::Running);
 	// 실제 재생 시간을 끝까지 진행하여 엔진의 종료 이벤트와 정리 경로 검사
 	Player->Update(0.f);
@@ -138,7 +141,7 @@ bool FEnemyManualBarrierPhaseTest::RunTest(const FString& Parameters)
 {
 	EnemyPhaseSequenceTests::FFixture Fixture;
 	Fixture.Config->Phases[1].Kind = EBossPhaseKind::Barrier;
-	UBossPhaseComponent* Phase = Fixture.Phase;
+	UEnemyPhaseComponent* Phase = Fixture.Phase;
 	const int64 Id = Fixture.Begin(false);
 	TestTrue(TEXT("Barrier entry succeeds without automatic completion"), Phase->CompleteTransition(Id));
 	TestTrue(TEXT("Barrier remains active waiting for manual completion"), Phase->IsActive());

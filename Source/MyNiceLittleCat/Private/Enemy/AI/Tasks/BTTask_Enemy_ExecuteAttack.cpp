@@ -49,7 +49,10 @@ void UBTTask_Enemy_ExecuteAttack::TickTask(UBehaviorTreeComponent& OwnerComp, ui
 	Super::TickTask(OwnerComp, NodeMemory, DeltaSeconds);
 	const EEnemyPatternResult Result = CachedPattern.IsValid()
 		? CachedPattern->GetRequestResult(PatternRequestId) : EEnemyPatternResult::Invalid;
-	if (Result == EEnemyPatternResult::Running) return;
+	if (Result == EEnemyPatternResult::Running)
+	{
+		return;
+	}
 	Cleanup();
 	FinishLatentTask(OwnerComp, Result == EEnemyPatternResult::Completed
 		? EBTNodeResult::Succeeded : EBTNodeResult::Failed);
@@ -70,7 +73,10 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::AbortTask(UBehaviorTreeComponen
 void UBTTask_Enemy_ExecuteAttack::Cleanup()
 {
 	// 진행 중인 요청은 취소하고, 끝난 요청은 결과 보관을 해제
-	if (CachedPattern.IsValid()) CachedPattern->ReleaseRequest(PatternRequestId);
+	if (CachedPattern.IsValid())
+	{
+		CachedPattern->ReleaseRequest(PatternRequestId);
+	}
 	CachedPattern.Reset();
 	PatternRequestId = 0;
 }
