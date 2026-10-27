@@ -78,6 +78,9 @@ protected:
     bool BeginWaitPlayerEnter(AActor* _Trigger);  // PlayerEnter 대기 시작.  계속 기다려야 하면 true, 바로 넘어가도 되면 false
     void StopWaitPlayerEnter(); // PlayerEnter 대기 정리 (바인딩 해제)
 
+    // 액터에 Activate / Deactivate 신호 보내기 (IActivatableInterface 를 구현한 액터만)
+    void SetActivated(AActor* _Target, bool _bActivate);
+
     // 기다리는 트리거에 무언가 들어왔을 때
     UFUNCTION()
     void OnWaitTriggerBeginOverlap(AActor* _OverlappedActor, AActor* _OtherActor);

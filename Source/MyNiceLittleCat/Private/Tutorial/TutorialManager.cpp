@@ -1,11 +1,13 @@
 #include "Tutorial/TutorialManager.h"
 #include "Kismet/GameplayStatics.h"
 //#include "GameFramework/Pawn.h"
+#include "Interfaces/ActivatableInterface.h"
 
 // 튜토리얼에서 찾는 레벨 액터의 태그 이름 (레벨 액터의 Actor Tags에 똑같이 적어야 함)
 namespace TutorialTag
 {
 	const FName TriggerDoor01(TEXT("Tutorial.Trigger.Door01")); // 이동 구간 문 앞 트리거
+	const FName Gate01(TEXT("Tutorial.Gate.01"));               // 이동 → 대시 사이 문
 }
 
 ATutorialManager::ATutorialManager()
@@ -72,6 +74,7 @@ void ATutorialManager::BuildMovementActions(TArray<FTutorialAction>& OutActions)
 {
 	// 이 구간에서 쓸 레벨 액터 찾기 (구간이 시작될 때 한 번)
 	AActor* TriggerDoor01 = FindActorByTag(TutorialTag::TriggerDoor01);
+	TWeakObjectPtr<AActor> Gate01 = FindActorByTag(TutorialTag::Gate01);
 
 	//! 구조 확인용 로그. 6단계에서 실제 동작으로 교체
 	OutActions.Add(Do([] { UE_LOG(LogTemp, Log, TEXT("[Tutorial] 펫: Hi!")); }));
@@ -80,7 +83,7 @@ void ATutorialManager::BuildMovementActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(WaitSeconds(1.f));
 	OutActions.Add(Do([] { UE_LOG(LogTemp, Log, TEXT("[Tutorial] 펫: Follow!")); }));
 	OutActions.Add(WaitPlayerEnter(TriggerDoor01)); // 플레이어가 문 앞까지 올 때까지 멈춤
-	OutActions.Add(Do([] { UE_LOG(LogTemp, Log, TEXT("[Tutorial] 문 열기")); }));
+	OutActions.Add(Do([this, Gate01] {SetActivated(Gate01.Get(), true); })); // 문 열기
 }
 
 void ATutorialManager::RunNextAction()
@@ -191,6 +194,21 @@ void ATutorialManager::StopWaitPlayerEnter()
 			Trigger->OnActorBeginOverlap.RemoveDynamic(this, &ATutorialManager::OnWaitTriggerBeginOverlap);
 
 		WaitingTrigger.Reset();
+}
+
+void ATutorialManager::SetActivated(AActor* _Target, bool _bActivate)
+{
+	if (nullptr == _Target || false == _Target->Implements<UActivatableInterface>())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] %s 는 Activatable 이 아님"), *GetNameSafe(_Target));
+		return;
+	}
+
+	// 상호작용 활/비활
+	if (true == _bActivate)
+		IActivatableInterface::Execute_Activate(_Target, this);
+	else
+		IActivatableInterface::Execute_Deactivate(_Target, this);
 }
 
 void ATutorialManager::OnWaitTriggerBeginOverlap(AActor* _OverlappedActor, AActor* _OtherActor)
