@@ -14,13 +14,15 @@
 /// 보스 패턴 GA(UGA_BossLaserGrid)가 이 방식으로 사용합니다. 반복 실행 중에는 시작할 수 없고, StopPattern은 두 방식 모두 정리합니다.
 /// 보스 지점(화살표): BossStandPoint = 격자 패턴 동안 보스가 서 있는 곳(격자 바깥), BossBeamPoint = 단일 레이저 패턴 때 보스가 들어오는 곳(격자 안쪽).
 /// 화살표 방향이 도착 후 보스가 바라보는 방향이며, 레벨 인스턴스에서 컴포넌트를 옮겨 조정합니다.
-/// TODO: 레이저 그래픽(지금은 디버그 라인), 경고·발사 사운드
+/// 레이저 연출: LaserVisualSettings(Niagara 빔·충돌 이펙트)를 BeginPlay에서 만드는 레이저 전부에 넘깁니다.
+/// TODO: 경고·발사 사운드
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Gimmicks/Boss/LaserGridTypes.h"
+#include "Gimmicks/Laser/LaserBeamComponent.h"
 #include "LaserGridPattern.generated.h"
 
 class UArrowComponent;
@@ -162,6 +164,9 @@ protected:
 	// 레이저 진행 방향의 영역 절반 크기
 	float GetAlongHalfSize(ELaserGridAxis Axis) const;
 
+	// 실제 빔 굵기 (BeamWidth, 0이면 줄 폭)
+	float GetEffectiveBeamWidth() const;
+
 	// 줄 중심(바닥, 월드)과 레이저 진행 방향(월드)
 	void GetLaneGeometry(ELaserGridAxis Axis, int32 LaneIndex, bool bReversed, FVector& OutCenter, FVector& OutDirection) const;
 
@@ -189,9 +194,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Area", meta = (ClampMin = "50.0"))
 	FVector2D ArenaHalfSize = FVector2D(1000.f, 1000.f);
 
-	// 줄 폭 (cm). 빔 굵기와 경고 폭도 이 값
+	// 줄 폭 (cm). 줄 간격·줄 선택 기준 (BeamWidth가 0이면 빔 굵기와 경고 폭도 이 값)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Area", meta = (ClampMin = "10.0"))
 	float LaneWidth = 200.f;
+
+	// 빔 굵기 (cm). 충돌 판정 굵기와 경고 데칼 폭에 사용, 0이면 줄 폭과 같음 (줄 폭보다 크게 줄 수 없음)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Area", meta = (ClampMin = "0.0", Units = "cm"))
+	float BeamWidth = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Pattern")
 	ELaserGridTargetMode TargetMode = ELaserGridTargetMode::TargetPlayer;
@@ -245,6 +254,14 @@ protected:
 	// 빔 중심 높이 (바닥 기준). 빔 반지름(줄 폭 절반)보다 높아야 바닥에 막히지 않음
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Laser", meta = (ClampMin = "0.0"))
 	float BeamHeight = 110.f;
+
+	// 레이저 연출 (빔 굵기 = 줄 폭이라 보이는 굵기는 BeamWidthScale로 조절)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Laser")
+	FLaserBeamVisualSettings LaserVisualSettings;
+
+	// 레이저 디버그 라인 표시 (연출 에셋 없이 확인할 때)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Laser")
+	bool bDrawDebugLasers = false;
 
 	// 줄 경고 데칼 (사각형 머티리얼 BP). 비어 있으면 경고 없이 대기 후 발사
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Warning")

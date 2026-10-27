@@ -9,7 +9,9 @@
 /// 닿은 즉시 한 번, 계속 닿아 있으면 DamageInterval마다 DamagePerHit 만큼 피해를 줍니다.
 /// - 플레이어(APlayerCharacter): ApplyPlayerHit 직접 호출 (피해·경직·무적, 빔 옆으로 밀림: 플레이어가 있는 쪽의 수직 방향)
 /// - 그 외 액터: ApplyDamage(DamageTypeClass, 기본 UDamageType_BossLaser)
-/// 연출: 빔 시작·끝·맞은 액터를 GetBeamStart/GetBeamEnd/GetHitActor로 조회 (BP 빔 연출용). 프로토타입은 bDrawDebugBeam 디버그 라인으로 표시합니다.
+/// 연출: VisualSettings.BeamEffect(Niagara)가 있으면 빔 구간마다 이펙트를 하나씩 켜고 매 틱 시작·끝·굵기·색 User 파라미터를 갱신합니다.
+/// ImpactEffect는 마지막 구간이 막힌 지점에 표시합니다. 코드로 만드는 레이저(격자 패턴 등)는 SetVisualSettings로 지정합니다.
+/// 빔 시작·끝·맞은 액터는 GetBeamStart/GetBeamEnd/GetHitActor로도 조회할 수 있고, 디버그 라인(bDrawDebugBeam)은 필요할 때만 켭니다.
 /// 반사판 반사는 담당자 별도 작업 (이 컴포넌트는 직선 빔만 처리).
 /// 반사 구현용으로 맞은 면 법선(GetHitNormal)·트레이스 결과(GetHitResult)를 제공합니다.
 /// 반사된 빔은 이 컴포넌트를 하나 더 써서 DamageTypeClass를 UDamageType_ReflectedLaser로 두면 30% 생성장치를 파괴할 수 있습니다.
@@ -27,9 +29,59 @@
 
 class ULaserBeamComponent;
 class UDamageType;
+class UNiagaraSystem;
+class UNiagaraComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLaserBeamStateChanged, ULaserBeamComponent*, Laser);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnLaserBeamDamaged, ULaserBeamComponent*, Laser, AActor*, DamagedActor, float, Damage);
+
+
+// 레이저 빔 연출 설정 (Niagara). 파라미터 이름은 Niagara 시스템의 User 파라미터 이름과 맞춰야 합니다
+USTRUCT(BlueprintType)
+struct MYNICELITTLECAT_API FLaserBeamVisualSettings
+{
+	GENERATED_BODY()
+
+	// 빔 구간마다 하나씩 켜는 이펙트 (비어 있으면 빔 연출 없음)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserBeam|Visual")
+	TObjectPtr<UNiagaraSystem> BeamEffect;
+
+	// 빔이 막힌 지점에 표시할 이펙트 (선택, 마지막 구간 기준, 법선 방향으로 회전)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserBeam|Visual")
+	TObjectPtr<UNiagaraSystem> ImpactEffect;
+
+	// 원본 구간 색
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserBeam|Visual")
+	FLinearColor BeamColor = FLinearColor(1.f, 0.1f, 0.05f);
+
+	// 한 번 이상 반사된 구간 색
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserBeam|Visual")
+	FLinearColor ReflectedBeamColor = FLinearColor(0.1f, 0.6f, 1.f);
+
+	// 보이는 굵기 = BeamRadius × 2 × 배율 (판정 굵기와 따로 조절, 격자처럼 판정이 넓은 레이저용)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserBeam|Visual", meta = (ClampMin = "0.0"))
+	float BeamWidthScale = 1.f;
+
+	// 보이는 굵기 최솟값 (BeamRadius 0인 선 트레이스 레이저용)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserBeam|Visual", meta = (ClampMin = "0.0", Units = "cm"))
+	float MinBeamWidth = 4.f;
+
+	// Niagara User 파라미터 이름 (Vector, 월드 좌표). 시스템에 없으면 무시됨 (시작점 = 이펙트 위치를 쓰는 시스템 등)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserBeam|Visual|Parameters")
+	FName BeamStartParam = TEXT("BeamStart");
+
+	// Niagara User 파라미터 이름 (Vector, 월드 좌표)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserBeam|Visual|Parameters")
+	FName BeamEndParam = TEXT("BeamEnd");
+
+	// Niagara User 파라미터 이름 (Float)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserBeam|Visual|Parameters")
+	FName BeamWidthParam = TEXT("BeamWidth");
+
+	// Niagara User 파라미터 이름 (Linear Color, 빔·충돌 이펙트 공통)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserBeam|Visual|Parameters")
+	FName BeamColorParam = TEXT("BeamColor");
+};
 
 
 // 레이저의 직선 구간 하나
@@ -110,6 +162,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
 	float GetDamagePerHit() const { return DamagePerHit; }
 
+	// 연출 설정 교체 (코드로 만든 레이저용, 발사 중이면 이펙트를 새 설정으로 다시 만듦)
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Visual")
+	void SetVisualSettings(const FLaserBeamVisualSettings& NewSettings);
+
+	UFUNCTION(BlueprintPure, Category = "LaserBeam|Visual")
+	const FLaserBeamVisualSettings& GetVisualSettings() const { return VisualSettings; }
+
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Debug")
+	void SetDrawDebugBeam(bool bDraw) { bDrawDebugBeam = bDraw; }
+
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
 	bool IsLaserActive() const { return bLaserActive; }
 
@@ -168,6 +230,17 @@ protected:
 
 	void DrawDebugBeam() const;
 
+	// 빔 구간 수만큼 이펙트를 켜고 위치·굵기·색 갱신, 충돌 이펙트 위치 갱신
+	void UpdateBeamEffects();
+
+	// 이펙트 끄기 (컴포넌트는 다음 발사 때 재사용)
+	void DeactivateBeamEffects();
+
+	// 이펙트 컴포넌트 제거 (설정 교체·EndPlay)
+	void DestroyBeamEffects();
+
+	UNiagaraComponent* CreateEffectComponent(UNiagaraSystem* System);
+
 	// Classes가 비어 있으면 true, 아니면 그중 하나의 하위 클래스인지
 	static bool IsActorOfClasses(const AActor* Actor, const TArray<TSubclassOf<AActor>>& Classes);
 
@@ -211,8 +284,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Damage")
 	TArray<TSubclassOf<AActor>> DamageTargetClasses;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Visual")
+	FLaserBeamVisualSettings VisualSettings;
+
+	// 디버그 라인 표시 (Development 빌드에서도 비용이 있으니 확인할 때만 켬)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Debug")
-	bool bDrawDebugBeam = true;
+	bool bDrawDebugBeam = false;
 
 	// 한 번 이상 반사된 레이저가 사용할 피해 타입
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Damage")
@@ -257,4 +334,11 @@ private:
 	// 레이저 모음 배열
 	UPROPERTY(Transient)
 	TArray<FLaserBeamSegment> BeamSegments;
+
+	// 빔 구간별 이펙트 (구간 수보다 많으면 남는 것은 꺼 둠)
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UNiagaraComponent>> BeamEffectComponents;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> ImpactEffectComponent;
 };

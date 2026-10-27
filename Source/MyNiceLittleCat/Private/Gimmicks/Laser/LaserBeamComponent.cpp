@@ -13,6 +13,9 @@
 #include "Interfaces/ReflectiveSurfaceInterface.h"
 #include "Gimmicks/Boss/DamageTypes/DamageType_ReflectedLaser.h"
 #include "Gimmicks/Reflection/ReflectionMath.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 
 ULaserBeamComponent::ULaserBeamComponent()
 {
@@ -31,6 +34,7 @@ ULaserBeamComponent::ULaserBeamComponent()
 void ULaserBeamComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopLaser();
+	DestroyBeamEffects();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -82,6 +86,7 @@ void ULaserBeamComponent::StopLaser()
 	LastHit = FHitResult();
 	BeamSegments.Reset();
 	SetComponentTickEnabled(false);
+	DeactivateBeamEffects();
 
 	OnLaserStopped.Broadcast(this);
 }
@@ -164,6 +169,155 @@ void ULaserBeamComponent::UpdateBeam()
 		HitActor = FirstSegment.Hit.GetActor();
 		LastHit = FirstSegment.Hit;
 	}
+
+	if (bLaserActive)
+	{
+		UpdateBeamEffects();
+	}
+}
+
+void ULaserBeamComponent::SetVisualSettings(const FLaserBeamVisualSettings& NewSettings)
+{
+	// 이펙트 에셋이 바뀔 수 있으므로 기존 컴포넌트는 버리고 다시 만듦
+	DestroyBeamEffects();
+	VisualSettings = NewSettings;
+
+	if (bLaserActive)
+	{
+		UpdateBeamEffects();
+	}
+}
+
+UNiagaraComponent* ULaserBeamComponent::CreateEffectComponent(UNiagaraSystem* System)
+{
+	if (!System)
+	{
+		return nullptr;
+	}
+
+	// 위치는 매 틱 월드 좌표 파라미터로 넣으므로 붙이기만 하고, 켜고 끄기는 직접 관리
+	return UNiagaraFunctionLibrary::SpawnSystemAttached(System, this, NAME_None,
+		FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset,
+		/*bAutoDestroy*/ false, /*bAutoActivate*/ false, ENCPoolMethod::None, /*bPreCullCheck*/ false);
+}
+
+void ULaserBeamComponent::UpdateBeamEffects()
+{
+	const float BeamWidth = FMath::Max(BeamRadius * 2.f * VisualSettings.BeamWidthScale, VisualSettings.MinBeamWidth);
+
+	int32 UsedCount = 0;
+	if (VisualSettings.BeamEffect)
+	{
+		for (const FLaserBeamSegment& Segment : BeamSegments)
+		{
+			if (!BeamEffectComponents.IsValidIndex(UsedCount))
+			{
+				BeamEffectComponents.Add(nullptr);
+			}
+
+			UNiagaraComponent* Effect = BeamEffectComponents[UsedCount];
+			if (!IsValid(Effect))
+			{
+				Effect = CreateEffectComponent(VisualSettings.BeamEffect);
+				if (!Effect)
+				{
+					break;
+				}
+				BeamEffectComponents[UsedCount] = Effect;
+			}
+
+			const FLinearColor& Color = (0 == Segment.ReflectionCount) ? VisualSettings.BeamColor : VisualSettings.ReflectedBeamColor;
+			// 엔진 Beam Emitter Setup 입력이 Vector 타입이라 월드 좌표를 Vector로 넘김 (Absolute Beam Start/End 켬)
+			Effect->SetVariableVec3(VisualSettings.BeamStartParam, Segment.Start);
+			Effect->SetVariableVec3(VisualSettings.BeamEndParam, Segment.End);
+			Effect->SetVariableFloat(VisualSettings.BeamWidthParam, BeamWidth);
+			Effect->SetVariableLinearColor(VisualSettings.BeamColorParam, Color);
+
+			if (!Effect->IsActive())
+			{
+				Effect->Activate(true);
+			}
+			++UsedCount;
+		}
+	}
+
+	// 반사가 줄어 남는 구간 이펙트는 끔
+	for (int32 Index = UsedCount; Index < BeamEffectComponents.Num(); ++Index)
+	{
+		UNiagaraComponent* Effect = BeamEffectComponents[Index];
+		if (IsValid(Effect) && Effect->IsActive())
+		{
+			Effect->Deactivate();
+		}
+	}
+
+	// 충돌 이펙트: 마지막 구간이 막힌 지점
+	const FLaserBeamSegment* LastSegment = BeamSegments.IsEmpty() ? nullptr : &BeamSegments.Last();
+	const bool bShowImpact = VisualSettings.ImpactEffect && LastSegment && LastSegment->Hit.bBlockingHit;
+	if (!bShowImpact)
+	{
+		if (IsValid(ImpactEffectComponent) && ImpactEffectComponent->IsActive())
+		{
+			ImpactEffectComponent->Deactivate();
+		}
+		return;
+	}
+
+	if (!IsValid(ImpactEffectComponent))
+	{
+		ImpactEffectComponent = CreateEffectComponent(VisualSettings.ImpactEffect);
+		if (!ImpactEffectComponent)
+		{
+			return;
+		}
+	}
+
+	const FVector ImpactNormal = FVector(LastSegment->Hit.ImpactNormal).GetSafeNormal();
+	const FRotator ImpactRotation = ImpactNormal.IsNearlyZero()
+		? (-LastSegment->Direction).Rotation() : ImpactNormal.Rotation();
+	ImpactEffectComponent->SetWorldLocationAndRotation(FVector(LastSegment->Hit.ImpactPoint), ImpactRotation);
+
+	const FLinearColor& ImpactColor = (0 == LastSegment->ReflectionCount) ? VisualSettings.BeamColor : VisualSettings.ReflectedBeamColor;
+	ImpactEffectComponent->SetVariableLinearColor(VisualSettings.BeamColorParam, ImpactColor);
+
+	if (!ImpactEffectComponent->IsActive())
+	{
+		ImpactEffectComponent->Activate(true);
+	}
+}
+
+void ULaserBeamComponent::DeactivateBeamEffects()
+{
+	for (UNiagaraComponent* Effect : BeamEffectComponents)
+	{
+		if (IsValid(Effect))
+		{
+			Effect->Deactivate();
+		}
+	}
+
+	if (IsValid(ImpactEffectComponent))
+	{
+		ImpactEffectComponent->Deactivate();
+	}
+}
+
+void ULaserBeamComponent::DestroyBeamEffects()
+{
+	for (UNiagaraComponent* Effect : BeamEffectComponents)
+	{
+		if (IsValid(Effect))
+		{
+			Effect->DestroyComponent();
+		}
+	}
+	BeamEffectComponents.Reset();
+
+	if (IsValid(ImpactEffectComponent))
+	{
+		ImpactEffectComponent->DestroyComponent();
+	}
+	ImpactEffectComponent = nullptr;
 }
 
 void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegments, const FVirtualReflectiveSurface* VirtualSurface) const

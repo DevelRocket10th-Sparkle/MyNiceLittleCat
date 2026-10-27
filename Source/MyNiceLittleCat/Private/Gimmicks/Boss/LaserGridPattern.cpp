@@ -70,6 +70,8 @@ void ALaserGridPattern::BeginPlay()
 	{
 		ULaserBeamComponent* Laser = NewObject<ULaserBeamComponent>(this, *FString::Printf(TEXT("GridLaser_%d"), Index));
 		Laser->SetupAttachment(Root);
+		Laser->SetVisualSettings(LaserVisualSettings);
+		Laser->SetDrawDebugBeam(bDrawDebugLasers);
 		Laser->RegisterComponent();
 		Slots[Index].Laser = Laser;
 	}
@@ -430,7 +432,7 @@ bool ALaserGridPattern::StartStrike(ELaserGridAxis Axis, int32 LaneIndex, bool b
 		if (Slot.Warning)
 		{
 			// 데칼 로컬 X(진행도 방향) = 레이저 진행 방향 → 레이저가 나오는 쪽부터 차오름
-			const FVector2D HalfSize(GetAlongHalfSize(Axis), LaneWidth * 0.5f);
+			const FVector2D HalfSize(GetAlongHalfSize(Axis), GetEffectiveBeamWidth() * 0.5f);
 			Slot.Warning->ShowWarning(Center, HalfSize, Direction.Rotation().Yaw, InWarningTime, WarningColor);
 		}
 	}
@@ -473,9 +475,9 @@ void ALaserGridPattern::FireSlot(int32 SlotIndex)
 
 	if (IsValid(Slot.Laser))
 	{
-		// 빔 굵기 = 줄 폭, 사거리 = 줄 길이 (영역 밖으로 나가지 않게)
+		// 빔 굵기 = BeamWidth(0이면 줄 폭), 사거리 = 줄 길이 (영역 밖으로 나가지 않게)
 		Slot.Laser->SetWorldLocation(Start);
-		Slot.Laser->SetBeamRadius(LaneWidth * 0.5f);
+		Slot.Laser->SetBeamRadius(GetEffectiveBeamWidth() * 0.5f);
 		Slot.Laser->SetMaxRange(AlongHalf * 2.f);
 		Slot.Laser->SetDamagePerHit(ActiveDamageOverride >= 0.f ? ActiveDamageOverride : DefaultDamagePerHit);
 		Slot.Laser->StartLaser(End, Slot.FireDuration);
@@ -565,6 +567,11 @@ float ALaserGridPattern::GetCrossHalfSize(ELaserGridAxis Axis) const
 float ALaserGridPattern::GetAlongHalfSize(ELaserGridAxis Axis) const
 {
 	return Axis == ELaserGridAxis::X ? ArenaHalfSize.X : ArenaHalfSize.Y;
+}
+
+float ALaserGridPattern::GetEffectiveBeamWidth() const
+{
+	return BeamWidth > 0.f ? FMath::Min(BeamWidth, LaneWidth) : LaneWidth;
 }
 
 void ALaserGridPattern::GetLaneGeometry(ELaserGridAxis Axis, int32 LaneIndex, bool bReversed, FVector& OutCenter, FVector& OutDirection) const
