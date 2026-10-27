@@ -56,6 +56,24 @@ bool UGameProgressSubsystem::DiscoverCheckpoint(const UObject* WorldContextObjec
 	return Found == nullptr;
 }
 
+void UGameProgressSubsystem::UnlockCheckpoint(FName LevelName, FName CheckpointId, const FText& DisplayName, bool bSave)
+{
+	const FString Level = LevelName.ToString();
+	const bool bAlreadyKnown = CurrentSave->DiscoveredCheckpoints.ContainsByPredicate([&](const FCheckpointSaveData& D)
+		{
+			return D.LevelName == Level && D.CheckpointId == CheckpointId;
+		});
+	if (bAlreadyKnown) return;
+
+	FCheckpointSaveData& Data = CurrentSave->DiscoveredCheckpoints.AddDefaulted_GetRef();
+	Data.bValid = true;
+	Data.LevelName = Level;
+	Data.CheckpointId = CheckpointId;
+	Data.DisplayName = DisplayName;  
+
+	if (bSave) SaveProgress();
+}
+
 void UGameProgressSubsystem::SetCheckpointData(const FCheckpointSaveData& Data, bool bSave)
 {
 	CurrentSave->LastCheckpoint = Data;

@@ -182,7 +182,7 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
             }
         }
         // 히트 스톱
-        ApplyMontageHitStop(Attacker, 0.15f);
+        ApplyMontageHitStop(Attacker, 0.08f);
         //ApplyMontageHitStop(Target, 0.1f);
     }
 }
