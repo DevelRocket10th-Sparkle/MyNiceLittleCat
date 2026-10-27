@@ -14,6 +14,24 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 
+namespace
+{
+	// 아직 쓰지 않은 줄 중에서 무작위 (전부 쓰였으면 아무 줄)
+	int32 PickRandomUnusedLane(int32 Count, const TSet<int32>& UsedLanes)
+	{
+		TArray<int32> Candidates;
+		for (int32 Lane = 0; Lane < Count; ++Lane)
+		{
+			if (!UsedLanes.Contains(Lane))
+			{
+				Candidates.Add(Lane);
+			}
+		}
+
+		return Candidates.IsEmpty() ? FMath::RandRange(0, Count - 1) : Candidates[FMath::RandRange(0, Candidates.Num() - 1)];
+	}
+}
+
 ALaserGridPattern::ALaserGridPattern()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -318,12 +336,51 @@ void ALaserGridPattern::RunSequenceSteps()
 
 	const TArray<FLaserGridStep>& Steps = CurrentSequence->Steps;
 
-	// DelayToNext가 0인 단계는 다음 단계와 같은 순간에 실행
-	while (Steps.IsValidIndex(StepIndex))
+	// DelayToNext가 0인 단계는 다음 단계와 같은 순간에 실행: 이번에 실행할 단계 묶음 [GroupStart, GroupEnd)
+	const int32 GroupStart = StepIndex;
+	int32 GroupEnd = StepIndex;
+	while (Steps.IsValidIndex(GroupEnd))
 	{
-		const FLaserGridStep& Step = Steps[StepIndex++];
+		if (Steps[GroupEnd++].DelayToNext > 0.f)
+		{
+			break;
+		}
+	}
 
-		const int32 LaneIndex = ResolveStepLane(Step);
+	// 줄 정하기: 지정 줄(Fixed·플레이어 기준)을 먼저 정하고, Random은 같은 순간 같은 축에서 이미 쓰는 줄을 피함
+	TArray<int32> GroupLanes;
+	GroupLanes.Init(INDEX_NONE, GroupEnd - GroupStart);
+	TSet<int32> UsedLanes[2];
+
+	for (int32 Index = GroupStart; Index < GroupEnd; ++Index)
+	{
+		const FLaserGridStep& Step = Steps[Index];
+		if (Step.LaneMode != ELaserGridLaneMode::Random)
+		{
+			GroupLanes[Index - GroupStart] = ResolveStepLane(Step);
+			if (GroupLanes[Index - GroupStart] != INDEX_NONE)
+			{
+				UsedLanes[static_cast<int32>(Step.Axis)].Add(GroupLanes[Index - GroupStart]);
+			}
+		}
+	}
+
+	for (int32 Index = GroupStart; Index < GroupEnd; ++Index)
+	{
+		const FLaserGridStep& Step = Steps[Index];
+		if (Step.LaneMode == ELaserGridLaneMode::Random)
+		{
+			TSet<int32>& AxisUsedLanes = UsedLanes[static_cast<int32>(Step.Axis)];
+			const int32 LaneIndex = PickRandomUnusedLane(GetLaneCount(Step.Axis), AxisUsedLanes);
+			GroupLanes[Index - GroupStart] = LaneIndex;
+			AxisUsedLanes.Add(LaneIndex);
+		}
+	}
+
+	for (int32 Index = GroupStart; Index < GroupEnd; ++Index)
+	{
+		const FLaserGridStep& Step = Steps[Index];
+		const int32 LaneIndex = GroupLanes[Index - GroupStart];
 		if (LaneIndex != INDEX_NONE)
 		{
 			const bool bReversed = Step.FireSide == ELaserGridFireSide::Positive
@@ -333,18 +390,14 @@ void ALaserGridPattern::RunSequenceSteps()
 
 			StartStrike(Step.Axis, LaneIndex, bReversed, StepWarningTime, StepFireDuration);
 		}
+	}
+	StepIndex = GroupEnd;
 
-		if (Step.DelayToNext > 0.f)
-		{
-			// 마지막 단계면 RestAfter까지 쉬고 다음 시퀀스로
-			if (!Steps.IsValidIndex(StepIndex))
-			{
-				break;
-			}
-
-			GetWorldTimerManager().SetTimer(StrikeTimerHandle, this, &ALaserGridPattern::RunSequenceSteps, Step.DelayToNext, false);
-			return;
-		}
+	// 다음 묶음이 남아 있으면 마지막 단계의 DelayToNext 뒤에 실행 (마지막 묶음이면 아래 종료 처리)
+	if (GroupEnd > GroupStart && Steps.IsValidIndex(StepIndex))
+	{
+		GetWorldTimerManager().SetTimer(StrikeTimerHandle, this, &ALaserGridPattern::RunSequenceSteps, Steps[GroupEnd - 1].DelayToNext, false);
+		return;
 	}
 
 	// 1회 실행: 다음 시퀀스로 가지 않고 남은 공격이 끝나기를 기다림
