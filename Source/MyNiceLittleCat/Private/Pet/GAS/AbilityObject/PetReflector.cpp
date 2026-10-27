@@ -61,3 +61,13 @@ bool APetReflector::TryGetReflection_Implementation(const FVector& IncomingDirec
     return FReflectionMath::TryReflectFrontFace(
         IncomingDirection, CollisionBox->GetForwardVector(), FVector(Hit.ImpactNormal), OutDirection);
 }
+
+// [추가: 최요환 2026-10-27] 파괴형 레이저에 맞으면 즉시 제거 (수명 종료와 같은 처리)
+// TODO: 깨지는 연출(이펙트·사운드)이 필요하면 여기서 재생하거나 BP 이벤트로 노출
+bool APetReflector::BreakByLaser_Implementation(AActor* LaserInstigator)
+{
+    if (IsActorBeingDestroyed()) return true;
+
+    Destroy();
+    return true;
+}

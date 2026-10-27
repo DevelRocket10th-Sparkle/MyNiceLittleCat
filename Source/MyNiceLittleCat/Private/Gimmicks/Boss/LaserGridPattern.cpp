@@ -90,6 +90,7 @@ void ALaserGridPattern::BeginPlay()
 		Laser->SetupAttachment(Root);
 		Laser->SetVisualSettings(LaserVisualSettings);
 		Laser->SetDrawDebugBeam(bDrawDebugLasers);
+		Laser->SetBreakReflectors(bBreakReflectors);
 		Laser->RegisterComponent();
 		Slots[Index].Laser = Laser;
 	}

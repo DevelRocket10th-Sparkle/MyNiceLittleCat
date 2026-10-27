@@ -227,6 +227,11 @@ void ULaserBeamComponent::UpdateBeamEffects()
 			}
 
 			const FLinearColor& Color = (0 == Segment.ReflectionCount) ? VisualSettings.BeamColor : VisualSettings.ReflectedBeamColor;
+
+			// 이펙트를 구간 시작점으로 옮김: 시작점 파라미터 없이 시스템 위치를 빔 시작으로 쓰는 이펙트(NS_Laser_Basic 등)도
+			// 반사 구간이 반사 지점에서 시작하도록 (붙인 채로 두면 모든 구간이 발사 위치에서 시작해 보임)
+			Effect->SetWorldLocationAndRotation(Segment.Start, Segment.Direction.Rotation());
+
 			// 엔진 Beam Emitter Setup 입력이 Vector 타입이라 월드 좌표를 Vector로 넘김 (Absolute Beam Start/End 켬)
 			Effect->SetVariableVec3(VisualSettings.BeamStartParam, Segment.Start);
 			Effect->SetVariableVec3(VisualSettings.BeamEndParam, Segment.End);
@@ -426,6 +431,13 @@ void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegmen
 		if (false == bCanReflect || true == ReflectedDirection.ContainsNaN())
 			break;
 
+		// [추가: 최요환 2026-10-27] 반사 구간을 수평으로 폄 (반사 계산 자체는 반사판 쪽 그대로).
+		// 반사판은 바닥에 수직이라 3D 반사는 아래로 쏜 빔(보스 단일 레이저)의 하강 성분을 그대로 유지해 반사판 뒤 바닥에 바로 꽂힘
+		if (bPlanarReflection)
+		{
+			ReflectedDirection.Z = 0.f;
+		}
+
 		ReflectedDirection = ReflectedDirection.GetSafeNormal();
 		if (true == ReflectedDirection.IsNearlyZero()) break;
 
@@ -445,7 +457,6 @@ void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegmen
 
 void ULaserBeamComponent::ApplyLaserDamage()
 {
-	if (0.f  >= DamagePerHit) return;
 	if (true == BeamSegments.IsEmpty())
 	{
 		LastDamagedActor.Reset();
@@ -456,6 +467,21 @@ void ULaserBeamComponent::ApplyLaserDamage()
 	// 피해 콜백에서 경로가 변경되어도 안전하도록 복사
 	const FLaserBeamSegment Segment = BeamSegments.Last();
 	AActor* Target = Segment.Hit.GetActor();
+
+	// 파괴형: 반사판에 막혔으면 피해 대신 부숨 (피해량 0이어도 동작). 부서지지 않는 반사판이면 아래 일반 피해 처리
+	if (bBreakReflectors && false == bEnableReflection && Segment.Hit.bBlockingHit && IsValid(Target)
+		&& Target->GetClass()->ImplementsInterface(UReflectiveSurfaceInterface::StaticClass()))
+	{
+		if (IReflectiveSurfaceInterface::Execute_BreakByLaser(Target, GetOwner()))
+		{
+			UE_LOG(LogTemp, Log, TEXT("[LaserBeam] %s: 반사판 파괴 %s"), *GetNameSafe(GetOwner()), *GetNameSafe(Target));
+			LastDamagedActor.Reset();
+			LastDamageTime = -1.f;
+			return;
+		}
+	}
+
+	if (0.f >= DamagePerHit) return;
 
 	if (false == Segment.Hit.bBlockingHit || false == IsValid(Target) || 
 		false == IsActorOfClasses(Target, DamageTargetClasses))
@@ -478,8 +504,8 @@ void ULaserBeamComponent::ApplyLaserDamage()
 	// TODO(합의): 플레이어가 TakeDamage를 처리하게 되면 아래 ApplyDamage로 통일
 	if (APlayerCharacter* Player = Cast<APlayerCharacter>(Target))
 	{
-		// 빔 방향(수평)의 오른쪽 수직 벡터: Up × Forward
-		const FVector BeamDir = FireDirection.GetSafeNormal2D();
+		// 맞은 구간 방향(수평)의 오른쪽 수직 벡터: Up × Forward (반사된 구간이면 반사 방향 기준)
+		const FVector BeamDir = Segment.Direction.GetSafeNormal2D();
 		FVector PushDir = FVector::CrossProduct(FVector::UpVector, BeamDir);
 
 		// 플레이어가 빔 중심선의 왼쪽에 있으면 왼쪽으로 (빔 방향으로 밀면 계속 맞으므로 빔 밖으로 밀어냄)
