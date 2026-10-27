@@ -8,6 +8,7 @@ namespace TutorialTag
 {
 	const FName TriggerDoor01(TEXT("Tutorial.Trigger.Door01")); // 이동 구간 문 앞 트리거
 	const FName Gate01(TEXT("Tutorial.Gate.01"));               // 이동 → 대시 사이 문
+	const FName DecalWASD(TEXT("Tutorial.Decal.WASD")); // 이동 구간 바닥 WASD 안내
 }
 
 ATutorialManager::ATutorialManager()
@@ -75,11 +76,12 @@ void ATutorialManager::BuildMovementActions(TArray<FTutorialAction>& OutActions)
 	// 이 구간에서 쓸 레벨 액터 찾기 (구간이 시작될 때 한 번)
 	AActor* TriggerDoor01 = FindActorByTag(TutorialTag::TriggerDoor01);
 	TWeakObjectPtr<AActor> Gate01 = FindActorByTag(TutorialTag::Gate01);
+	TWeakObjectPtr<AActor> DecalWASD = FindActorByTag(TutorialTag::DecalWASD);
 
 	//! 구조 확인용 로그. 6단계에서 실제 동작으로 교체
 	OutActions.Add(Do([] { UE_LOG(LogTemp, Log, TEXT("[Tutorial] 펫: Hi!")); }));
 	OutActions.Add(WaitSeconds(1.5f));
-	OutActions.Add(Do([] { UE_LOG(LogTemp, Log, TEXT("[Tutorial] WASD 데칼 켜기")); }));
+	OutActions.Add(Do([this, DecalWASD]{SetActivated(DecalWASD.Get(), true); }));
 	OutActions.Add(WaitSeconds(1.f));
 	OutActions.Add(Do([] { UE_LOG(LogTemp, Log, TEXT("[Tutorial] 펫: Follow!")); }));
 	OutActions.Add(WaitPlayerEnter(TriggerDoor01)); // 플레이어가 문 앞까지 올 때까지 멈춤
