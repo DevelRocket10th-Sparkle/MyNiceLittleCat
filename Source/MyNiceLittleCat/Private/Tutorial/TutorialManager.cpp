@@ -9,6 +9,8 @@
 // 튜토리얼에서 찾는 레벨 액터의 태그 이름 (레벨 액터의 Actor Tags에 똑같이 적어야 함)
 namespace TutorialTag
 {
+	const FName CameraDoor01(TEXT("Tutorial.Camera.Door01")); // 이동 구간 시작 연출 카메라 (문 쪽을 보여줌)
+
 	const FName TriggerDoor01(TEXT("Tutorial.Trigger.Door01")); // 이동 구간 문 앞 트리거
 	const FName Gate01(TEXT("Tutorial.Gate.01"));               // 이동 → 대시 사이 문
 	const FName DecalWASD(TEXT("Tutorial.Decal.WASD")); // 이동 구간 바닥 WASD 안내
@@ -27,13 +29,34 @@ void ATutorialManager::BeginPlay()
 {
 	Super::BeginPlay();
 	
+	// 리스폰되면 연출을 강제로 끝내기 위해 구독 (게임모드는 리스폰돼도 그대로라 한 번만)
+	if (AMainGameMode* GameMode = GetWorld()->GetAuthGameMode<AMainGameMode>())
+		GameMode->OnPlayerRespawned.AddUniqueDynamic(this, &ATutorialManager::HandlePlayerRespawned);
+
 	// 펫은 GameMode 가 플레이어를 스폰한 "뒤에" 만들기 때문에 지금은 아직 없을 수 있음
 	// -> 0.1초마다 확인하다가 준비되면 시작 (게임모드, 펫 코드는 건드리지 않음)
 	GetWorldTimerManager().SetTimer(StartTimerHandle, this, &ATutorialManager::TryStartTutorial, 0.1f, true);
+	TryStartTutorial(); // 먼저 걸어봄
+}
+
+void ATutorialManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// 매니저가 사라질 때 잠금이 남아 있으면 조작 불가 버그 → 무조건 정리
+	EndCinematic(0.f);
+	StopWaitPetArrive();
+	Super::EndPlay(EndPlayReason);
 }
 
 void ATutorialManager::TryStartTutorial()
 {
+	// 1) 플레이어가 생기자마자 시작 연출 (카메라 + 잠금)
+	// (펫을 기다리는 동안 원래 카메라가 보이지 읺게)
+	if (false == bIntroApplied)
+	{
+		if (false == ApplyIntroCinematic()) return; // 플레이어가 아직 없는 상태 -> 다음 확인 때 다시
+		bIntroApplied = true;
+	}
+
 	AMainGameMode* GameMode = GetWorld()->GetAuthGameMode<AMainGameMode>();
 	APetCharacter* FoundPet = (nullptr != GameMode) ? GameMode->GetPet() : nullptr;
 
@@ -84,6 +107,8 @@ void ATutorialManager::StageEnd(ETutorialStage Stage)
 	// 초기화 및 정리
 	GetWorldTimerManager().ClearTimer(WaitTimerHandle);
 	StopWaitPlayerEnter();
+	StopWaitPetArrive(); // 펫 도착 대기 중이었다면 정리
+	EndCinematic(0.f);   // 구간이 바뀌면 연출은 무조건 끝 (잠금이 다음 구간으로 새지 않게)
 	Actions.Reset();
 	ActionIndex = INDEX_NONE;
 }
@@ -100,6 +125,8 @@ void ATutorialManager::BuildActions(ETutorialStage Stage, TArray<FTutorialAction
 void ATutorialManager::BuildMovementActions(TArray<FTutorialAction>& OutActions)
 {
 	// 이 구간에서 쓸 레벨 액터 찾기 (구간이 시작될 때 한 번)
+	TWeakObjectPtr<AActor> CameraDoor01 = FindActorByTag(TutorialTag::CameraDoor01);
+
 	AActor* TriggerDoor01 = FindActorByTag(TutorialTag::TriggerDoor01);
 	TWeakObjectPtr<AActor> Gate01 = FindActorByTag(TutorialTag::Gate01);
 	TWeakObjectPtr<AActor> DecalWASD = FindActorByTag(TutorialTag::DecalWASD);
@@ -107,6 +134,9 @@ void ATutorialManager::BuildMovementActions(TArray<FTutorialAction>& OutActions)
 	TWeakObjectPtr<AActor> PetStart = FindActorByTag(TutorialTag::PetPointStart);
 	TWeakObjectPtr<AActor> PetDoor01 = FindActorByTag(TutorialTag::PetPointDoor01);
 	TWeakObjectPtr<AActor> PetAfterDoor01 = FindActorByTag(TutorialTag::PetPointAfterDoor01);
+
+	// 0) 시작 연출: 문 쪽 앵글 + 조작 잠금
+	OutActions.Add(Do([this, CameraDoor01] { BeginCinematic(CameraDoor01.Get(), 0.f); }));
 
 	// 1) 펫이 플레이어 근처에 나타나 인사
 	OutActions.Add(Do([this, PetStart] { PlacePet(PetStart.Get()); }));
@@ -120,7 +150,11 @@ void ATutorialManager::BuildMovementActions(TArray<FTutorialAction>& OutActions)
 	// 3) 펫이 문쪽으로 천천히 걸어가며 따라오라고 함
 	OutActions.Add(Do([this, PetDoor01] {PetMoveTo(PetDoor01.Get(), SlowPetSpeed); }));
 	OutActions.Add(Do([this] { PetSay(INVTEXT("Follow Me!")); }));
+	OutActions.Add(WaitPetArrive(PetDoor01.Get())); // 펫이 문 앞에 도착할 때까지 (최대 8초)
 
+	// 3-1) 연출 끝 : 플레이어 카메라로 복귀 + 조작 되돌리기
+	OutActions.Add(Do([this] {EndCinematic(CameraReturnBlendTime); }));
+	
 	// 4) 플레이어가 문 앞에 오면 문을 열고, 문이 어느 정도 열린 뒤 펫이 먼저 지나감
 	OutActions.Add(WaitPlayerEnter(TriggerDoor01)); // (플레이어가 문 앞까지 올 때까지 멈춤)
 	OutActions.Add(Do([this, Gate01] {SetActivated(Gate01.Get(), true); })); // 문 열기
@@ -154,8 +188,12 @@ void ATutorialManager::RunNextAction()
 			return;
 
 		case ETutorialWait::PlayerEnter: // 트리거에 들어올 때까지 멈춤 -> 신호가 오면 다음 동작으로 진행
-			if (true == BeginWaitPlayerEnter(Action.Trigger.Get())) return;
+			if (true == BeginWaitPlayerEnter(Action.Target.Get())) return;
 			continue; // 트리거가 없거나 플레이어가 이미 안에 있으면 바로 다음 동작
+
+		case ETutorialWait::PetArrive: // 펫이 지점에 도착할 떄 까지 멈춤 -> 도착하면 다음 동작
+			if (true == BeginWaitPetArrive(Action.Target.Get(), Action.Seconds)) return;
+			continue; // 펫이나 지점이 없거나 이미 도착해있으면 바로 다음 동작
 		}
 	}
 }
@@ -188,7 +226,16 @@ FTutorialAction ATutorialManager::WaitPlayerEnter(AActor* _Trigger)
 {
 	FTutorialAction Action;
 	Action.Wait = ETutorialWait::PlayerEnter;
-	Action.Trigger = _Trigger;
+	Action.Target = _Trigger;
+	return Action;
+}
+
+FTutorialAction ATutorialManager::WaitPetArrive(AActor* _Point, float _Timeout)
+{
+	FTutorialAction Action;
+	Action.Wait = ETutorialWait::PetArrive;
+	Action.Target = _Point;
+	Action.Seconds = _Timeout;
 	return Action;
 }
 
@@ -305,5 +352,140 @@ void ATutorialManager::PetSay(const FText& _Message)
 	if (nullptr == PetPtr) return;
 
 	if (USpeechBubbleComponent* Bubble = PetPtr->GetSpeechBubble())
-		Bubble->Say(_Message);
+		Bubble->Say(_Message, 4.f);
+}
+
+bool ATutorialManager::BeginWaitPetArrive(AActor* _Point, float _TimeOut)
+{
+	APetCharacter* PetPtr = Pet.Get();
+	if(nullptr == PetPtr || nullptr == _Point)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] 펫 또는 도착 지점이 없어 건너뜀"));
+		return false;
+	}
+
+	// 이미 도착해있으면 바로 통과
+	if (FVector::Dist2D(PetPtr->GetActorLocation(), _Point->GetActorLocation()) <= PetArriveRadius)
+		return false;
+
+	WaitingPetPoint = _Point;
+	PetArriveTimeLeft = _TimeOut;
+
+	// 0.1초 마다 거리를 확인
+	GetWorldTimerManager().SetTimer(PetArriveTimerHandle, this, &ATutorialManager::CheckPetArrive, 0.1f, true);
+	return true;
+}
+
+void ATutorialManager::CheckPetArrive()
+{
+	APetCharacter* PetPtr = Pet.Get();
+	AActor* Point = WaitingPetPoint.Get();
+
+	// 높이(Z)는 무시: 지점 액터와 펫 캡슐 중심 높이가 달라서
+	const bool bArrived = (nullptr == PetPtr || nullptr == Point)
+		|| FVector::Dist2D(PetPtr->GetActorLocation(), Point->GetActorLocation()) <= PetArriveRadius;
+
+	PetArriveTimeLeft -= 0.1f;
+	if (false == bArrived && PetArriveTimeLeft > 0.f)
+		return; // 아직 가는 중 -> 다음 확인
+
+	// 시간 초과 : 펫이 길에 막혀도 조작이 영원히 잠기지 않게 진행
+	if(false == bArrived)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] 펫 도착 대기 시간 초과 -> 그냥 진행"));
+	}
+
+	StopWaitPetArrive();
+	RunNextAction();
+}
+
+void ATutorialManager::StopWaitPetArrive()
+{
+	GetWorldTimerManager().ClearTimer(PetArriveTimerHandle);
+	WaitingPetPoint.Reset();
+}
+
+bool ATutorialManager::ApplyIntroCinematic()
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (nullptr == PC || nullptr == PC->GetPawn())
+		return false;
+
+	// 이동 구간 시작할 떄만
+	if (ETutorialStage::Movement == StartStage)
+		BeginCinematic(FindActorByTag(TutorialTag::CameraDoor01), 0.f);
+
+	return true;
+}
+
+void ATutorialManager::BeginCinematic(AActor* _Camera, float _BlendTime)
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (nullptr == PC) return;
+
+	// 이미 연출 중이면 잠금은 그대로, 카메라만 바꿈
+	if (false == bInCinematic)
+	{
+		SetPlayerInputLocked(PC, true);
+		bInCinematic = true;
+	}
+
+	// 카메라 못 찾아도 잠금은 유지
+	if(nullptr == _Camera)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] 연출 카메라가 없어 플레이어 카메라 유지"));
+		return;
+	}
+
+	// 이미 그 카메라를 보고 있으면 다시 전환핮 ㅣ 않음
+	if (PC->GetViewTarget() != _Camera)
+		PC->SetViewTargetWithBlend(_Camera, _BlendTime, VTBlend_Cubic); // Cubic 천천히 출발해서 천천히 멈춤 
+}
+
+void ATutorialManager::EndCinematic(float _BlendTime)
+{
+	if (false == bInCinematic) return; // 연출중이 아니라면 할일 읎음
+	bInCinematic = false;
+
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (nullptr == PC)
+	{
+		LockedPawn.Reset();
+		return;
+	}
+
+	// 플레이어 카메라로 복귀
+	if (APawn* PlayerPawn = PC->GetPawn())
+		PC->SetViewTargetWithBlend(PlayerPawn, _BlendTime, VTBlend_Cubic);
+
+	SetPlayerInputLocked(PC, false);
+}
+
+void ATutorialManager::SetPlayerInputLocked(APlayerController* _PC, bool _bLock)
+{
+	// 캐릭터 입력 = 이동/대시/공격/락온, 
+	// 컨트롤러 입력 = 펫 다이얼/펫 모드/펫 특수 행동
+	// 둘 다 꺼야 모든 플레이어 입력이 막힘!!
+
+	if (true == _bLock)
+	{
+		LockedPawn = _PC->GetPawn();
+		if (APawn* PlayerPawn = LockedPawn.Get())
+			PlayerPawn->DisableInput(_PC);
+		_PC->DisableInput(_PC);
+	}
+	else
+	{
+		// 잠갔던 그 캐릭터만 켬 (리스폰으로 이미 사라졌으면 건너뜀. 새 캐릭터는 원래 켜져 있음)
+		if (APawn* PlayerPawn = LockedPawn.Get())
+			PlayerPawn->EnableInput(_PC);
+		LockedPawn.Reset();
+		_PC->EnableInput(_PC);
+	}
+}
+
+void ATutorialManager::HandlePlayerRespawned(AController* _Controller, APawn* _NewPawn)
+{
+	// 컨트롤러는 리스폰돼도 그대로라, 꺼둔 입력이 남으면 새 캐릭터도 조작 불가 -> 강제 해제
+	EndCinematic(0.f);
 }
