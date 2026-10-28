@@ -34,6 +34,12 @@ public:
 	// BT가 주기 갱신을 기다리지 않고 소유한 추격 경로를 즉시 정리하는 알림이다.
 	FEnemyRecoveryStarted OnRecoveryStarted;
 
+	// 공격 실행이 끝난 뒤 후딜 대기 중인지 반환
+	inline bool IsRecovering() const { return bRecovering; }
+
+	// 이 컴포넌트가 후딜용 이동 잠금을 소유하고 있는지 반환
+	inline bool OwnsRecoveryMovementLock() const { return bOwnsRecoveryMovementLock; }
+
 	// 등록된 패턴 초기화
 	// 이전 실행 정리 후 패턴 설정 검사 및 필요한 GA 부여
 	bool InitializePatterns(
@@ -122,9 +128,6 @@ public:
 	void StopAndInvalidate();
 	
 protected:
-
-	// 게임 시작 시 초기화한다.
-	//virtual void BeginPlay() override;
 
 	// 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

@@ -13,6 +13,15 @@
 #include "Interfaces/ReflectiveSurfaceInterface.h"
 #include "Gimmicks/Boss/DamageTypes/DamageType_ReflectedLaser.h"
 #include "Gimmicks/Reflection/ReflectionMath.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
+
+namespace
+{
+	// 관통 모드에서 구간 하나당 통과시킬 수 있는 최대 액터 수 (무한 반복 방지)
+	constexpr int32 MaxPierceCount = 16;
+}
 
 ULaserBeamComponent::ULaserBeamComponent()
 {
@@ -31,6 +40,7 @@ ULaserBeamComponent::ULaserBeamComponent()
 void ULaserBeamComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopLaser();
+	DestroyBeamEffects();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -82,6 +92,7 @@ void ULaserBeamComponent::StopLaser()
 	LastHit = FHitResult();
 	BeamSegments.Reset();
 	SetComponentTickEnabled(false);
+	DeactivateBeamEffects();
 
 	OnLaserStopped.Broadcast(this);
 }
@@ -164,6 +175,160 @@ void ULaserBeamComponent::UpdateBeam()
 		HitActor = FirstSegment.Hit.GetActor();
 		LastHit = FirstSegment.Hit;
 	}
+
+	if (bLaserActive)
+	{
+		UpdateBeamEffects();
+	}
+}
+
+void ULaserBeamComponent::SetVisualSettings(const FLaserBeamVisualSettings& NewSettings)
+{
+	// 이펙트 에셋이 바뀔 수 있으므로 기존 컴포넌트는 버리고 다시 만듦
+	DestroyBeamEffects();
+	VisualSettings = NewSettings;
+
+	if (bLaserActive)
+	{
+		UpdateBeamEffects();
+	}
+}
+
+UNiagaraComponent* ULaserBeamComponent::CreateEffectComponent(UNiagaraSystem* System)
+{
+	if (!System)
+	{
+		return nullptr;
+	}
+
+	// 위치는 매 틱 월드 좌표 파라미터로 넣으므로 붙이기만 하고, 켜고 끄기는 직접 관리
+	return UNiagaraFunctionLibrary::SpawnSystemAttached(System, this, NAME_None,
+		FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset,
+		/*bAutoDestroy*/ false, /*bAutoActivate*/ false, ENCPoolMethod::None, /*bPreCullCheck*/ false);
+}
+
+void ULaserBeamComponent::UpdateBeamEffects()
+{
+	const float BeamWidth = FMath::Max(BeamRadius * 2.f * VisualSettings.BeamWidthScale, VisualSettings.MinBeamWidth);
+
+	int32 UsedCount = 0;
+	if (VisualSettings.BeamEffect)
+	{
+		for (const FLaserBeamSegment& Segment : BeamSegments)
+		{
+			if (!BeamEffectComponents.IsValidIndex(UsedCount))
+			{
+				BeamEffectComponents.Add(nullptr);
+			}
+
+			UNiagaraComponent* Effect = BeamEffectComponents[UsedCount];
+			if (!IsValid(Effect))
+			{
+				Effect = CreateEffectComponent(VisualSettings.BeamEffect);
+				if (!Effect)
+				{
+					break;
+				}
+				BeamEffectComponents[UsedCount] = Effect;
+			}
+
+			const FLinearColor& Color = (0 == Segment.ReflectionCount) ? VisualSettings.BeamColor : VisualSettings.ReflectedBeamColor;
+
+			// 이펙트를 구간 시작점으로 옮김: 시작점 파라미터 없이 시스템 위치를 빔 시작으로 쓰는 이펙트(NS_Laser_Basic 등)도
+			// 반사 구간이 반사 지점에서 시작하도록 (붙인 채로 두면 모든 구간이 발사 위치에서 시작해 보임)
+			Effect->SetWorldLocationAndRotation(Segment.Start, Segment.Direction.Rotation());
+
+			// 엔진 Beam Emitter Setup 입력이 Vector 타입이라 월드 좌표를 Vector로 넘김 (Absolute Beam Start/End 켬)
+			Effect->SetVariableVec3(VisualSettings.BeamStartParam, Segment.Start);
+			Effect->SetVariableVec3(VisualSettings.BeamEndParam, Segment.End);
+			Effect->SetVariableFloat(VisualSettings.BeamWidthParam, BeamWidth);
+			Effect->SetVariableLinearColor(VisualSettings.BeamColorParam, Color);
+
+			if (!Effect->IsActive())
+			{
+				Effect->Activate(true);
+			}
+			++UsedCount;
+		}
+	}
+
+	// 반사가 줄어 남는 구간 이펙트는 끔
+	for (int32 Index = UsedCount; Index < BeamEffectComponents.Num(); ++Index)
+	{
+		UNiagaraComponent* Effect = BeamEffectComponents[Index];
+		if (IsValid(Effect) && Effect->IsActive())
+		{
+			Effect->Deactivate();
+		}
+	}
+
+	// 충돌 이펙트: 마지막 구간이 막힌 지점
+	const FLaserBeamSegment* LastSegment = BeamSegments.IsEmpty() ? nullptr : &BeamSegments.Last();
+	const bool bShowImpact = VisualSettings.ImpactEffect && LastSegment && LastSegment->Hit.bBlockingHit;
+	if (!bShowImpact)
+	{
+		if (IsValid(ImpactEffectComponent) && ImpactEffectComponent->IsActive())
+		{
+			ImpactEffectComponent->Deactivate();
+		}
+		return;
+	}
+
+	if (!IsValid(ImpactEffectComponent))
+	{
+		ImpactEffectComponent = CreateEffectComponent(VisualSettings.ImpactEffect);
+		if (!ImpactEffectComponent)
+		{
+			return;
+		}
+	}
+
+	const FVector ImpactNormal = FVector(LastSegment->Hit.ImpactNormal).GetSafeNormal();
+	const FRotator ImpactRotation = ImpactNormal.IsNearlyZero()
+		? (-LastSegment->Direction).Rotation() : ImpactNormal.Rotation();
+	ImpactEffectComponent->SetWorldLocationAndRotation(FVector(LastSegment->Hit.ImpactPoint), ImpactRotation);
+
+	const FLinearColor& ImpactColor = (0 == LastSegment->ReflectionCount) ? VisualSettings.BeamColor : VisualSettings.ReflectedBeamColor;
+	ImpactEffectComponent->SetVariableLinearColor(VisualSettings.BeamColorParam, ImpactColor);
+
+	if (!ImpactEffectComponent->IsActive())
+	{
+		ImpactEffectComponent->Activate(true);
+	}
+}
+
+void ULaserBeamComponent::DeactivateBeamEffects()
+{
+	for (UNiagaraComponent* Effect : BeamEffectComponents)
+	{
+		if (IsValid(Effect))
+		{
+			Effect->Deactivate();
+		}
+	}
+
+	if (IsValid(ImpactEffectComponent))
+	{
+		ImpactEffectComponent->Deactivate();
+	}
+}
+
+void ULaserBeamComponent::DestroyBeamEffects()
+{
+	for (UNiagaraComponent* Effect : BeamEffectComponents)
+	{
+		if (IsValid(Effect))
+		{
+			Effect->DestroyComponent();
+		}
+	}
+	BeamEffectComponents.Reset();
+
+	if (IsValid(ImpactEffectComponent))
+	{
+		ImpactEffectComponent->DestroyComponent();
+	}
+	ImpactEffectComponent = nullptr;
 }
 
 void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegments, const FVirtualReflectiveSurface* VirtualSurface) const
@@ -176,11 +341,7 @@ void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegmen
 		return;
 	}
 
-	FCollisionObjectQueryParams ObjectParams;
-	for (const TEnumAsByte<EObjectTypeQuery>& ObjectType : TraceObjectTypes)
-	{
-		ObjectParams.AddObjectTypesToQuery(UEngineTypes::ConvertToCollisionChannel(ObjectType));
-	}
+	const FCollisionObjectQueryParams ObjectParams = MakeTraceObjectParams();
 
 	FVector SegmentStart = GetComponentLocation();
 	FVector SegmentDirection = (true == bFollowComponentRotation) ? 
@@ -200,9 +361,22 @@ void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegmen
 		FHitResult Hit;
 
 		// 먼저 실제 월드와 충돌 검사
-		bool bHit = BeamRadius > 0.f ? 
-			World->SweepSingleByObjectType(Hit, SegmentStart, TraceEnd, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(BeamRadius), QueryParams)
-			: World->LineTraceSingleByObjectType(Hit, SegmentStart, TraceEnd, ObjectParams, QueryParams);
+		bool bHit = false;
+		for (int32 PierceCount = 0; PierceCount <= MaxPierceCount; ++PierceCount)
+		{
+			bHit = BeamRadius > 0.f ?
+				World->SweepSingleByObjectType(Hit, SegmentStart, TraceEnd, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(BeamRadius), QueryParams)
+				: World->LineTraceSingleByObjectType(Hit, SegmentStart, TraceEnd, ObjectParams, QueryParams);
+
+			// 관통 모드: 반사판이 아닌 액터는 무시 목록에 넣고 같은 구간을 다시 검사
+			const AActor* BlockingActor = Hit.GetActor();
+			if (false == bPierceNonTargets || false == bHit || false == IsValid(BlockingActor) || BlocksPiercingBeam(BlockingActor))
+				break;
+
+			QueryParams.AddIgnoredActor(BlockingActor);
+			Hit = FHitResult();
+			bHit = false;
+		}
 
 		bool bHitVirtualSurface = false;
 
@@ -272,6 +446,13 @@ void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegmen
 		if (false == bCanReflect || true == ReflectedDirection.ContainsNaN())
 			break;
 
+		// [추가: 최요환 2026-10-27] 반사 구간을 수평으로 폄 (반사 계산 자체는 반사판 쪽 그대로).
+		// 반사판은 바닥에 수직이라 3D 반사는 아래로 쏜 빔(보스 단일 레이저)의 하강 성분을 그대로 유지해 반사판 뒤 바닥에 바로 꽂힘
+		if (bPlanarReflection)
+		{
+			ReflectedDirection.Z = 0.f;
+		}
+
 		ReflectedDirection = ReflectedDirection.GetSafeNormal();
 		if (true == ReflectedDirection.IsNearlyZero()) break;
 
@@ -291,7 +472,6 @@ void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegmen
 
 void ULaserBeamComponent::ApplyLaserDamage()
 {
-	if (0.f  >= DamagePerHit) return;
 	if (true == BeamSegments.IsEmpty())
 	{
 		LastDamagedActor.Reset();
@@ -300,11 +480,39 @@ void ULaserBeamComponent::ApplyLaserDamage()
 	}
 
 	// 피해 콜백에서 경로가 변경되어도 안전하도록 복사
-	const FLaserBeamSegment Segment = BeamSegments.Last();
-	AActor* Target = Segment.Hit.GetActor();
+	FLaserBeamSegment Segment = BeamSegments.Last();
+	AActor* BlockingActor = Segment.Hit.GetActor();
 
-	if (false == Segment.Hit.bBlockingHit || false == IsValid(Target) || 
-		false == IsActorOfClasses(Target, DamageTargetClasses))
+	// 파괴형: 반사판에 막혔으면 피해 대신 부숨 (피해량 0이어도 동작). 부서지지 않는 반사판이면 아래 일반 피해 처리
+	// 관통 모드는 반사판 앞쪽 빔에 있는 대상에게 계속 피해를 줌
+	if (bBreakReflectors && false == bEnableReflection && Segment.Hit.bBlockingHit && IsValid(BlockingActor)
+		&& BlockingActor->GetClass()->ImplementsInterface(UReflectiveSurfaceInterface::StaticClass()))
+	{
+		if (IReflectiveSurfaceInterface::Execute_BreakByLaser(BlockingActor, GetOwner()))
+		{
+			UE_LOG(LogTemp, Log, TEXT("[LaserBeam] %s: 반사판 파괴 %s"), *GetNameSafe(GetOwner()), *GetNameSafe(BlockingActor));
+			if (false == bPierceNonTargets)
+			{
+				LastDamagedActor.Reset();
+				LastDamageTime = -1.f;
+				return;
+			}
+		}
+	}
+
+	if (0.f >= DamagePerHit) return;
+
+	AActor* Target = nullptr;
+	if (bPierceNonTargets)
+	{
+		Target = FindPierceDamageTarget(Segment);
+	}
+	else if (Segment.Hit.bBlockingHit && IsValid(BlockingActor) && IsActorOfClasses(BlockingActor, DamageTargetClasses))
+	{
+		Target = BlockingActor;
+	}
+
+	if (false == IsValid(Target))
 	{
 		LastDamagedActor.Reset();
 		LastDamageTime = -1.f;
@@ -324,8 +532,8 @@ void ULaserBeamComponent::ApplyLaserDamage()
 	// TODO(합의): 플레이어가 TakeDamage를 처리하게 되면 아래 ApplyDamage로 통일
 	if (APlayerCharacter* Player = Cast<APlayerCharacter>(Target))
 	{
-		// 빔 방향(수평)의 오른쪽 수직 벡터: Up × Forward
-		const FVector BeamDir = FireDirection.GetSafeNormal2D();
+		// 맞은 구간 방향(수평)의 오른쪽 수직 벡터: Up × Forward (반사된 구간이면 반사 방향 기준)
+		const FVector BeamDir = Segment.Direction.GetSafeNormal2D();
 		FVector PushDir = FVector::CrossProduct(FVector::UpVector, BeamDir);
 
 		// 플레이어가 빔 중심선의 왼쪽에 있으면 왼쪽으로 (빔 방향으로 밀면 계속 맞으므로 빔 밖으로 밀어냄)
@@ -395,4 +603,57 @@ bool ULaserBeamComponent::IsActorOfClasses(const AActor* Actor, const TArray<TSu
 	}
 
 	return false;
+}
+
+AActor* ULaserBeamComponent::FindPierceDamageTarget(FLaserBeamSegment& OutSegment) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	const FCollisionObjectQueryParams ObjectParams = MakeTraceObjectParams();
+
+	for (const FLaserBeamSegment& Segment : BeamSegments)
+	{
+		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(LaserBeamPierce), false);
+		if (0 == Segment.ReflectionCount)
+			QueryParams.AddIgnoredActor(GetOwner());
+
+		// 오브젝트 타입 검사라 막힘과 상관없이 구간 위의 모든 물체가 가까운 순으로 나옴
+		TArray<FHitResult> Hits;
+		if (BeamRadius > 0.f)
+			World->SweepMultiByObjectType(Hits, Segment.Start, Segment.End, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(BeamRadius), QueryParams);
+		else
+			World->LineTraceMultiByObjectType(Hits, Segment.Start, Segment.End, ObjectParams, QueryParams);
+
+		for (const FHitResult& Hit : Hits)
+		{
+			AActor* Candidate = Hit.GetActor();
+			if (IsValid(Candidate) && false == BlocksPiercingBeam(Candidate) && IsActorOfClasses(Candidate, DamageTargetClasses))
+			{
+				OutSegment = Segment;
+				return Candidate;
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+bool ULaserBeamComponent::BlocksPiercingBeam(const AActor* Actor) const
+{
+	return (bEnableReflection || bBreakReflectors) && IsValid(Actor)
+		&& Actor->GetClass()->ImplementsInterface(UReflectiveSurfaceInterface::StaticClass());
+}
+
+FCollisionObjectQueryParams ULaserBeamComponent::MakeTraceObjectParams() const
+{
+	FCollisionObjectQueryParams ObjectParams;
+	for (const TEnumAsByte<EObjectTypeQuery>& ObjectType : TraceObjectTypes)
+	{
+		ObjectParams.AddObjectTypesToQuery(UEngineTypes::ConvertToCollisionChannel(ObjectType));
+	}
+	return ObjectParams;
 }

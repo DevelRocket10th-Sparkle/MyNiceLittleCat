@@ -47,17 +47,77 @@ public :
 	virtual bool MoveUpdatedComponentImpl(const FVector& Delta, const FQuat& NewRotation,
 		bool bSweep, FHitResult* OutHit = nullptr, ETeleportType Teleport = ETeleportType::None) override;
 
+	/* 밀려나기 */
+	
+	// Player의 밀치기 적용 요청
+	void RequestPlayerPush(const FVector& PushVelocity, bool bDirectPush);
+
+	// 직접 밀림 또는 양보로 일반 수평 이동을 억제 중인지
+	// 밀림 요청이 끊긴 뒤에 짧은 대기 시간도 포함
+	bool IsYieldingToPush() const;
+
 protected:
+
 	virtual void BeginPlay() override;
 
-private:
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	
+	virtual void CalcVelocity(float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration) override;
+
+	// 실제 발 위치와 내비게이션 기준 위치 표시
+	UPROPERTY(EditAnywhere, Category = "Debug")
+	bool bDrawNavigationFeet = false;
+
+private :
+
 	FTransform FilterFlightRootMotion(const FTransform& LocalRootMotion,
 		UCharacterMovementComponent* MovementComponent, float DeltaSeconds);
+
+	// 높이 보정
+	void UpdateFlightHeight(float DeltaTime);
+
+	/* 밀려나기 */
+
+	// 주변 Enemy에 양보 요청
+	void RequestNearbyYield(const FVector& PushVelocity);
+	
+	// Player 밀기 요청 해제
+	void ClearPlayerPush();
+
 protected :
 
 	// 평평한 지면 위 일정 높이 비행에 사용
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Path Find")
 	bool bUseGroundPathForFlight = false;
+
+	// 현재 캡슐 중심에서 아래쪽으로 바닥을 탐색할 거리 (cm)
+	UPROPERTY(EditDefaultsOnly, Category = "Flight|Height")
+	float FlightGroundTraceDistance = 1500.f;
+
+	// 목표 높이로 복귀하는 최대 속력 (cm/s)
+	UPROPERTY(EditDefaultsOnly, Category = "Flight|Height")
+	float FlightHeightCorrectionSpeed = 150.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Flight|Height", meta = (ClampMin = "0.0"))
+	float FlightHeightTolerance = 0.5f;
+
+	/* 밀려나기 */
+	
+	// 마지막 밀림 요청 이후 일반 이동 억제를 유지할 시간(초)
+	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0"))
+	float PushHoldDuration = 0.15f;
+	
+	// 요청받은 밀림 속력의 상한 (cm/s)
+	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0"))
+	float MaxPushSpeed = 150.f;
+	
+	// 주변 Enemy에 요청할 옆 방향 양보 속력 (cm/s)
+	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0"))
+	float YieldSpeed = 80.f;
+	
+	// 양보 대상 탐색 시 실제 캡슐 반경에 더할 여유 폭 (cm)
+	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0"))
+	float YieldContactMargin = 15.f;
 
 private :
 
@@ -70,5 +130,20 @@ private :
 
 	// 길 찾기용 바닥 높이 초기화 완료 여부
 	bool bNavigationGroundInitialized = false;
+
+	/* 밀려나기 */
+
+	// 아직 이동 갱신에 반영하지 않은 플레이어의 직접 밀기 요청
+	FVector PendingDirectPush = FVector::ZeroVector;
+
+	// 아직 반영하지 않은 주변 몬스터의 양보 요청
+	FVector PendingYieldPush = FVector::ZeroVector;
+
+	// 이번 이동 갱신에서 실제로 사용할 밀림 속도
+	FVector ActivePushVelocity = FVector::ZeroVector;
 	
+	// 일반 이동 억제의 남은 시간 (초)
+	// 실제 밀림 지속 시간과는 다름
+	float PushHoldRemaining = 0.f;
+
 };

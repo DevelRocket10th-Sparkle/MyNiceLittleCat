@@ -5,10 +5,23 @@
 
 #include "Gimmicks/Magnetic/MagneticComponent.h"
 #include "Gimmicks/Magnetic/MagneticSubsystem.h"
+#include "Gimmicks/Magnetic/MagneticSettings.h"
 #include "Components/MeshComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "Engine/World.h"
+
+namespace MagneticEffectParams
+{
+	// 나이아가라 User 파라미터 이름 (NS 쪽과 맞춰야 함)
+	const FName Color(TEXT("Color"));
+	const FName Polarity(TEXT("Polarity"));
+	const FName Activity(TEXT("Activity"));
+	const FName IconOffset(TEXT("IconOffset"));
+}
 
 UMagneticComponent::UMagneticComponent()
 {
@@ -26,11 +39,14 @@ void UMagneticComponent::BeginPlay()
 	Super::BeginPlay();
 
 	UpdatePolarityColor();
+	SpawnPolarityEffect();
 }
 
 void UMagneticComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	UpdateEffectActivity(DeltaTime);
 
 	if (!bMagnetEnabled || Polarity == EMagneticPolarity::None)
 	{
@@ -187,7 +203,18 @@ void UMagneticComponent::ApplyMagneticForce(const FVector& Force)
 	}
 	// TODO: 물리 미사용 액터는 OnMagneticForce를 받아 직접 이동 (필요해지면 기본 처리 추가)
 
+	NotifyMagnetInteraction();
 	OnMagneticForce.Broadcast(this, Force);
+}
+
+void UMagneticComponent::NotifyMagnetInteraction()
+{
+	ActivityHoldRemaining = ActivityHoldTime;
+	CurrentActivity = 1.f;
+	if (PolarityEffectComponent)
+	{
+		PolarityEffectComponent->SetVariableFloat(MagneticEffectParams::Activity, CurrentActivity);
+	}
 }
 
 void UMagneticComponent::SetPolarity(EMagneticPolarity NewPolarity)
@@ -201,6 +228,7 @@ void UMagneticComponent::SetPolarity(EMagneticPolarity NewPolarity)
 	Polarity = NewPolarity;
 
 	UpdatePolarityColor();
+	UpdatePolarityEffect();
 	OnPolarityChanged.Broadcast(this, NewPolarity, OldPolarity);
 }
 
@@ -263,4 +291,105 @@ void UMagneticComponent::UpdatePolarityColor()
 			DynamicMaterial->SetVectorParameterValue(ColorParameterName, *Color);
 		}
 	}
+}
+
+UMeshComponent* UMagneticComponent::FindEffectMesh() const
+{
+	const AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return nullptr;
+	}
+
+	TArray<UMeshComponent*> Meshes;
+	Owner->GetComponents(Meshes);
+	for (UMeshComponent* Mesh : Meshes)
+	{
+		if (EffectMeshTag.IsNone() || Mesh->ComponentHasTag(EffectMeshTag))
+		{
+			return Mesh;
+		}
+	}
+	return nullptr;
+}
+
+void UMagneticComponent::SpawnPolarityEffect()
+{
+	if (!bSpawnPolarityEffect || PolarityEffectComponent)
+	{
+		return;
+	}
+
+	UNiagaraSystem* System = PolarityEffect;
+	if (!System)
+	{
+		System = GetDefault<UMagneticSettings>()->DefaultPolarityEffect.LoadSynchronous();
+	}
+
+	UMeshComponent* Mesh = FindEffectMesh();
+	if (!System || !Mesh)
+	{
+		return;
+	}
+
+	PolarityEffectComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(System, Mesh, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator,
+		EAttachLocation::KeepRelativeOffset, false, false);
+	if (!PolarityEffectComponent)
+	{
+		return;
+	}
+
+	// 전기 이펙트의 메시 표면 샘플링은 붙은 메시(Attach Parent)를 사용
+	UpdatePolarityEffect();
+}
+
+void UMagneticComponent::UpdatePolarityEffect()
+{
+	if (!PolarityEffectComponent)
+	{
+		return;
+	}
+
+	if (Polarity == EMagneticPolarity::None)
+	{
+		PolarityEffectComponent->Deactivate();
+		return;
+	}
+
+	// 아이콘은 메시 바운드 윗면 위에 띄움 (이펙트 위치 기준 높이)
+	float IconHeight = IconHeightOffset;
+	if (const USceneComponent* AttachParent = PolarityEffectComponent->GetAttachParent())
+	{
+		if (const UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(AttachParent))
+		{
+			IconHeight += Primitive->Bounds.Origin.Z + Primitive->Bounds.BoxExtent.Z - Primitive->GetComponentLocation().Z;
+		}
+	}
+
+	PolarityEffectComponent->SetVariableLinearColor(MagneticEffectParams::Color, GetPolarityColor(Polarity));
+	PolarityEffectComponent->SetVariableFloat(MagneticEffectParams::Polarity, Polarity == EMagneticPolarity::S ? 1.f : 0.f);
+	PolarityEffectComponent->SetVariableFloat(MagneticEffectParams::Activity, CurrentActivity);
+	PolarityEffectComponent->SetVariableVec3(MagneticEffectParams::IconOffset, FVector(0.f, 0.f, IconHeight));
+
+	if (!PolarityEffectComponent->IsActive())
+	{
+		PolarityEffectComponent->Activate(true);
+	}
+}
+
+void UMagneticComponent::UpdateEffectActivity(float DeltaTime)
+{
+	if (!PolarityEffectComponent || CurrentActivity <= 0.f)
+	{
+		return;
+	}
+
+	if (ActivityHoldRemaining > 0.f)
+	{
+		ActivityHoldRemaining -= DeltaTime;
+		return;
+	}
+
+	CurrentActivity = FMath::Max(0.f, CurrentActivity - ActivityFadeSpeed * DeltaTime);
+	PolarityEffectComponent->SetVariableFloat(MagneticEffectParams::Activity, CurrentActivity);
 }
