@@ -16,6 +16,7 @@
 /// 화살표 방향이 도착 후 보스가 바라보는 방향이며, 레벨 인스턴스에서 컴포넌트를 옮겨 조정합니다.
 /// 레이저 연출: LaserVisualSettings(Niagara 빔·충돌 이펙트)를 BeginPlay에서 만드는 레이저 전부에 넘깁니다.
 /// 격자 레이저는 반사판 파괴형(bBreakReflectors, 기본 true): 펫 반사판에 맞으면 반사하지 않고 부숩니다.
+/// bHitPlayerOnly(기본 true)면 레이저 관통 모드: 반사판 외의 액터(보스·펫·코인 등)는 통과하고 플레이어에게만 피해를 줍니다.
 /// TODO: 경고·발사 사운드
 
 #pragma once
@@ -267,6 +268,10 @@ protected:
 	// true면 격자 레이저가 펫 반사판을 반사하지 않고 부숨 (반사판을 방패로 못 쓰게, 팀 합의 2026-10-27)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Laser")
 	bool bBreakReflectors = true;
+
+	// true면 반사판 외의 액터(보스·펫·코인 등)에 막히지 않고 플레이어(APlayerCharacter)에게만 피해 (레이저 관통 모드)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Laser")
+	bool bHitPlayerOnly = true;
 
 	// 줄 경고 데칼 (사각형 머티리얼 BP). 비어 있으면 경고 없이 대기 후 발사
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Warning")

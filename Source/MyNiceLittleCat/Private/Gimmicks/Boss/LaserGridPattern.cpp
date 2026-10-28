@@ -7,6 +7,7 @@
 #include "Gimmicks/Boss/LaserGridSequenceData.h"
 #include "Gimmicks/Laser/LaserBeamComponent.h"
 #include "Gimmicks/Warning/AttackWarningDecal.h"
+#include "Characters/PlayerCharacter.h"
 #include "Components/ArrowComponent.h"
 #include "Components/BoxComponent.h"
 #include "GameFramework/PlayerController.h"
@@ -91,6 +92,11 @@ void ALaserGridPattern::BeginPlay()
 		Laser->SetVisualSettings(LaserVisualSettings);
 		Laser->SetDrawDebugBeam(bDrawDebugLasers);
 		Laser->SetBreakReflectors(bBreakReflectors);
+		if (bHitPlayerOnly)
+		{
+			Laser->SetPierceNonTargets(true);
+			Laser->SetDamageTargetClasses({ APlayerCharacter::StaticClass() });
+		}
 		Laser->RegisterComponent();
 		Slots[Index].Laser = Laser;
 	}

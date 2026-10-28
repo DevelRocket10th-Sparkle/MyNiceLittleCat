@@ -17,6 +17,12 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 
+namespace
+{
+	// 관통 모드에서 구간 하나당 통과시킬 수 있는 최대 액터 수 (무한 반복 방지)
+	constexpr int32 MaxPierceCount = 16;
+}
+
 ULaserBeamComponent::ULaserBeamComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -335,11 +341,7 @@ void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegmen
 		return;
 	}
 
-	FCollisionObjectQueryParams ObjectParams;
-	for (const TEnumAsByte<EObjectTypeQuery>& ObjectType : TraceObjectTypes)
-	{
-		ObjectParams.AddObjectTypesToQuery(UEngineTypes::ConvertToCollisionChannel(ObjectType));
-	}
+	const FCollisionObjectQueryParams ObjectParams = MakeTraceObjectParams();
 
 	FVector SegmentStart = GetComponentLocation();
 	FVector SegmentDirection = (true == bFollowComponentRotation) ? 
@@ -359,9 +361,22 @@ void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegmen
 		FHitResult Hit;
 
 		// 먼저 실제 월드와 충돌 검사
-		bool bHit = BeamRadius > 0.f ? 
-			World->SweepSingleByObjectType(Hit, SegmentStart, TraceEnd, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(BeamRadius), QueryParams)
-			: World->LineTraceSingleByObjectType(Hit, SegmentStart, TraceEnd, ObjectParams, QueryParams);
+		bool bHit = false;
+		for (int32 PierceCount = 0; PierceCount <= MaxPierceCount; ++PierceCount)
+		{
+			bHit = BeamRadius > 0.f ?
+				World->SweepSingleByObjectType(Hit, SegmentStart, TraceEnd, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(BeamRadius), QueryParams)
+				: World->LineTraceSingleByObjectType(Hit, SegmentStart, TraceEnd, ObjectParams, QueryParams);
+
+			// 관통 모드: 반사판이 아닌 액터는 무시 목록에 넣고 같은 구간을 다시 검사
+			const AActor* BlockingActor = Hit.GetActor();
+			if (false == bPierceNonTargets || false == bHit || false == IsValid(BlockingActor) || BlocksPiercingBeam(BlockingActor))
+				break;
+
+			QueryParams.AddIgnoredActor(BlockingActor);
+			Hit = FHitResult();
+			bHit = false;
+		}
 
 		bool bHitVirtualSurface = false;
 
@@ -465,26 +480,39 @@ void ULaserBeamComponent::ApplyLaserDamage()
 	}
 
 	// 피해 콜백에서 경로가 변경되어도 안전하도록 복사
-	const FLaserBeamSegment Segment = BeamSegments.Last();
-	AActor* Target = Segment.Hit.GetActor();
+	FLaserBeamSegment Segment = BeamSegments.Last();
+	AActor* BlockingActor = Segment.Hit.GetActor();
 
 	// 파괴형: 반사판에 막혔으면 피해 대신 부숨 (피해량 0이어도 동작). 부서지지 않는 반사판이면 아래 일반 피해 처리
-	if (bBreakReflectors && false == bEnableReflection && Segment.Hit.bBlockingHit && IsValid(Target)
-		&& Target->GetClass()->ImplementsInterface(UReflectiveSurfaceInterface::StaticClass()))
+	// 관통 모드는 반사판 앞쪽 빔에 있는 대상에게 계속 피해를 줌
+	if (bBreakReflectors && false == bEnableReflection && Segment.Hit.bBlockingHit && IsValid(BlockingActor)
+		&& BlockingActor->GetClass()->ImplementsInterface(UReflectiveSurfaceInterface::StaticClass()))
 	{
-		if (IReflectiveSurfaceInterface::Execute_BreakByLaser(Target, GetOwner()))
+		if (IReflectiveSurfaceInterface::Execute_BreakByLaser(BlockingActor, GetOwner()))
 		{
-			UE_LOG(LogTemp, Log, TEXT("[LaserBeam] %s: 반사판 파괴 %s"), *GetNameSafe(GetOwner()), *GetNameSafe(Target));
-			LastDamagedActor.Reset();
-			LastDamageTime = -1.f;
-			return;
+			UE_LOG(LogTemp, Log, TEXT("[LaserBeam] %s: 반사판 파괴 %s"), *GetNameSafe(GetOwner()), *GetNameSafe(BlockingActor));
+			if (false == bPierceNonTargets)
+			{
+				LastDamagedActor.Reset();
+				LastDamageTime = -1.f;
+				return;
+			}
 		}
 	}
 
 	if (0.f >= DamagePerHit) return;
 
-	if (false == Segment.Hit.bBlockingHit || false == IsValid(Target) || 
-		false == IsActorOfClasses(Target, DamageTargetClasses))
+	AActor* Target = nullptr;
+	if (bPierceNonTargets)
+	{
+		Target = FindPierceDamageTarget(Segment);
+	}
+	else if (Segment.Hit.bBlockingHit && IsValid(BlockingActor) && IsActorOfClasses(BlockingActor, DamageTargetClasses))
+	{
+		Target = BlockingActor;
+	}
+
+	if (false == IsValid(Target))
 	{
 		LastDamagedActor.Reset();
 		LastDamageTime = -1.f;
@@ -575,4 +603,57 @@ bool ULaserBeamComponent::IsActorOfClasses(const AActor* Actor, const TArray<TSu
 	}
 
 	return false;
+}
+
+AActor* ULaserBeamComponent::FindPierceDamageTarget(FLaserBeamSegment& OutSegment) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	const FCollisionObjectQueryParams ObjectParams = MakeTraceObjectParams();
+
+	for (const FLaserBeamSegment& Segment : BeamSegments)
+	{
+		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(LaserBeamPierce), false);
+		if (0 == Segment.ReflectionCount)
+			QueryParams.AddIgnoredActor(GetOwner());
+
+		// 오브젝트 타입 검사라 막힘과 상관없이 구간 위의 모든 물체가 가까운 순으로 나옴
+		TArray<FHitResult> Hits;
+		if (BeamRadius > 0.f)
+			World->SweepMultiByObjectType(Hits, Segment.Start, Segment.End, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(BeamRadius), QueryParams);
+		else
+			World->LineTraceMultiByObjectType(Hits, Segment.Start, Segment.End, ObjectParams, QueryParams);
+
+		for (const FHitResult& Hit : Hits)
+		{
+			AActor* Candidate = Hit.GetActor();
+			if (IsValid(Candidate) && false == BlocksPiercingBeam(Candidate) && IsActorOfClasses(Candidate, DamageTargetClasses))
+			{
+				OutSegment = Segment;
+				return Candidate;
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+bool ULaserBeamComponent::BlocksPiercingBeam(const AActor* Actor) const
+{
+	return (bEnableReflection || bBreakReflectors) && IsValid(Actor)
+		&& Actor->GetClass()->ImplementsInterface(UReflectiveSurfaceInterface::StaticClass());
+}
+
+FCollisionObjectQueryParams ULaserBeamComponent::MakeTraceObjectParams() const
+{
+	FCollisionObjectQueryParams ObjectParams;
+	for (const TEnumAsByte<EObjectTypeQuery>& ObjectType : TraceObjectTypes)
+	{
+		ObjectParams.AddObjectTypesToQuery(UEngineTypes::ConvertToCollisionChannel(ObjectType));
+	}
+	return ObjectParams;
 }

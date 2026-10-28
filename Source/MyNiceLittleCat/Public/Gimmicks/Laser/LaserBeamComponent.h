@@ -17,6 +17,8 @@
 ///   스테이지 기믹·함정, 보스 단일 레이저용. bPlanarReflection(기본 true)이면 반사된 구간은 수평으로 진행
 /// - 파괴형 bBreakReflectors: 반사하지 않고 반사판에 BreakByLaser를 호출해 부숨 (펫 반사판을 방패로 못 쓰게). 보스 격자 레이저용
 /// - 둘 다 꺼짐: 반사판도 일반 물체처럼 빔을 막음. 둘 다 켜지면 반사가 우선
+/// 관통 모드 bPierceNonTargets: 반사판(반사형·파괴형일 때)만 빔을 막고 나머지 액터는 통과하며,
+/// 빔 경로 전체에서 DamageTargetClasses에 맞는 첫 액터에 피해를 줌. 보스 격자 레이저용 (보스·펫·코인에 막히지 않고 플레이어만 맞힘)
 /// 맞은 면 법선(GetHitNormal)·트레이스 결과(GetHitResult)·구간 목록(GetBeamSegments)을 제공합니다.
 /// 피해 타입은 인스턴스마다 바꿀 수 있습니다 (보스 기본 UDamageType_BossLaser, 함정은 필요하면 별도 타입 지정)
 /// TODO(합의): 보스 GA에서 호출하는 방식(예고·추적 등)은 보스 담당과 확정 필요
@@ -28,6 +30,7 @@
 #include "Components/SceneComponent.h"
 #include "Engine/EngineTypes.h"
 #include "Engine/HitResult.h"
+#include "CollisionQueryParams.h"
 #include "LaserBeamComponent.generated.h"
 
 class ULaserBeamComponent;
@@ -179,6 +182,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Reflection")
 	void SetBreakReflectors(bool bBreak) { bBreakReflectors = bBreak; }
 
+	// 관통 모드로 바꿈 (격자 패턴 등 코드로 만드는 레이저용)
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Trace")
+	void SetPierceNonTargets(bool bPierce) { bPierceNonTargets = bPierce; }
+
+	// 피해 대상 클래스 교체 (비어 있으면 모든 액터)
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Damage")
+	void SetDamageTargetClasses(const TArray<TSubclassOf<AActor>>& NewClasses) { DamageTargetClasses = NewClasses; }
+
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
 	bool IsLaserActive() const { return bLaserActive; }
 
@@ -232,8 +243,16 @@ protected:
 	// 입력 방향을 발사 방향으로 정리 (bPlanarAim이면 수평, 정규화)
 	FVector MakeFireDirection(const FVector& Direction) const;
 
-	// 빔에 막힌 액터에 피해
+	// 빔에 막힌 액터에 피해 (관통 모드면 빔 경로 위의 피해 대상)
 	void ApplyLaserDamage();
+
+	// 관통 모드: 빔 구간들을 훑어 DamageTargetClasses에 맞는 첫 액터와 그 구간을 찾음
+	AActor* FindPierceDamageTarget(FLaserBeamSegment& OutSegment) const;
+
+	// 관통 모드에서 빔을 막는 액터인지 (반사형·파괴형일 때의 반사판만)
+	bool BlocksPiercingBeam(const AActor* Actor) const;
+
+	FCollisionObjectQueryParams MakeTraceObjectParams() const;
 
 	void DrawDebugBeam() const;
 
@@ -275,6 +294,11 @@ protected:
 	// 레이저를 막는 오브젝트 타입 (플레이어·벽·기믹)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Trace")
 	TArray<TEnumAsByte<EObjectTypeQuery>> TraceObjectTypes;
+
+	// true면 반사판(반사형·파괴형일 때)만 빔을 막고 나머지 액터는 통과.
+	// 피해는 빔 경로 전체에서 DamageTargetClasses에 맞는 첫 액터에 줌 (TraceObjectTypes로 훑음)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Trace")
+	bool bPierceNonTargets = false;
 
 	// 한 번 맞을 때 피해량
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Damage", meta = (ClampMin = "0.0"))
