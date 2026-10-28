@@ -54,6 +54,9 @@ public:
     void ChangeStage(ETutorialStage NewStage);
 
 protected:
+    // 펫이 준비됐는지 확인하고, 준비됐으면 튜토리얼 시작 (BeginPlay 에서 타이머로 반복 호출)
+    void TryStartTutorial();
+
     // 구간 시작/끝 함수
     void StageStart(ETutorialStage Stage);
     void StageEnd(ETutorialStage Stage);
@@ -88,6 +91,11 @@ protected:
     // 플레이어 판별 함수 (펫이나 적이 트리거를 밟아도 진행되지 않게)
     bool IsPlayerPawn(const AActor* _Actor) const;
 
+    // ===== 펫 다루기 (동작 목록 안에서 사용) =====
+    void PlacePet(AActor* _Point);                      // 지점으로 순간이동
+    void PetMoveTo(AActor* _Point, float _Speed = 0.f); // 지점까지 걸어가기. _Speed 0 = 원래 속도
+    void PetSay(const FText& _Message);                 // 말풍선
+
     // =========================================================
 protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tutorial")
@@ -95,6 +103,9 @@ protected:
 
     UPROPERTY(EditAnywhere, Category = "Tutorial|Debug")
     ETutorialStage StartStage = ETutorialStage::Movement; //(디버그용) 시작할 구간
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Pet", meta = (ClampMin = "0.0"))
+    float SlowPetSpeed = 200.f; // "천천히 따라와" 안내할 때 펫 속도
 
 private:
     bool bChangingStage = false; // 구간 전환 도중에 또 전환되는 것을 막는 불값
@@ -106,4 +117,8 @@ private:
     // ETutorialWait 별로 필요한 것들
     FTimerHandle WaitTimerHandle; // N초 대기 중일 때의 타이머
     TWeakObjectPtr<AActor> WaitingTrigger; // 플레이어 진입을 기다리는 중일 떄, 그 트리거
+
+    TWeakObjectPtr<class APetCharacter> Pet; // 튜토리얼이 조종하는 펫 (GameMode 가 스폰한)
+    float PetDefaultSpeed = 0.f;       // 펫 원래 걷기 속도. 느리게 바꾼 뒤 되돌릴 때 사용
+    FTimerHandle StartTimerHandle;     // 펫 준비 확인용 반복 타이머
 };

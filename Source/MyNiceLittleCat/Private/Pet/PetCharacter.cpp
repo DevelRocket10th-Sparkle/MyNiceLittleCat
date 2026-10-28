@@ -8,7 +8,7 @@
 #include "GameplayTagContainer.h"
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-
+#include "Pet/SpeechBubbleComponent.h"
 APetCharacter::APetCharacter()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -37,6 +37,10 @@ APetCharacter::APetCharacter()
 
 	CarryPoint = CreateDefaultSubobject<USceneComponent>(TEXT("CarryPoint"));
 	CarryPoint->SetupAttachment(GetMesh(), TEXT("CarrySocket"));
+
+	// 말풍선
+	SpeechBubble = CreateDefaultSubobject<USpeechBubbleComponent>(TEXT("SpeechBubble"));
+	SpeechBubble->SetupAttachment(GetRootComponent()); // 캡슐 기준이라 메시 애니메이션에 흔들리지 않음
 }
 
 void APetCharacter::BeginPlay()

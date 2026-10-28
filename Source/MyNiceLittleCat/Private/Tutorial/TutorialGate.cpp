@@ -19,6 +19,10 @@ ATutorialGate::ATutorialGate()
 	RightDoorMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RightDoorMesh"));
 	RightDoorMesh->SetupAttachment(Root);
 	RightDoorMesh->SetRelativeLocation(FVector(170.f, 0.f, 0.f));
+
+	// 문짝은 내비 메시 생성에서 제외
+	LeftDoorMesh->SetCanEverAffectNavigation(false);
+	RightDoorMesh->SetCanEverAffectNavigation(false);
 }
 
 void ATutorialGate::OnConstruction(const FTransform& Transform)
