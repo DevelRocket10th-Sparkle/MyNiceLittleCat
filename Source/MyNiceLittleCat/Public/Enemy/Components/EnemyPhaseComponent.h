@@ -10,7 +10,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Enemy/Datas/EnemyPatternSetData.h"
-#include "Enemy/Boss/Datas/BossPhaseConfigData.h"
+#include "Enemy/Datas/EnemyPhaseConfigData.h"
 #include "EnemyPhaseComponent.generated.h"
 
 class UAbilitySystemComponent;
@@ -35,7 +35,7 @@ public:
 	UEnemyPhaseComponent();
 
 	// 서버에서 페이즈 설정을 검사하고 전환 GA를 부여
-	bool InitializePhases(UAbilitySystemComponent* InASC, UBossPhaseConfigData* InConfig);
+	bool InitializePhases(UAbilitySystemComponent* InASC, UEnemyPhaseConfigData* InConfig);
 	// 첫 페이즈에 진입: 정지 후 재사용하지 않고 보스를 재생성하여 초기화
 	// 첫 페이즈 설정 적용 후 체력 조건 평가 허용
 	bool StartPhases();
@@ -118,7 +118,7 @@ private :
 
 	// 공유 페이즈 설정 데이터
 	UPROPERTY(Transient)
-	TObjectPtr<UBossPhaseConfigData> Config;
+	TObjectPtr<UEnemyPhaseConfigData> Config;
 	// 보스의 능력 실행 컴포넌트에 대한 약한 참조
 	TWeakObjectPtr<UAbilitySystemComponent> ASC;
 	// 현재 전환만 소유하는 시퀀스 플레이어

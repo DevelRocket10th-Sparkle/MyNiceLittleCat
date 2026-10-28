@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
-#include "Enemy/Test/Abilities/GA_Enemy_MeleeAttack.h"
+#include "Enemy/GAS/Abilities/GA_Enemy_MeleeAttack.h"
 #include "GA_Enemy_RushAttack.generated.h"
 
 // 준비 동작 후 돌진의 첫 자세를 유지하며 이동하고, 돌진 동작과 공격을 차례로 재생한다.

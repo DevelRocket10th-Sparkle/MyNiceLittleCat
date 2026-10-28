@@ -9,7 +9,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "BossPhaseConfigData.generated.h"
+#include "EnemyPhaseConfigData.generated.h"
 
 class ULevelSequence;
 
@@ -65,7 +65,7 @@ struct FBossPhaseDefinition
  * 
  */
 UCLASS(BlueprintType)
-class MYNICELITTLECAT_API UBossPhaseConfigData : public UDataAsset
+class MYNICELITTLECAT_API UEnemyPhaseConfigData : public UDataAsset
 {
 	GENERATED_BODY()
 

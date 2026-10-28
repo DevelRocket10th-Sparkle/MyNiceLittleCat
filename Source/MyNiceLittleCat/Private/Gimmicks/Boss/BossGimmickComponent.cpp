@@ -24,7 +24,7 @@ void UBossGimmickComponent::ReceiveLevelGimmickReferences_Implementation(const T
 	AreaCenter = InAreaCenter;
 }
 
-bool UBossGimmickComponent::EnterPhase_Implementation(FName PhaseId, int64 PhaseExecutionId)
+bool UBossGimmickComponent::EnterBossPhase_Implementation(FName PhaseId, int64 PhaseExecutionId)
 {
 	// 이전 페이즈 기믹이 남아 있으면 먼저 정리
 	StopAll();
@@ -71,7 +71,7 @@ bool UBossGimmickComponent::EnterPhase_Implementation(FName PhaseId, int64 Phase
 	return true;
 }
 
-void UBossGimmickComponent::StopGimmicks_Implementation()
+void UBossGimmickComponent::StopBossGimmicks_Implementation()
 {
 	StopAll();
 }

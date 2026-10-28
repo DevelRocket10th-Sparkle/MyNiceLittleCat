@@ -1,5 +1,5 @@
-#include "Enemy/Boss/Abilities/GA_Enemy_MoneyGun.h"
-#include "Enemy/Boss/Datas/MoneyGunPatternSettings.h"
+#include "Enemy/GAS/Abilities/GA_Enemy_MoneyGun.h"
+#include "Enemy/Datas/MoneyGunPatternSettings.h"
 #include "Enemy/Boss/Objects/MoneyGun.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
 #include "Enemy/EnemyCharacter.h"

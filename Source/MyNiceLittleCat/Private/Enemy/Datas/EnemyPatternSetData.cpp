@@ -1,7 +1,7 @@
 #include "Enemy/Datas/EnemyPatternSetData.h"
 #include "Serialization/CustomVersion.h"
-#include "Enemy/Boss/Datas/MoneyGunPatternSettings.h"
-#include "Enemy/Test/Abilities/GA_Enemy_RushAttack.h"
+#include "Enemy/Datas/MoneyGunPatternSettings.h"
+#include "Enemy/GAS/Abilities/GA_Enemy_RushAttack.h"
 
 namespace EnemyPatternSetVersion
 {

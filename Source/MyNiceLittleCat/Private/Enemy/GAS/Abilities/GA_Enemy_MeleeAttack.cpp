@@ -1,4 +1,4 @@
-#include "Enemy/Test/Abilities/GA_Enemy_MeleeAttack.h"
+#include "Enemy/GAS/Abilities/GA_Enemy_MeleeAttack.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
 #include "Enemy/GAS/EnemyCombatTags.h"

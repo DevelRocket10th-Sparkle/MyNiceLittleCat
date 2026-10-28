@@ -46,7 +46,7 @@ void UEnemyPhaseComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 }
 
 
-bool UEnemyPhaseComponent::InitializePhases(UAbilitySystemComponent* InASC, UBossPhaseConfigData* InConfig)
+bool UEnemyPhaseComponent::InitializePhases(UAbilitySystemComponent* InASC, UEnemyPhaseConfigData* InConfig)
 {
 	StopAndInvalidate();
 	ASC = InASC;

@@ -1,4 +1,4 @@
-#include "Enemy/Test/Abilities/GA_Enemy_RushAttack.h"
+#include "Enemy/GAS/Abilities/GA_Enemy_RushAttack.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"

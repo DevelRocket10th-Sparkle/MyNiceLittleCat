@@ -10,7 +10,7 @@
 #include "CoreMinimal.h"
 #include "Enemy/EnemyCharacter.h"
 
-#include "Enemy/Boss/Datas/BossPhaseConfigData.h"
+#include "Enemy/Datas/EnemyPhaseConfigData.h"
 
 #include "BossCharacter.generated.h"
 
@@ -90,7 +90,7 @@ protected :
 	TObjectPtr<UEnemyPhaseComponent> PhaseComponent;
 	// 페이즈 순서 및 전환 보호 설정
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss")
-	TObjectPtr<UBossPhaseConfigData> PhaseConfig;
+	TObjectPtr<UEnemyPhaseConfigData> PhaseConfig;
 
 
 private :

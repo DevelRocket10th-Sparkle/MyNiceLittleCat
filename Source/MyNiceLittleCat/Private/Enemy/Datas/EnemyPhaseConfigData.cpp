@@ -1,11 +1,11 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "Enemy/Boss/Datas/BossPhaseConfigData.h"
+#include "Enemy/Datas/EnemyPhaseConfigData.h"
 
 
 // 페이즈 순서, 중복 ID 및 체력 하한의 감소 여부 검사
-bool UBossPhaseConfigData::ValidateConfiguration(FString& OutError) const
+bool UEnemyPhaseConfigData::ValidateConfiguration(FString& OutError) const
 {
 	// 같은 페이즈 이름이 반복되는지 확인하기 위한 집합
 	TSet<FName> Ids;
@@ -49,7 +49,7 @@ bool UBossPhaseConfigData::ValidateConfiguration(FString& OutError) const
 }
 
 // 다른 담당자의 페이즈와 기존 배리어 항목은 실제 기믹을 실행하지 않음
-bool UBossPhaseConfigData::IsLogOnlyPhase(int32 Index) const
+bool UEnemyPhaseConfigData::IsLogOnlyPhase(int32 Index) const
 {
 	return Phases.IsValidIndex(Index) && (Phases[Index].bLogOnly
 		|| Phases[Index].Kind == EBossPhaseKind::LogOnly || (bLogOnlyAfterFirstPhase && Index > 0));

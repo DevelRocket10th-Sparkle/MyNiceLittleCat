@@ -1,6 +1,6 @@
 #include "Enemy/Boss/Objects/MoneyGun.h"
 #include "Enemy/Boss/Objects/MoneyProjectile.h"
-#include "Enemy/Boss/Datas/MoneyGunPatternSettings.h"
+#include "Enemy/Datas/MoneyGunPatternSettings.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"

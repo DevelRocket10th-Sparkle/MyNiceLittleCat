@@ -2,7 +2,7 @@
 
 
 #include "Enemy/Boss/BossCharacter.h"
-#include "Enemy/Interfaces/EnemyPhaseGimmickInterface.h"
+#include "Enemy/Interfaces/BossPhaseGimmickInterface.h"
 #include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
 #include "Enemy/AI/EnemyAIController.h"
@@ -140,7 +140,7 @@ bool ABossCharacter::HandlePhaseEntered(const FBossPhaseDefinition& Phase)
 	}
 	GetPatternComponent()->SetAvailablePatterns(Phase.AllowedPatternIds);
 	if (IsValid(PhaseGimmickComponent))
-		return IEnemyPhaseGimmickInterface::Execute_EnterPhase(PhaseGimmickComponent,
+		return IBossPhaseGimmickInterface::Execute_EnterBossPhase(PhaseGimmickComponent,
 			Phase.PhaseId, PhaseComponent->GetCurrentPhaseExecutionId());
 	// 기믹 구현이 빠진 배리어를 완료된 것처럼 진행하지 않음
 	if (Phase.Kind == EBossPhaseKind::Barrier)
@@ -273,7 +273,7 @@ bool ABossCharacter::InitializeGimmickConnection()
 	GetComponents(Components);
 	for (UActorComponent* Component : Components)
 	{
-		if (!IsValid(Component) || !Component->Implements<UEnemyPhaseGimmickInterface>())
+		if (!IsValid(Component) || !Component->Implements<UBossPhaseGimmickInterface>())
 		{
 			continue;
 		}
@@ -292,7 +292,7 @@ bool ABossCharacter::InitializeGimmickConnection()
 		{
 			PhaseActors.Add(Pair.Key, Pair.Value);
 		}
-		IEnemyPhaseGimmickInterface::Execute_ReceiveLevelGimmickReferences(PhaseGimmickComponent, PhaseActors, GimmickAreaCenter);
+		IBossPhaseGimmickInterface::Execute_ReceiveLevelGimmickReferences(PhaseGimmickComponent, PhaseActors, GimmickAreaCenter);
 	}
 	return true;
 }
@@ -308,7 +308,7 @@ void ABossCharacter::SetLevelGimmickReferences(const TMap<FName, TObjectPtr<AAct
 void ABossCharacter::StopPhaseGimmicks()
 {
 	if (HasAuthority() && IsValid(PhaseGimmickComponent))
-		IEnemyPhaseGimmickInterface::Execute_StopGimmicks(PhaseGimmickComponent);
+		IBossPhaseGimmickInterface::Execute_StopBossGimmicks(PhaseGimmickComponent);
 }
 
 // 연결된 컴포넌트와 현재 전투에서 발생한 완료 통지만 수락

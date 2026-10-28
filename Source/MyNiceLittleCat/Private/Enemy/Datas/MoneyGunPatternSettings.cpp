@@ -1,4 +1,4 @@
-#include "Enemy/Boss/Datas/MoneyGunPatternSettings.h"
+#include "Enemy/Datas/MoneyGunPatternSettings.h"
 #include "Enemy/Boss/Objects/MoneyGun.h"
 #include "Enemy/Boss/Objects/MoneyProjectile.h"
 
