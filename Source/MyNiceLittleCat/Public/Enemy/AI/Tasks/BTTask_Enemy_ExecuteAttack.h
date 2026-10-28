@@ -12,6 +12,7 @@
 
 #include "BTTask_Enemy_ExecuteAttack.generated.h"
 
+class AEnemyCharacter;
 class UEnemyPatternComponent;
 
 /**
@@ -25,11 +26,7 @@ class MYNICELITTLECAT_API UBTTask_Enemy_ExecuteAttack : public UBTTask_Blackboar
 public :
 
 	UBTTask_Enemy_ExecuteAttack();
-
-	// 빈 값이면 가중치 추첨, 지정하면 해당 패턴을 직접 요청
-	UPROPERTY(EditAnywhere, Category = "Pattern")
-	FName PatternId;
-
+	
 protected :
 
 	// Task 시작 시 행동을 요청하고 비동기 완료까지 InProgress 반환
@@ -60,11 +57,38 @@ private :
 	// 이 Task가 소유한 패턴 요청 해제
 	void Cleanup();
 
+	// 기존 공격 요청 실행
+	bool StartAttack();
+
+	// 회전 준비 중 획득한 이동 잠금 해제
+	void ReleaseFacingMovementLock();
+
+public :
+
+	// 빈 값이면 가중치 추첨, 지정하면 해당 패턴을 직접 요청
+	UPROPERTY(EditAnywhere, Category = "Pattern")
+	FName PatternId;
+
+	// 타깃과의 수평 각도 차이가 이 값 이하면 공격 시작
+	UPROPERTY(EditAnywhere, Category = "Facing", meta = (ClampMin = "0.1", Units = "deg"))
+	float FacingTolerance = 5.f;
+
+	// 이 시간 안에 방향 정렬을 완료하지 못하면 실패
+	UPROPERTY(EditAnywhere, Category = "Facing", meta = (ClampMin = "0.1", Units = "s"))
+	float FacingTimeout = 3.f;
+
 private :
 
 	// 실행을 요청한 패턴 컴포넌트
-	TWeakObjectPtr<UEnemyPatternComponent> CachedPattern;
+	TWeakObjectPtr<UEnemyPatternComponent> CachedPatternComp;
 	// 이 Task가 소유한 공격 요청 번호
 	int64 PatternRequestId = 0;
+
+	TWeakObjectPtr<AEnemyCharacter> CachedEnemy;	// 회전할 Enemy
+	TWeakObjectPtr<AActor> CachedTarget;			// 회전 방향 목표 Target
+
+	bool bWaitingForFacing = false;
+	bool bOwnsFacingMovementLock = false;
+	float FacingElapsed = 0.f;
 
 };

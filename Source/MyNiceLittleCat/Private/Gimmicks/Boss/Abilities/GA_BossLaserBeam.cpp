@@ -5,7 +5,7 @@
 #include "Gimmicks/Boss/LaserGridPattern.h"
 #include "Enemy/Boss/BossCharacter.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
-#include "Enemy/Boss/Components/BossPhaseComponent.h"
+#include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Gimmicks/Laser/LaserBeamComponent.h"
 #include "Gimmicks/Warning/AttackWarningDecal.h"
 #include "Enemy/EnemyCharacter.h"
@@ -279,7 +279,7 @@ bool UGA_BossLaserBeam::FindGridBeamPoint(FTransform& OutTransform) const
 	if (Key.IsNone())
 	{
 		const ABossCharacter* Boss = Cast<ABossCharacter>(Enemy.Get());
-		const UBossPhaseComponent* Phase = Boss ? Boss->GetPhaseComponent() : nullptr;
+		const UEnemyPhaseComponent* Phase = Boss ? Boss->GetPhaseComponent() : nullptr;
 		Key = Phase ? Phase->GetCurrentPhaseId() : NAME_None;
 	}
 

@@ -88,13 +88,14 @@ void UGA_Enemy_RushAttack::UpdateRush()
 			HandleMontageCancelled();
 			return;
 		}
+
+		// 돌진 거리는 현재 타깃까지의 수평 거리로 계산
 		DistanceRemaining = ToTarget.Size();
-		RushDirection = ToTarget.GetSafeNormal();
-		if (RushDirection.IsNearlyZero())
-		{
-			RushDirection = Enemy->GetActorForwardVector().GetSafeNormal2D();
-		}
-		Enemy->SetActorRotation(RushDirection.Rotation());
+
+		// 방향은 준비 단계에서 정렬한 캐릭터의 전방 사용
+		// 돌진 시작 순간 타깃 방향으로 재회전하지 않음
+		RushDirection = Enemy->GetActorForwardVector().GetSafeNormal2D();
+
 		bRushStarted = bRushing = true;
 		MontageJumpToSection(RushSection);
 		GetAbilitySystemComponentFromActorInfo()->CurrentMontageSetPlayRate(0.f);

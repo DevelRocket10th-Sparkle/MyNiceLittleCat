@@ -243,11 +243,14 @@ void AEnemyAIController::SetCombatTarget(AActor * NewTarget)
 		return;
 	}
 	
+	// 타깃 지정
 	BlackboardComp->SetValueAsObject(EnemyBlackboardKeys::TargetActor, NewTarget);
 	UE_LOG(LogTemp, Warning,
 		TEXT("[SetCombatTarget] Stored Target=%s"),
 		*GetNameSafe(BlackboardComp->GetValueAsObject(
 			EnemyBlackboardKeys::TargetActor)));
+
+	SetFocus(NewTarget, EAIFocusPriority::Gameplay);	// 컨트롤러가 플레이어 방향 계산하여 캐릭터가 설정된 속도로 천천히 따름
 }
 
 // Blackboard 타깃과 전투 Focus 해제

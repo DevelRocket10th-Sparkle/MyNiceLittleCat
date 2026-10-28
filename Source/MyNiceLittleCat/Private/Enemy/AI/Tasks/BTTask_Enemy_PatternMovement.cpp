@@ -22,16 +22,16 @@ EBTNodeResult::Type UBTTask_Enemy_PatternMovement::ExecuteTask(UBehaviorTreeComp
 	{
 		return EBTNodeResult::Failed;
 	}
-	CachedPattern = Enemy->GetPatternComponent();
+	CachedPatternComp = Enemy->GetPatternComponent();
 	FEnemyPatternMovementSettings Movement;
 	AActor* Target = nullptr;
-	if (!CachedPattern.IsValid() || !CachedPattern->GetActiveMovement(Movement, Target, PatternRequestId))
+	if (!CachedPatternComp.IsValid() || !CachedPatternComp->GetActiveMovement(Movement, Target, PatternRequestId))
 	{
 		// 즉시 완료되는 로그 전용 패턴 등에서는 이동을 요청하지 않는다.
 		return EBTNodeResult::Succeeded;
 	}
 	UpdateRemaining = FMath::Max(0.05f, UpdateInterval);
-	RecoveryStartedHandle = CachedPattern->OnRecoveryStarted.AddUObject(this, &UBTTask_Enemy_PatternMovement::RefreshMovement);
+	RecoveryStartedHandle = CachedPatternComp->OnRecoveryStarted.AddUObject(this, &UBTTask_Enemy_PatternMovement::RefreshMovement);
 	RefreshMovement();
 	return EBTNodeResult::InProgress;
 }
@@ -39,7 +39,7 @@ EBTNodeResult::Type UBTTask_Enemy_PatternMovement::ExecuteTask(UBehaviorTreeComp
 void UBTTask_Enemy_PatternMovement::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
 {
 	Super::TickTask(OwnerComp, NodeMemory, DeltaSeconds);
-	if (!CachedAI.IsValid() || !CachedPattern.IsValid() || !CachedPattern->IsRequestRunning(PatternRequestId))
+	if (!CachedAI.IsValid() || !CachedPatternComp.IsValid() || !CachedPatternComp->IsRequestRunning(PatternRequestId))
 	{
 		FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
 		return;
@@ -69,8 +69,8 @@ void UBTTask_Enemy_PatternMovement::RefreshMovement()
 	FEnemyPatternMovementSettings Movement;
 	AActor* Target = nullptr;
 	int64 RequestId = 0;
-	if (!CachedAI.IsValid() || !CachedPattern.IsValid()
-		|| !CachedPattern->GetActiveMovement(Movement, Target, RequestId) || RequestId != PatternRequestId)
+	if (!CachedAI.IsValid() || !CachedPatternComp.IsValid()
+		|| !CachedPatternComp->GetActiveMovement(Movement, Target, RequestId) || RequestId != PatternRequestId)
 	{
 		CancelOwnedMove();
 		return;
@@ -138,14 +138,14 @@ void UBTTask_Enemy_PatternMovement::CancelOwnedMove()
 
 void UBTTask_Enemy_PatternMovement::Cleanup()
 {
-	if (CachedPattern.IsValid())
+	if (CachedPatternComp.IsValid())
 	{
-		CachedPattern->OnRecoveryStarted.Remove(RecoveryStartedHandle);
+		CachedPatternComp->OnRecoveryStarted.Remove(RecoveryStartedHandle);
 	}
 	RecoveryStartedHandle.Reset();
 	CancelOwnedMove();
 	CachedAI.Reset();
-	CachedPattern.Reset();
+	CachedPatternComp.Reset();
 	CachedTarget.Reset();
 	PatternRequestId = 0;
 	bHasPolicy = false;

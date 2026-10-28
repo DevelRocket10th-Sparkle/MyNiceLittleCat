@@ -28,11 +28,27 @@ AEnemyCharacter::AEnemyCharacter(const FObjectInitializer& ObjectInitializer)
 	// 캐릭터의 프레임 갱신을 활성화한다.
 	PrimaryActorTick.bCanEverTick = true;
 
-	ASC = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("ASC"));
+	/* 컴포넌트 추가 */
 
+	// GAS 관련
+	ASC = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("ASC"));
 	AttributeSet = CreateDefaultSubobject<UEnemyAttributeSet>(TEXT("Stat"));
+
+	// 전투 관련
 	PatternComponent = CreateDefaultSubobject<UEnemyPatternComponent>(TEXT("PatternComponent"));
 	MeleeTraceComponent = CreateDefaultSubobject<UEnemyMeleeTraceComponent>(TEXT("MeleeTraceComponent"));
+
+	/* 기본 회전 속도 제한 */
+
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = false;
+	bUseControllerRotationRoll = false;
+	
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	Movement->bOrientRotationToMovement = false;		// 이동 방향으로 자동 회전하지 않음
+	Movement->bUseControllerDesiredRotation = true;		// 컨트롤러가 바라보는 방향으로 회전
+	Movement->RotationRate = FRotator(0.f, 120.f, 0.f);	// 초당 최대 수평 회전 각도
+	
 
 }
 
@@ -294,6 +310,34 @@ bool AEnemyCharacter::CanRunEnemyAI() const
 bool AEnemyCharacter::InitializeEnemyExtensions()
 {
 	return IsValid(ASC) && IsValid(AttributeSet) && IsValid(EnemyConfig);
+}
+
+bool AEnemyCharacter::IsRotationLocked() const
+{
+	// Ability 등이 명시적으로 회전을 잠근 경우
+	if (RotationLockCount > 0)
+	{
+		return true;
+	}
+
+	// 패턴 컴포넌트 준비되지 않았으면 회전 제한 없음
+	if (!IsValid(PatternComponent))
+	{
+		return false;
+	}
+
+	FEnemyPatternMovementSettings Movement;
+	AActor* Target = nullptr;
+	int64 RequestId = 0;
+
+	// 공격 중에는 패턴 정책, 후딜 중에는 항상 Stop 반환
+	if (!PatternComponent->GetActiveMovement(Movement, Target, RequestId))
+	{
+		return false;
+	}
+	
+	// 활성화된 패턴이 있으면 패턴의 Movement 정책에 따른 값 반환
+	return Movement.Policy == EEnemyPatternMovementPolicy::Stop;
 }
 
 // 공격 중 회전 제한을 존중하여 Controller 방향 반영

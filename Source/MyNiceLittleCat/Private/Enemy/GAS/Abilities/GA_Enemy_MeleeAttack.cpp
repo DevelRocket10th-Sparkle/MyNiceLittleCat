@@ -49,29 +49,25 @@ void UGA_Enemy_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Han
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
+
 	PlayerHitDelegateHandle = MeleeTraceComponent->OnPlayerHit.AddUObject(this, &UGA_Enemy_MeleeAttack::HandlePlayerHit);
 	if (AAIController* AI = Cast<AAIController>(Enemy->GetController()))
 	{
 		AI->StopMovement();
 	}
 	Enemy->GetCharacterMovement()->StopMovementImmediately();
-	if (ExecutionPattern.bFaceTargetOnStart && IsValid(Target))
-	{
-		// 공격 시작 시에만 타깃 방향으로 수평 정렬
-		FVector Direction = Target->GetActorLocation() - Enemy->GetActorLocation();
-		Direction.Z = 0.f;
-		if (!Direction.IsNearlyZero())
-		{
-			Enemy->SetActorRotation(Direction.Rotation());
-		}
-	}
+
+	// 이동 잠금
 	Enemy->AcquireAttackMovementLock();
 	bOwnsMovementLock = true;
+
+	// 회전 잠금
 	if (ExecutionPattern.bLockRotation)
 	{
 		Enemy->AcquireRotationLock();
 		bOwnsRotationLock = true;
 	}
+
 	// Notify 이벤트는 몽타주 시작 전에 구독
 	UAbilityTask_WaitGameplayEvent* BeginTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
 		this, EnemyCombatTags::MeleeWindowBegin, nullptr, false, true);

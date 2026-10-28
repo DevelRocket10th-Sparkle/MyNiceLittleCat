@@ -128,7 +128,7 @@ void UBossGimmickComponent::StopAll()
 bool UBossGimmickComponent::IsLaserAlternationPhase() const
 {
 	const ABossCharacter* Boss = Cast<ABossCharacter>(GetOwner());
-	const UBossPhaseComponent* PhaseComponent = Boss ? Boss->GetPhaseComponent() : nullptr;
+	const UEnemyPhaseComponent* PhaseComponent = Boss ? Boss->GetPhaseComponent() : nullptr;
 	return PhaseComponent && LaserAlternationPhaseIds.Contains(PhaseComponent->GetCurrentPhaseId());
 }
 

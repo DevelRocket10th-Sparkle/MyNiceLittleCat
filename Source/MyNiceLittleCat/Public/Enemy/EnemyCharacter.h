@@ -88,8 +88,8 @@ public:
 	void AcquireRotationLock() { ++RotationLockCount; }
 	// 공격 종료 시 자신이 획득한 회전 제한 해제
 	void ReleaseRotationLock() { RotationLockCount = FMath::Max(0, RotationLockCount - 1); }
-	// Getter: 공격 중 회전 제한 여부
-	bool IsRotationLocked() const { return RotationLockCount > 0; }
+	// 공격 중 회전 제한 여부
+	bool IsRotationLocked() const;
 	// 회전 제한 중 Controller의 방향 갱신이 액터를 회전시키지 않도록 처리
 	// 공격 중 회전 제한을 존중하여 Controller 방향 반영
 	virtual void FaceRotation(FRotator NewControlRotation, float DeltaTime = 0.f) override;

@@ -34,7 +34,7 @@ private:
 	static FAIMoveRequest BuildMoveRequest(AActor* Target, const FEnemyPatternMovementSettings& Settings);
 
 	TWeakObjectPtr<AAIController> CachedAI;
-	TWeakObjectPtr<UEnemyPatternComponent> CachedPattern;
+	TWeakObjectPtr<UEnemyPatternComponent> CachedPatternComp;
 	TWeakObjectPtr<AActor> CachedTarget;
 	FEnemyPatternMovementSettings CachedMovement;
 	FAIRequestID OwnedMoveId = FAIRequestID::InvalidRequest;
