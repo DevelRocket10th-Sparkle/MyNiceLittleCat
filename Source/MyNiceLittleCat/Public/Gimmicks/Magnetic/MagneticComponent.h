@@ -2,7 +2,12 @@
 /// 작성일자: 2026-10-18
 ///
 /// 자력을 받는 액터에 붙이는 자성 컴포넌트입니다.
-/// 액터에 N/S 극성을 부여하고, 극성에 맞는 색을 메시의 동적 머티리얼에 표시합니다.
+/// 액터에 N/S 극성을 부여하고, 극성 이펙트(나이아가라)를 메시에 붙여 표시합니다.
+/// - 이펙트: PolarityEffect(비면 UMagneticSettings 기본값)를 EffectMeshTag 메시(없으면 첫 메시)에 붙임.
+///   User 파라미터: Color(극성 색), Polarity(0 = N, 1 = S), Activity(0~1, 자력을 받는 동안 올라감),
+///   IconOffset(이펙트 위치 기준 아이콘 위치, 월드 Z = 바운드 윗면 + IconHeightOffset)
+///   전기 이미터의 메시 표면 샘플링은 붙은 메시(Attach Parent)를 사용합니다. 극성이 None이면 이펙트를 끕니다.
+/// - 머티리얼 색(bApplyPolarityColor, 기본 꺼짐): 메시 머티리얼의 ColorParameterName 벡터 파라미터에 극성 색을 넣음
 /// 매 틱 UMagneticSubsystem에 등록된 자력원을 조회해서, 범위 안이고 사이에 벽이 없으면
 /// 같은 극성은 자력원 반대쪽으로 밀리고 다른 극성은 자력원 쪽으로 끌려옵니다.
 /// 루트 컴포넌트가 Simulate Physics일 때 AddForce로 힘을 적용하고, OnMagneticForce로 계산된 힘을 알립니다.
@@ -18,6 +23,9 @@
 
 class UMagneticComponent;
 class UMaterialInstanceDynamic;
+class UMeshComponent;
+class UNiagaraComponent;
+class UNiagaraSystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnMagneticPolarityChanged, UMagneticComponent*, MagneticComponent, EMagneticPolarity, NewPolarity, EMagneticPolarity, OldPolarity);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnMagneticForce, UMagneticComponent*, MagneticComponent, FVector, Force);
@@ -49,6 +57,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Magnetic")
 	bool IsMagnetEnabled() const { return bMagnetEnabled; }
 
+	// 자력을 받고 있다고 알림: 이펙트 Activity를 잠시 올림 (서브시스템 자력원은 자동, 펫 자석 등 외부 처리용)
+	// TODO(합의): 펫 자석 GA가 잡기·밀기 중에 호출
+	UFUNCTION(BlueprintCallable, Category = "Magnetic|Effect")
+	void NotifyMagnetInteraction();
+
 	// 자력원 하나가 Location의 대상에 주는 힘 계산 (범위 밖·가림·극성 None이면 false)
 	UFUNCTION(BlueprintCallable, Category = "Magnetic")
 	bool CalculateForceFrom(AActor* SourceActor, const FMagneticSourceInfo& Info, const FVector& Location, FVector& OutForce) const;
@@ -75,6 +88,12 @@ protected:
 	void CreateDynamicMaterials();
 	void UpdatePolarityColor();
 
+	// 이펙트를 붙일 메시 (EffectMeshTag가 있으면 그 태그, 없으면 첫 메시)
+	UMeshComponent* FindEffectMesh() const;
+	void SpawnPolarityEffect();
+	void UpdatePolarityEffect();
+	void UpdateEffectActivity(float DeltaTime);
+
 protected:
 	// 극성 (코인 등은 스폰 시 SetPolarity로 지정)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic")
@@ -100,13 +119,37 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic")
 	TArray<TEnumAsByte<EObjectTypeQuery>> LineOfSightObjectTypes;
 
-	// 극성 색을 메시 머티리얼에 표시
+	// 극성별 색 (이펙트·머티리얼·경고 데칼 공용)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Color")
-	bool bApplyPolarityColor = true;
-
-	// 극성별 색
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Color", meta = (EditCondition = "bApplyPolarityColor"))
 	TMap<EMagneticPolarity, FLinearColor> PolarityColors;
+
+	// 극성 이펙트를 메시에 붙임
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Effect")
+	bool bSpawnPolarityEffect = true;
+
+	// 극성 이펙트 (비면 프로젝트 설정 Magnetic의 DefaultPolarityEffect)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Effect", meta = (EditCondition = "bSpawnPolarityEffect"))
+	TObjectPtr<UNiagaraSystem> PolarityEffect;
+
+	// 이 태그가 있는 메시에 이펙트를 붙임 (None이면 액터의 첫 메시)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Effect", meta = (EditCondition = "bSpawnPolarityEffect"))
+	FName EffectMeshTag;
+
+	// 아이콘 높이: 메시 바운드 윗면에서 이만큼 위
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Effect", meta = (EditCondition = "bSpawnPolarityEffect"))
+	float IconHeightOffset = 30.f;
+
+	// 자력을 받은 뒤 Activity를 최대로 유지하는 시간 (초)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Effect", meta = (ClampMin = "0.0", EditCondition = "bSpawnPolarityEffect"))
+	float ActivityHoldTime = 0.2f;
+
+	// 유지 시간 뒤 Activity가 0으로 내려가는 속도 (초당)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Effect", meta = (ClampMin = "0.0", EditCondition = "bSpawnPolarityEffect"))
+	float ActivityFadeSpeed = 3.f;
+
+	// 극성 색을 메시 머티리얼에도 표시 (머티리얼에 ColorParameterName 파라미터가 있어야 함)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Color")
+	bool bApplyPolarityColor = false;
 
 	// 머티리얼의 벡터 파라미터 이름 (엔진 BasicShapeMaterial은 "Color")
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Color", meta = (EditCondition = "bApplyPolarityColor"))
@@ -119,4 +162,11 @@ protected:
 private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> DynamicMaterials;
+
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Magnetic|Effect")
+	TObjectPtr<UNiagaraComponent> PolarityEffectComponent;
+
+	float CurrentActivity = 0.f;
+
+	float ActivityHoldRemaining = 0.f;
 };
