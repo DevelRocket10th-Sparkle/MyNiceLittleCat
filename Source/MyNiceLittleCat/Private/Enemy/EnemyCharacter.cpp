@@ -48,7 +48,9 @@ AEnemyCharacter::AEnemyCharacter(const FObjectInitializer& ObjectInitializer)
 	Movement->bOrientRotationToMovement = false;		// 이동 방향으로 자동 회전하지 않음
 	Movement->bUseControllerDesiredRotation = true;		// 컨트롤러가 바라보는 방향으로 회전
 	Movement->RotationRate = FRotator(0.f, 120.f, 0.f);	// 초당 최대 수평 회전 각도
-	
+
+	// 루트 모션 재생 중에도 컨트롤러 방향으로 회전할 수 있도록 허용
+	Movement->bAllowPhysicsRotationDuringAnimRootMotion = true;
 
 }
 
