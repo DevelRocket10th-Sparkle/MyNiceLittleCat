@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
@@ -18,6 +18,8 @@
 class UAbilitySystemComponent;
 struct FAbilityEndedData;
 
+DECLARE_MULTICAST_DELEGATE(FEnemyRecoveryStarted);
+
 UCLASS(ClassGroup=(Enemy), meta=(BlueprintSpawnableComponent))
 class MYNICELITTLECAT_API UEnemyPatternComponent : public UActorComponent
 {
@@ -25,9 +27,18 @@ class MYNICELITTLECAT_API UEnemyPatternComponent : public UActorComponent
 
 public:	
 
-	// Sets default values for this component's properties
+	// 컴포넌트의 기본 실행 상태를 설정한다.
 	// 생성자: Tick 대신 GAS 종료 이벤트와 타이머로 실행 관리
 	UEnemyPatternComponent();
+
+	// BT가 주기 갱신을 기다리지 않고 소유한 추격 경로를 즉시 정리하는 알림이다.
+	FEnemyRecoveryStarted OnRecoveryStarted;
+
+	// 공격 실행이 끝난 뒤 후딜 대기 중인지 반환
+	inline bool IsRecovering() const { return bRecovering; }
+
+	// 이 컴포넌트가 후딜용 이동 잠금을 소유하고 있는지 반환
+	inline bool OwnsRecoveryMovementLock() const { return bOwnsRecoveryMovementLock; }
 
 	// 등록된 패턴 초기화
 	// 이전 실행 정리 후 패턴 설정 검사 및 필요한 GA 부여
@@ -43,6 +54,20 @@ public:
 	// Setter: bRequestsBlocked
 	// Setter: 새 공격 요청 차단 여부; 실행 중 공격은 별도 취소
 	inline void SetRequestsBlocked(bool bBlocked) { bRequestsBlocked = bBlocked; }
+
+	// 공통 적 초기화에서 EnemyConfigData의 범위를 전달한다. 기본 0초면 추가 대기를 사용하지 않는다.
+	bool ConfigureAttackInterval(float InMinInterval, float InMaxInterval);
+	void ResetAttackInterval();
+
+	// 거리와 시야 조건을 제외한 새 요청의 준비 상태다. 실행 중인 요청에는 사용하지 않는다.
+	UFUNCTION(BlueprintPure, Category="Pattern|Attack Interval")
+	bool CanStartAttack() const;
+
+	UFUNCTION(BlueprintPure, Category="Pattern|Attack Interval")
+	float GetAttackIntervalRemaining() const;
+
+	UFUNCTION(BlueprintPure, Category="Pattern|Attack Interval")
+	double GetNextAttackAllowedTime() const { return NextAttackAllowedTime; }
 
 	// 요청된 공격 시도
 	// 조건을 만족하는 후보 중 확률 가중치로 공격 하나 선택
@@ -95,13 +120,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pattern")
 	bool IsRequestRunning(int64 RequestId) const;
 
+	// 공격 중에는 패턴 정책을, 후딜 중에는 항상 Stop을 반환한다.
+	UFUNCTION(BlueprintPure, Category="Pattern")
+	bool GetActiveMovement(FEnemyPatternMovementSettings& OutMovement, AActor*& OutTarget, int64& OutRequestId) const;
+
 	// 요청을 먼저 무효화한 뒤 타이머, 구독 및 능력 실행 정리
 	void StopAndInvalidate();
 	
 protected:
-
-	// Called when the game starts
-	//virtual void BeginPlay() override;
 
 	// 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -119,6 +145,11 @@ private :
 	
 	// 현재 능력의 종료 이벤트만 받아 완료 또는 취소 기록
 	void HandleAbilityEnded(const FAbilityEndedData& EndedData);
+
+	// 정상 종료 후 후딜까지 끝나야 BT에 완료를 알린다.
+	void HandleRecoveryFinished();
+	void StartRecovery(float Duration);
+	void ReleaseRecoveryMovementLock();
 
 	// 종료 이벤트 누락을 실패로 기록하고 해당 능력 취소
 	void HandleExecutionTimeout();
@@ -159,6 +190,8 @@ private :
 	// 능력 종료 누락을 감지하는 제한 시간 타이머
 	FTimerHandle ExecutionTimeoutHandle;
 
+	FTimerHandle RecoveryTimerHandle;
+
 	// 새 요청 번호 발급용; 이전 번호를 재사용하지 않음
 	int64 NextRequestId = 0;
 	// 현재 요청 번호; 0은 유효한 요청 없음
@@ -171,5 +204,12 @@ private :
 	bool bStopped = true;
 	// 새 공격 요청만 임시 차단하는 상태
 	bool bRequestsBlocked = true;
+	bool bRecovering = false;
+	bool bOwnsRecoveryMovementLock = false;
+
+	float MinAttackInterval = 0.f;
+	float MaxAttackInterval = 0.f;
+	// 월드 게임 시간을 사용하므로 일시 정지와 시간 배율을 따르며, BT 재진입 시 재추첨하지 않는다.
+	double NextAttackAllowedTime = 0.0;
 
 };

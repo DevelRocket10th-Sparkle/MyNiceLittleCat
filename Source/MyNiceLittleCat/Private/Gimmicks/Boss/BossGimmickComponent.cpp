@@ -5,7 +5,7 @@
 
 #include "Gimmicks/Boss/BossGimmickComponent.h"
 #include "Enemy/Boss/BossCharacter.h"
-#include "Enemy/Boss/Components/BossPhaseComponent.h"
+#include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Gimmicks/Boss/Barrier.h"
 #include "Gimmicks/Boss/MagneticCoinPatternComponent.h"
 
@@ -37,7 +37,7 @@ bool UBossGimmickComponent::EnterBossPhase_Implementation(FName PhaseId, int64 P
 
 	// 진입 중인 페이즈 종류는 보스 페이즈 컴포넌트에서 확인 (전투 페이즈도 진입 호출이 옴)
 	const ABossCharacter* Boss = Cast<ABossCharacter>(GetOwner());
-	const UBossPhaseComponent* PhaseComponent = Boss ? Boss->GetPhaseComponent() : nullptr;
+	const UEnemyPhaseComponent* PhaseComponent = Boss ? Boss->GetPhaseComponent() : nullptr;
 	const FBossPhaseDefinition* Phase = PhaseComponent ? PhaseComponent->GetCurrentPhase() : nullptr;
 	const bool bBarrierPhase = Phase && Phase->PhaseId == PhaseId && Phase->Kind == EBossPhaseKind::Barrier;
 
@@ -159,7 +159,7 @@ void UBossGimmickComponent::StopAll()
 bool UBossGimmickComponent::IsLaserAlternationPhase() const
 {
 	const ABossCharacter* Boss = Cast<ABossCharacter>(GetOwner());
-	const UBossPhaseComponent* PhaseComponent = Boss ? Boss->GetPhaseComponent() : nullptr;
+	const UEnemyPhaseComponent* PhaseComponent = Boss ? Boss->GetPhaseComponent() : nullptr;
 	return PhaseComponent && LaserAlternationPhaseIds.Contains(PhaseComponent->GetCurrentPhaseId());
 }
 

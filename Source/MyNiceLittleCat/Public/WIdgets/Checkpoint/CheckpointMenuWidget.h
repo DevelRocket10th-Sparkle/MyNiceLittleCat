@@ -49,6 +49,7 @@ protected:
 	UFUNCTION() void HandleTravel();
 	UFUNCTION() void HandleLeave();
 
+	UFUNCTION() void HandlePlayerDied();
 	void BuildTravelList();
 
 protected:
@@ -56,6 +57,10 @@ protected:
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UButton> TravelButton;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UButton> LeaveButton;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UPanelWidget> TravelList;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Checkpoint Menu")
+	TArray<FKey> CloseKeys = { EKeys::Escape, EKeys::E };
+
 
 private:
 	TWeakObjectPtr<ACheckpoint> Checkpoint;

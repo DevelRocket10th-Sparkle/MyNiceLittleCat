@@ -13,7 +13,6 @@
 
 #include "AbilitySystemInterface.h"
 #include "EnemyTypes.h"
-#include "GameplayAbilitySpec.h"
 #include "Interfaces/TargetableInterface.h"
 
 #include "EnemyCharacter.generated.h"
@@ -34,7 +33,7 @@ class MYNICELITTLECAT_API AEnemyCharacter : public ACharacter, public IAbilitySy
 
 public:
 
-	// Sets default values for this character's properties
+	// 캐릭터의 기본 속성을 설정한다.
 	AEnemyCharacter(const FObjectInitializer& ObjectInitializer);
 
 	// Getter: 이 캐릭터의 능력 실행 컴포넌트
@@ -43,22 +42,19 @@ public:
 	// 사망 후처리 - 사망 연출 종료 시점에 실행
 	virtual void FinishDeath();
 
-	// Getter: AttributeSet
+	// 전투 속성 집합을 반환한다.
 	inline UEnemyAttributeSet* GetAttributeSet() const { return AttributeSet; }
 
-	// Getter: EnemyConfig
+	// 적 설정 데이터를 반환한다.
 	// 앞 const: 반환된 포인터를 사용한 EnemyConfig 내용 수정 방지
 	// 뒤 const: EnemyCharacter의 일반 멤버 변수인 EnemyConfig 변경 방지
 	UFUNCTION(BlueprintPure, Category = "Config")
 	const UEnemyConfigData* GetEnemyConfig() const { return EnemyConfig; }
 
-	// Getter: bWantsToMvoe
+	// 이동 의도 여부를 반환한다.
 	bool GetWantsToMove() const { return bWantsToMove; }
-	// Setter: bWantsToMove
+	// 이동 의도 여부를 설정한다.
 	void SetWantsToMove(bool bNewWantsToMove)	{ bWantsToMove = bNewWantsToMove; }
-
-	// Getter: BasicAttackHandle
-	FGameplayAbilitySpecHandle GetBasicAttackHandle() const { return BasicAttackHandle; }
 
 	// AI가 실행될 준비가 되었는지 확인
 	bool IsEnemyInitialized() const { return bEnemyInitialized; }
@@ -92,8 +88,8 @@ public:
 	void AcquireRotationLock() { ++RotationLockCount; }
 	// 공격 종료 시 자신이 획득한 회전 제한 해제
 	void ReleaseRotationLock() { RotationLockCount = FMath::Max(0, RotationLockCount - 1); }
-	// Getter: 공격 중 회전 제한 여부
-	bool IsRotationLocked() const { return RotationLockCount > 0; }
+	// 공격 중 회전 제한 여부
+	bool IsRotationLocked() const;
 	// 회전 제한 중 Controller의 방향 갱신이 액터를 회전시키지 않도록 처리
 	// 공격 중 회전 제한을 존중하여 Controller 방향 반영
 	virtual void FaceRotation(FRotator NewControlRotation, float DeltaTime = 0.f) override;
@@ -101,15 +97,21 @@ public:
 	// 초기화와 생존 및 보스방 전투 상태를 포함한 AI 실행 가능 여부 확인
 	virtual bool CanRunEnemyAI() const;
 
+	/* 밀려나기 */
+
+	// 직접 밀기와 주변 몬스터의 양보 요청에 공통 사용
+	bool CanReceivePlayerPush() const;
+	
+	// bDirectPush
+	// - true: 플레이어가 직접 밀기
+	// - false: 다른 몬스터에게 공간 양보
+	void ApplyPlayerPush(const FVector& PushVelocity, bool bDirectPush = true);
+
 protected:
 
-	// Called when the game starts or when spawned
+	// 게임 시작 시 초기화한다. or when spawned
 	// 컴포넌트 초기화 후 실행 준비
 	virtual void BeginPlay() override;
-	
-	// Called every frame
-	// 활성 상태의 매 프레임 처리
-	//virtual void Tick(float DeltaTime) override;
 
 	// Enemy 능력치 적용
 	// 설정 데이터의 능력치 및 이동 속도를 캐릭터에 적용
@@ -118,7 +120,7 @@ protected:
 
 	// 사망 전처리 - 사망 판정 직후 실행
 	// 중복 사망을 막고 공격과 AI를 정리한 뒤 사망 연출 시작
-	virtual void BeginDeath();	// 필요할 경우 EnemyTypes에 선언된 구조체 FEnemyDeathContext 받기
+	virtual void BeginDeath();
 
 	/* 델리게이트 반응 함수 */
 
@@ -126,10 +128,6 @@ protected:
 	virtual void HandleHealthChanged(float NewHealth, float MaxHealth);
 
 	void HandleDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted);
-
-	// Test용
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
-	TObjectPtr<UAnimMontage> BasicAttackMontage;
 
 	/* Pattern Component */
 
@@ -139,6 +137,11 @@ protected:
 	// 제거 중 이전 공격의 이벤트가 동작하지 않도록 실행 무효화
 	// 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	/* 밀려나기 */
+	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float PlayerPushMultiplier = 1.f;	// 보스는 0으로 설정하기
+
 
 protected :
 
@@ -169,9 +172,6 @@ protected :
 
 	// ASC, 능력치 등 초기화 완료 여부
 	bool bEnemyInitialized = false;
-
-	// ASC에 부여된 기본 공격 식별
-	FGameplayAbilitySpecHandle BasicAttackHandle;
 
 	// 캐릭터별 패턴 실행 상태 및 GA 핸들 관리
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")

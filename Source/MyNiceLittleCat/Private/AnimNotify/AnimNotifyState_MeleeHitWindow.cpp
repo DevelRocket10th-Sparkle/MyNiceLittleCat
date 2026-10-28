@@ -159,6 +159,10 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
             Damage
         );
 
+        const FGameplayAttribute HealthAttr = UEnemyAttributeSet::GetHealthAttribute();
+        const bool bHasHealth = TargetASC->HasAttributeSetForAttribute(HealthAttr);
+        const float HealthBefore = bHasHealth ? TargetASC->GetNumericAttribute(HealthAttr) : 0.f;
+
         TargetASC->ApplyGameplayEffectSpecToSelf(
             *SpecHandle.Data.Get()
         );
@@ -182,7 +186,11 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
             }
         }
         // 히트 스톱
-        ApplyMontageHitStop(Attacker, 0.15f);
+        const bool bKillingBlow = bHasHealth && HealthBefore > 0.f
+            && TargetASC->GetNumericAttribute(HealthAttr) <= 0.f;
+
+        ApplyMontageHitStop(Attacker, bKillingBlow ? KillHitStopDuration : HitStopDuration);
+        ApplyMontageHitStop(Target, bKillingBlow ? KillHitStopDuration : HitStopDuration);
         //ApplyMontageHitStop(Target, 0.1f);
     }
 }

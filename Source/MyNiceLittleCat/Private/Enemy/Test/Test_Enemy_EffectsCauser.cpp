@@ -16,20 +16,6 @@ ATest_Enemy_EffectsCauser::ATest_Enemy_EffectsCauser()
 
 }
 
-// Called when the game starts or when spawned
-void ATest_Enemy_EffectsCauser::BeginPlay()
-{
-	Super::BeginPlay();
-
-}
-
-// Called every frame
-void ATest_Enemy_EffectsCauser::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-
-}
-
 void ATest_Enemy_EffectsCauser::ApplyGameplayEffect()
 {
 	if (!Source || !Target)

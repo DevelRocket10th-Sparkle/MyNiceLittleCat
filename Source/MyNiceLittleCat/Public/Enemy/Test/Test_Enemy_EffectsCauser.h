@@ -28,13 +28,6 @@ public:
 	// Sets default values for this actor's properties
 	ATest_Enemy_EffectsCauser();
 
-protected:
-	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
-
-	// Called every frame
-	virtual void Tick(float DeltaTime) override;
-
 public :
 
 	UFUNCTION(CallInEditor, Category = "GAS")

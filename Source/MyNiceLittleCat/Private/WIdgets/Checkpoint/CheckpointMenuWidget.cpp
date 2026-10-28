@@ -7,6 +7,8 @@
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
 #include "Kismet/GameplayStatics.h"
+
+#include "Characters/PlayerCharacter.h"
 #include "Frameworks/Save/GameProgressSubsystem.h"
 #include "Gimmicks/Checkpoint/Checkpoint.h"
 
@@ -30,7 +32,7 @@ void UCheckpointMenuWidget::NativeOnInitialized()
 
 FReply UCheckpointMenuWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
-	if (InKeyEvent.GetKey() == EKeys::Escape || InKeyEvent.GetKey() == EKeys::Gamepad_FaceButton_Right)
+	if (!InKeyEvent.IsRepeat() && CloseKeys.Contains(InKeyEvent.GetKey()))
 	{
 		Close();
 		return FReply::Handled();
@@ -42,6 +44,12 @@ void UCheckpointMenuWidget::Open(ACheckpoint* InCheckpoint, AActor* InInstigator
 {
 	Checkpoint = InCheckpoint;
 	InteractInstigator = InInstigator;
+
+	if (APlayerCharacter* Player = Cast<APlayerCharacter>(InInstigator))
+	{
+		Player->OnPlayerDied.AddUniqueDynamic(this, &UCheckpointMenuWidget::HandlePlayerDied);
+	}
+
 	TravelList->SetVisibility(ESlateVisibility::Collapsed);
 	AddToViewport(10);
 
@@ -57,6 +65,10 @@ void UCheckpointMenuWidget::Open(ACheckpoint* InCheckpoint, AActor* InInstigator
 
 void UCheckpointMenuWidget::Close()
 {
+	if (APlayerCharacter* Player = Cast<APlayerCharacter>(InteractInstigator.Get()))
+	{
+		Player->OnPlayerDied.RemoveDynamic(this, &UCheckpointMenuWidget::HandlePlayerDied);
+	}
 	if (APlayerController* PC = GetOwningPlayer())
 	{
 		PC->SetInputMode(FInputModeGameOnly());
@@ -107,6 +119,11 @@ void UCheckpointMenuWidget::HandleTravel()
 }
 
 void UCheckpointMenuWidget::HandleLeave()
+{
+	Close();
+}
+
+void UCheckpointMenuWidget::HandlePlayerDied()
 {
 	Close();
 }

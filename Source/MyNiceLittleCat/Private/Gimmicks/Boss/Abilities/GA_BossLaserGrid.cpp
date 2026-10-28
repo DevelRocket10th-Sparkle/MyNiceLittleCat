@@ -12,7 +12,7 @@
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
 #include "Enemy/Boss/BossCharacter.h"
-#include "Enemy/Boss/Components/BossPhaseComponent.h"
+#include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
@@ -219,7 +219,7 @@ ALaserGridPattern* UGA_BossLaserGrid::FindGridPattern() const
 	if (Key.IsNone())
 	{
 		const ABossCharacter* Boss = Cast<ABossCharacter>(Enemy.Get());
-		const UBossPhaseComponent* Phase = Boss ? Boss->GetPhaseComponent() : nullptr;
+		const UEnemyPhaseComponent* Phase = Boss ? Boss->GetPhaseComponent() : nullptr;
 		Key = Phase ? Phase->GetCurrentPhaseId() : NAME_None;
 	}
 

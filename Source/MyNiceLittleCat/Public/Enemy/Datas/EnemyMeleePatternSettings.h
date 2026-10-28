@@ -6,25 +6,6 @@
 
 class UAnimMontage;
 
-// 이전 구조체 배열을 읽어 인라인 설정 객체로 이전하기 위한 호환 데이터.
-USTRUCT(BlueprintType)
-struct MYNICELITTLECAT_API FEnemyMeleeTraceDefinition
-{
-	GENERATED_BODY()
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee")
-	FName SourceName = TEXT("Body");
-#if WITH_EDITORONLY_DATA
-	UPROPERTY(EditAnywhere, Category = "Melee", meta = (AllowedClasses = "/Script/Engine.SkeletalMesh,/Script/Engine.StaticMesh"))
-	TSoftObjectPtr<UObject> SocketSourceMesh;
-#endif
-	// 서로 다른 반지름이 필요하면 소켓마다 MeleeTraces 항목을 나누어 설정
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee")
-	TArray<FName> SocketNames;
-	// 소켓 스케일과 독립적으로 적용
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee", meta = (ClampMin = "0.1"))
-	float Radius = 45.f;
-};
-
 // 데이터 에셋 내부에서 생성하는 소켓별 판정 설정. 별도 에셋 생성 불필요.
 UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, meta = (DisplayName = "Melee Trace Settings"))
 class MYNICELITTLECAT_API UEnemyMeleeTraceSettings : public UObject

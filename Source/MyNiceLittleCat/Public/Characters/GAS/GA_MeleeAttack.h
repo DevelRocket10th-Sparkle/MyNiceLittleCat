@@ -49,11 +49,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack")
 	TObjectPtr<UAnimMontage> AttackMontage;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack")
+	TObjectPtr<UAnimMontage> SprintAttackMontage;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimMontage> CurrentAttackMontage;
+
 	int32 ComboIndex = 0; 
 
 	bool bCanQueueCombo = false;
 	bool bComboInputQueued = false;
-
+	bool bIsSprintAttack = false;
 	bool bIsAttackMoving = false;
 
 	FVector AttackMoveDirection = FVector::ZeroVector;

@@ -23,15 +23,24 @@ void UEnemyMeleeTraceComponent::BeginPlay()
 
 void UEnemyMeleeTraceComponent::RegisterHitSource(FName SourceName, UMeshComponent* Mesh)
 {
-	if (SourceName.IsNone() || !IsValid(Mesh)) return;
+	if (SourceName.IsNone() || !IsValid(Mesh))
+	{
+		return;
+	}
 	// 장비 교체 시 이전 무기의 위치에서 새 무기까지 잘못 Sweep하지 않음
-	if (ActiveRequestId != 0) StopAttack();
+	if (ActiveRequestId != 0)
+	{
+		StopAttack();
+	}
 	Sources.Add(SourceName, Mesh);
 }
 
 void UEnemyMeleeTraceComponent::UnregisterHitSource(FName SourceName)
 {
-	if (ActiveRequestId != 0) StopAttack();
+	if (ActiveRequestId != 0)
+	{
+		StopAttack();
+	}
 	Sources.Remove(SourceName);
 }
 
@@ -44,10 +53,17 @@ UMeshComponent* UEnemyMeleeTraceComponent::GetHitSource(FName SourceName) const
 bool UEnemyMeleeTraceComponent::PrepareAttack(const TArray<TObjectPtr<UEnemyMeleeTraceSettings>>& Definitions, int64 RequestId)
 {
 	StopAttack();
-	if (!GetOwner() || !GetOwner()->HasAuthority() || RequestId == 0 || Definitions.IsEmpty()) return false;
+	if (!GetOwner() || !GetOwner()->HasAuthority() || RequestId == 0 || Definitions.IsEmpty())
+	{
+		return false;
+	}
 	for (const UEnemyMeleeTraceSettings* Definition : Definitions)
 	{
-		if (!IsValid(Definition)) { StopAttack(); return false; }
+		if (!IsValid(Definition))
+		{
+			StopAttack();
+			return false;
+		}
 		UMeshComponent* Mesh = GetHitSource(Definition->SourceName);
 		if (!IsValid(Mesh) || Definition->SocketNames.IsEmpty()
 			|| !FMath::IsFinite(Definition->Radius) || Definition->Radius <= 0.f)
@@ -87,14 +103,21 @@ bool UEnemyMeleeTraceComponent::PrepareAttack(const TArray<TObjectPtr<UEnemyMele
 
 void UEnemyMeleeTraceComponent::BeginWindow(const UObject* NotifyKey)
 {
-	if (!NotifyKey || ActiveRequestId == 0 || ActiveNotify.IsValid()) return;
+	if (!NotifyKey || ActiveRequestId == 0 || ActiveNotify.IsValid())
+	{
+		return;
+	}
 	for (FTracePoint& Point : Points)
 	{
-		if (!Point.Mesh.IsValid()) { StopAttack(); return; }
+		if (!Point.Mesh.IsValid())
+		{
+			StopAttack();
+			return;
+		}
 		Point.PreviousPosition = Point.Mesh->GetSocketLocation(Point.Socket);
 	}
 	ActiveNotify = NotifyKey;
-	// Deduplicate for the entire request, including separate notify windows.
+	// 판정 구간이 여러 개여도 요청 전체에서 중복 타격을 방지한다.
 	++Generation;
 	SetComponentTickEnabled(true);
 	// 시작 시 이미 겹쳐 있는 캡슐도 검사
@@ -103,11 +126,17 @@ void UEnemyMeleeTraceComponent::BeginWindow(const UObject* NotifyKey)
 
 void UEnemyMeleeTraceComponent::EndWindow(const UObject* NotifyKey)
 {
-	if (ActiveNotify.Get() != NotifyKey || !NotifyKey) return;
+	if (ActiveNotify.Get() != NotifyKey || !NotifyKey)
+	{
+		return;
+	}
 	const uint64 EndingGeneration = Generation;
 	// 마지막 애니메이션 갱신부터 NotifyEnd까지 이동한 구간도 포함
 	SampleSockets();
-	if (Generation != EndingGeneration) return;
+	if (Generation != EndingGeneration)
+	{
+		return;
+	}
 	ActiveNotify.Reset();
 	SetComponentTickEnabled(false);
 	++Generation;
@@ -115,15 +144,24 @@ void UEnemyMeleeTraceComponent::EndWindow(const UObject* NotifyKey)
 
 void UEnemyMeleeTraceComponent::StopAttack(int64 ExpectedRequestId)
 {
-	if (ExpectedRequestId != 0 && ActiveRequestId != ExpectedRequestId) return;
+	if (ExpectedRequestId != 0 && ActiveRequestId != ExpectedRequestId)
+	{
+		return;
+	}
 	++Generation;
 	ActiveNotify.Reset();
 	ActiveRequestId = 0;
 	SetComponentTickEnabled(false);
 	for (const FTracePoint& Point : Points)
-		if (Point.Mesh.IsValid()) RemoveTickPrerequisiteComponent(Point.Mesh.Get());
+		if (Point.Mesh.IsValid())
+		{
+			RemoveTickPrerequisiteComponent(Point.Mesh.Get());
+		}
 	for (const FPoseSetting& Setting : PoseSettings)
-		if (Setting.Mesh.IsValid()) Setting.Mesh->VisibilityBasedAnimTickOption = static_cast<EVisibilityBasedAnimTickOption>(Setting.PreviousOption);
+		if (Setting.Mesh.IsValid())
+		{
+			Setting.Mesh->VisibilityBasedAnimTickOption = static_cast<EVisibilityBasedAnimTickOption>(Setting.PreviousOption);
+		}
 	PoseSettings.Reset();
 	Points.Reset();
 	HitActors.Reset();
@@ -138,18 +176,32 @@ void UEnemyMeleeTraceComponent::TickComponent(float DeltaTime, ELevelTick TickTy
 void UEnemyMeleeTraceComponent::SampleSockets()
 {
 	AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner());
-	if (!ActiveNotify.IsValid() || !Enemy || !Enemy->HasAuthority() || !Enemy->IsAlive()) return;
+	if (!ActiveNotify.IsValid() || !Enemy || !Enemy->HasAuthority() || !Enemy->IsAlive())
+	{
+		return;
+	}
 	const uint64 SampleGeneration = Generation;
 	FCollisionObjectQueryParams Objects(ECC_Pawn);
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(EnemyMeleeSweep), false, Enemy);
 	for (const FTracePoint& Point : Points)
-		if (Point.Mesh.IsValid()) Params.AddIgnoredActor(Point.Mesh->GetOwner());
+		if (Point.Mesh.IsValid())
+		{
+			Params.AddIgnoredActor(Point.Mesh->GetOwner());
+		}
 	TArray<FHitResult> Candidates;
 	for (FTracePoint& Point : Points)
 	{
-		if (!Point.Mesh.IsValid() || !Point.Mesh->IsRegistered()) { StopAttack(); return; }
+		if (!Point.Mesh.IsValid() || !Point.Mesh->IsRegistered())
+		{
+			StopAttack();
+			return;
+		}
 		const FVector Current = Point.Mesh->GetSocketLocation(Point.Socket);
-		if (Current.ContainsNaN() || Point.PreviousPosition.ContainsNaN()) { StopAttack(); return; }
+		if (Current.ContainsNaN() || Point.PreviousPosition.ContainsNaN())
+		{
+			StopAttack();
+			return;
+		}
 		TArray<FHitResult> Hits;
 		GetWorld()->SweepMultiByObjectType(Hits, Point.PreviousPosition, Current, FQuat::Identity,
 			Objects, FCollisionShape::MakeSphere(Point.Radius), Params);
@@ -172,9 +224,15 @@ void UEnemyMeleeTraceComponent::SampleSockets()
 	// 피해로 플레이어가 사망하면 GA 종료가 Points를 비울 수 있으므로 검사와 전달을 분리
 	for (const FHitResult& Hit : Candidates)
 	{
-		if (Generation != SampleGeneration) return;
+		if (Generation != SampleGeneration)
+		{
+			return;
+		}
 		APlayerCharacter* Player = Cast<APlayerCharacter>(Hit.GetActor());
-		if (!IsValid(Player) || Player->GetbIsDead() || Hit.GetComponent() != Player->GetCapsuleComponent() || HitActors.Contains(Player)) continue;
+		if (!IsValid(Player) || Player->GetbIsDead() || Hit.GetComponent() != Player->GetCapsuleComponent() || HitActors.Contains(Player))
+		{
+			continue;
+		}
 		HitActors.Add(Player);
 		OnPlayerHit.Broadcast(Hit);
 	}

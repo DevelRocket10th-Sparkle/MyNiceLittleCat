@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Enemy/Components/EnemyPatternComponent.h"
@@ -9,17 +9,17 @@
 #include "AIController.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 #include "Enemy/EnemyCharacter.h"
 #include "Interfaces/TargetableInterface.h"
 #include "Characters/PlayerCharacter.h"
 
-// Sets default values for this component's properties
+// 컴포넌트의 기본 실행 상태를 설정한다.
 // 생성자: Tick 대신 GAS 종료 이벤트와 타이머로 실행 관리
 UEnemyPatternComponent::UEnemyPatternComponent()
 {
-	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
-	// off to improve performance if you don't need them.
+	// 전환 시퀀스를 감시할 때만 프레임 갱신을 활성화한다.
 	PrimaryComponentTick.bCanEverTick = false;
 
 }
@@ -49,6 +49,8 @@ bool UEnemyPatternComponent::InitializePatterns(UAbilitySystemComponent* InASC, 
 			|| !FMath::IsFinite(Pattern.MaxRange) || Pattern.MaxRange < Pattern.MinRange
 			|| !FMath::IsFinite(Pattern.MaxHeightDifference) || Pattern.MaxHeightDifference < 0.f
 			|| !FMath::IsFinite(Pattern.Weight) || Pattern.Weight < 0.f						// 확률 가중치가 유효하지 않거나
+			|| !FMath::IsFinite(Pattern.RecoverySeconds) || Pattern.RecoverySeconds < 0.f
+			|| !Pattern.Movement.IsValid()
 			|| !FMath::IsFinite(Pattern.MaxExecutionSeconds)
 			|| Pattern.MaxExecutionSeconds <= 0.f)		// 공격 종료 누락 감지 제한 시간이 유효하지 않으면
 		{
@@ -66,7 +68,10 @@ bool UEnemyPatternComponent::InitializePatterns(UAbilitySystemComponent* InASC, 
 
 	for (const FEnemyPatternDefinition& Pattern : InPatternSet->Patterns)
 	{
-		if (Pattern.bLogOnly) continue;
+		if (Pattern.bLogOnly)
+		{
+			continue;
+		}
 		// ASC에 부여한 능력 식별 핸들
 		FGameplayAbilitySpecHandle Handle;
 
@@ -121,13 +126,46 @@ void UEnemyPatternComponent::SetAvailablePatterns(const TArray<FName>& PatternId
 	}
 }
 
+bool UEnemyPatternComponent::ConfigureAttackInterval(float InMinInterval, float InMaxInterval)
+{
+	if (!FMath::IsFinite(InMinInterval) || !FMath::IsFinite(InMaxInterval)
+		|| InMinInterval < 0.f || InMaxInterval < InMinInterval || !IsIdle())
+	{
+		return false;
+	}
+	MinAttackInterval = InMinInterval;
+	MaxAttackInterval = InMaxInterval;
+	return true;
+}
+
+void UEnemyPatternComponent::ResetAttackInterval()
+{
+	NextAttackAllowedTime = 0.0;
+}
+
+float UEnemyPatternComponent::GetAttackIntervalRemaining() const
+{
+	const UWorld* World = GetWorld();
+	return World ? static_cast<float>(FMath::Max(0.0, NextAttackAllowedTime - World->GetTimeSeconds())) : 0.f;
+}
+
+bool UEnemyPatternComponent::CanStartAttack() const
+{
+	const AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner());
+	return IsValid(Enemy) && Enemy->HasAuthority() && Enemy->CanRunEnemyAI()
+		&& !bStopped && !bRequestsBlocked && ASC.IsValid() && HasPatterns()
+		&& ActiveRequestId == 0 && IsIdle() && GetAttackIntervalRemaining() <= 0.f;
+}
+
 // 조건을 만족하는 후보 중 확률 가중치로 공격 하나 선택
 bool UEnemyPatternComponent::TryStartAttack(AActor * Target, int64 & OutRequestId)
 {
 	OutRequestId = 0;
 
-	if (bStopped || bRequestsBlocked || !PatternSet || !IsIdle())
+	if (!CanStartAttack())
+	{
 		return false;
+	}
 
 	// 현재 실행 조건을 만족하는 자동 선택 후보
 	TArray<const FEnemyPatternDefinition*> Candidates;
@@ -168,14 +206,14 @@ bool UEnemyPatternComponent::TryStartPattern(FName PatternId, AActor* Target, in
 
 	const FEnemyPatternDefinition* Pattern = FindPattern(PatternId);
 
-	if (!GetOwner()->HasAuthority() || bStopped || bRequestsBlocked
-		|| !ASC.IsValid()
-		|| ActiveRequestId != 0 || !IsIdle()
-		|| !Pattern || !CanExecutePattern(*Pattern, Target))
+	if (!CanStartAttack() || !Pattern || !CanExecutePattern(*Pattern, Target))
+	{
 		return false;
+	}
 
 	UnbindAbilityEnded();
 
+	bRecovering = false;
 	ActivePattern = *Pattern;
 	ActiveTarget = Target;
 
@@ -222,11 +260,14 @@ bool UEnemyPatternComponent::TryStartPattern(FName PatternId, AActor* Target, in
 	}
 
 	// 활성화 중 사망 또는 초기화로 실행이 무효화됐으면 요청을 반환하지 않음
-	if (bStopped || ActiveRequestId != StartedRequestId) return false;
+	if (bStopped || ActiveRequestId != StartedRequestId)
+	{
+		return false;
+	}
 
 	OutRequestId = ActiveRequestId;
 
-	if (ActiveResult == EEnemyPatternResult::Running)
+	if (ActiveResult == EEnemyPatternResult::Running && AbilityEndedDelegateHandle.IsValid())
 	{
 		GetWorld()->GetTimerManager().SetTimer(
 			ExecutionTimeoutHandle,
@@ -246,9 +287,12 @@ void UEnemyPatternComponent::CancelRequest(int64 RequestId)
 	if (!IsRequestRunning(RequestId))
 		return;
 
+	bRecovering = false;
 	ActiveResult = EEnemyPatternResult::Cancelled;
+	ReleaseRecoveryMovementLock();
 	
 	GetWorld()->GetTimerManager().ClearTimer(ExecutionTimeoutHandle);
+	GetWorld()->GetTimerManager().ClearTimer(RecoveryTimerHandle);
 
 	UnbindAbilityEnded();
 
@@ -271,7 +315,11 @@ void UEnemyPatternComponent::ReleaseRequest(int64 RequestId)
 		return;
 
 	CancelRequest(RequestId);
-	if (GetWorld()) GetWorld()->GetTimerManager().ClearTimer(ExecutionTimeoutHandle);
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(ExecutionTimeoutHandle);
+		GetWorld()->GetTimerManager().ClearTimer(RecoveryTimerHandle);
+	}
 	ActiveRequestId = 0;
 	ActiveResult = EEnemyPatternResult::Invalid;
 	ActiveTarget.Reset();
@@ -352,7 +400,26 @@ bool UEnemyPatternComponent::GetActiveExecution(FEnemyPatternDefinition& OutPatt
 	return true;
 }
 
-// 지연된 판정이 현재 유효한 요청인지 번호와 실행 상태로 확인
+// 어빌리티가 끝난 뒤에도 후딜이 진행 중이면 해당 구간의 이동 정책을 제공한다.
+bool UEnemyPatternComponent::GetActiveMovement(FEnemyPatternMovementSettings& OutMovement, AActor*& OutTarget, int64& OutRequestId) const
+{
+	OutMovement = FEnemyPatternMovementSettings();
+	OutTarget = nullptr;
+	OutRequestId = 0;
+	if (!IsRequestRunning(ActiveRequestId))
+	{
+		return false;
+	}
+	if (!bRecovering)
+	{
+		OutMovement = ActivePattern.Movement;
+	}
+	OutTarget = ActiveTarget.Get();
+	OutRequestId = ActiveRequestId;
+	return true;
+}
+
+// 지연된 판정이 현재 유효한 요청인지 번호와 실행 상태로 확인한다.
 bool UEnemyPatternComponent::IsRequestRunning(int64 RequestId) const
 {
 	return !bStopped
@@ -364,6 +431,9 @@ bool UEnemyPatternComponent::IsRequestRunning(int64 RequestId) const
 // 요청을 먼저 무효화한 뒤 타이머, 구독 및 능력 실행 정리
 void UEnemyPatternComponent::StopAndInvalidate()
 {
+	ReleaseRecoveryMovementLock();
+	ResetAttackInterval();
+	bRecovering = false;
 	bStopped = true;
 	bRequestsBlocked = true;
 	
@@ -373,6 +443,7 @@ void UEnemyPatternComponent::StopAndInvalidate()
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(ExecutionTimeoutHandle);
+		GetWorld()->GetTimerManager().ClearTimer(RecoveryTimerHandle);
 	}
 
 	UnbindAbilityEnded();
@@ -400,7 +471,10 @@ void UEnemyPatternComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 // DataAsset에서 ID가 일치하는 설정의 주소 조회
 const FEnemyPatternDefinition* UEnemyPatternComponent::FindPattern(FName PatternId) const
 {
-	if (!PatternSet) return nullptr;
+	if (!PatternSet)
+	{
+		return nullptr;
+	}
 	return PatternSet->Patterns.FindByPredicate(
 		[PatternId](const FEnemyPatternDefinition& Pattern)
 		{
@@ -418,26 +492,44 @@ bool UEnemyPatternComponent::MatchesGeometry(const FEnemyPatternDefinition& Patt
 		|| !AvailablePatterns.Contains(Pattern.PatternId))
 		return false;
 
-	if (Pattern.bLogOnly) return true;
+	if (Pattern.bLogOnly)
+	{
+		return true;
+	}
 
 	// 타깃, 거리, 시야 조건을 모두 사용하지 않는 아레나 패턴은 타깃이 없어도 실행 가능
 	const bool bNeedsTarget = Pattern.bRequiresTarget
 		|| Pattern.bCheckTargetDistance || Pattern.bRequiresLineOfSight;
-	if (!bNeedsTarget) return true;
-	if (!IsValid(Target) || Target == Enemy) return false;
+	if (!bNeedsTarget)
+	{
+		return true;
+	}
+	if (!IsValid(Target) || Target == Enemy)
+	{
+		return false;
+	}
 
 	// Player는 현재 TargetableInterface 대신 사망 상태 Getter를 사용
 	if (const APlayerCharacter* Player = Cast<APlayerCharacter>(Target))
 	{
-		if (Player->GetbIsDead()) return false;
+		if (Player->GetbIsDead())
+		{
+			return false;
+		}
 	}
 	else if (Target->Implements<UTargetableInterface>())
 	{
-		if (!ITargetableInterface::Execute_IsTargetAlive(Target)) return false;
+		if (!ITargetableInterface::Execute_IsTargetAlive(Target))
+		{
+			return false;
+		}
 	}
 	else return false;
 
-	if (!Pattern.bCheckTargetDistance) return true;
+	if (!Pattern.bCheckTargetDistance)
+	{
+		return true;
+	}
 	const FVector DeltaLocation = Target->GetActorLocation() - Enemy->GetActorLocation();
 	const float DistanceSquared = DeltaLocation.SizeSquared2D();
 
@@ -460,7 +552,10 @@ bool UEnemyPatternComponent::CanExecutePattern(const FEnemyPatternDefinition& Pa
 	if (!Enemy->CanRunEnemyAI())
 		return false;
 
-	if (Pattern.bLogOnly) return true;
+	if (Pattern.bLogOnly)
+	{
+		return true;
+	}
 
 	if (Pattern.bRequiresLineOfSight)
 	{
@@ -491,11 +586,63 @@ void UEnemyPatternComponent::HandleAbilityEnded(const FAbilityEndedData& EndedDa
 
 	GetWorld()->GetTimerManager().ClearTimer(ExecutionTimeoutHandle);
 
-	ActiveResult = EndedData.bWasCancelled
-		? EEnemyPatternResult::Cancelled
-		: EEnemyPatternResult::Completed;
-
 	UnbindAbilityEnded();
+	if (EndedData.bWasCancelled)
+	{
+		ActiveResult = EEnemyPatternResult::Cancelled;
+		return;
+	}
+
+	const float RecoverySeconds = ActivePattern.RecoverySeconds;
+	if (RecoverySeconds > 0.f)
+	{
+		StartRecovery(RecoverySeconds);
+		return;
+	}
+	HandleRecoveryFinished();
+}
+
+void UEnemyPatternComponent::StartRecovery(float Duration)
+{
+	bRecovering = true;
+	if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner()))
+	{
+		Enemy->AcquireAttackMovementLock();
+		bOwnsRecoveryMovementLock = true;
+		Enemy->GetCharacterMovement()->StopMovementImmediately();
+		Enemy->ConsumeMovementInputVector();
+	}
+	GetWorld()->GetTimerManager().SetTimer(RecoveryTimerHandle, this,
+		&UEnemyPatternComponent::HandleRecoveryFinished, Duration, false);
+	// 알림 중 BT가 요청을 취소해도 후딜 타이머를 다시 만들지 않도록 마지막에 통지한다.
+	OnRecoveryStarted.Broadcast();
+}
+
+void UEnemyPatternComponent::ReleaseRecoveryMovementLock()
+{
+	if (!bOwnsRecoveryMovementLock)
+	{
+		return;
+	}
+	if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner()))
+	{
+		// 다른 어빌리티나 상태가 보유한 이동 제한까지 해제하지 않는다.
+		Enemy->ReleaseAttackMovementLock();
+	}
+	bOwnsRecoveryMovementLock = false;
+}
+
+void UEnemyPatternComponent::HandleRecoveryFinished()
+{
+	ReleaseRecoveryMovementLock();
+	bRecovering = false;
+	if (IsRequestRunning(ActiveRequestId))
+	{
+		// 정상 완료 한 번에만 추첨한다. 요청 해제나 BT 조건 조회는 이 시각을 변경하지 않는다.
+		const float Interval = FMath::FRandRange(MinAttackInterval, MaxAttackInterval);
+		NextAttackAllowedTime = GetWorld()->GetTimeSeconds() + static_cast<double>(Interval);
+		ActiveResult = EEnemyPatternResult::Completed;
+	}
 }
 
 // 종료 이벤트 누락을 실패로 기록하고 해당 능력 취소
@@ -547,13 +694,3 @@ void UEnemyPatternComponent::ClearGrantedAbilities()
 	PatternHandles.Reset();
 	AvailablePatterns.Reset();
 }
-
-
-// Called when the game starts
-//void UEnemyPatternComponent::BeginPlay()
-//{
-//	Super::BeginPlay();
-//
-//	// ...
-//	
-//}

@@ -9,7 +9,10 @@ namespace
 	void SendWindowEvent(USkeletalMeshComponent* Mesh, const UObject* Notify, FGameplayTag Tag)
 	{
 		AEnemyCharacter* Enemy = Mesh ? Cast<AEnemyCharacter>(Mesh->GetOwner()) : nullptr;
-		if (!IsValid(Enemy) || !Enemy->HasAuthority() || Mesh != Enemy->GetMesh()) return;
+		if (!IsValid(Enemy) || !Enemy->HasAuthority() || Mesh != Enemy->GetMesh())
+		{
+			return;
+		}
 		FGameplayEventData Payload;
 		Payload.Instigator = Enemy;
 		Payload.OptionalObject = Notify;

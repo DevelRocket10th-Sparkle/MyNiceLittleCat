@@ -11,6 +11,8 @@
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 
+#include "Characters/PlayerCharacter.h"
+
 
 UGA_MeleeAttack::UGA_MeleeAttack()
 {
@@ -43,11 +45,15 @@ void UGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
         return;
     }
 
+    const APlayerCharacter* Player = Cast<APlayerCharacter>(Character);
+    bIsSprintAttack = SprintAttackMontage && Player && Player->GetbIsRunning();
+    CurrentAttackMontage = bIsSprintAttack ? SprintAttackMontage : AttackMontage;
+
     UAbilityTask_PlayMontageAndWait* MontageTask =
         UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
             this,
             NAME_None,
-            AttackMontage
+            CurrentAttackMontage
         );
 
     if (!MontageTask)
@@ -141,14 +147,16 @@ void UGA_MeleeAttack::HandleComboClose(FGameplayEventData Payload)
 
     UAnimInstance* AnimInstance = ActorInfo->GetAnimInstance();
 
-    if (AnimInstance && AttackMontage)
+    if (AnimInstance && CurrentAttackMontage)
     {
-        AnimInstance->Montage_Stop(0.3f, AttackMontage);
+        AnimInstance->Montage_Stop(0.3f, CurrentAttackMontage);
     }
 }
 
 void UGA_MeleeAttack::HandleComboInput(FGameplayEventData Payload)
 {
+    if (bIsSprintAttack) return;
+
     if (bCanQueueCombo && ComboIndex < 2)
     {
         bComboInputQueued = true;

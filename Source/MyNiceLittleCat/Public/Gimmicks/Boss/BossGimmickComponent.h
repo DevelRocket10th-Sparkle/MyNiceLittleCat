@@ -22,7 +22,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Enemy/Boss/Components/BossPhaseGimmickInterface.h"
+#include "Enemy/Interfaces/BossPhaseGimmickInterface.h"
 #include "BossGimmickComponent.generated.h"
 
 class ABarrier;

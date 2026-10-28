@@ -11,7 +11,6 @@
 #include "AbilitySystemComponent.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
 #include "Enemy/Datas/EnemyConfigData.h"
-#include "Abilities/GameplayAbility.h"
 
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -22,18 +21,36 @@
 #include "Enemy/Components/EnemyPatternComponent.h"
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
 
-// Sets default values
+// 캐릭터의 기본 상태를 설정한다.
 AEnemyCharacter::AEnemyCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UEnemyCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
- 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+	// 캐릭터의 프레임 갱신을 활성화한다.
 	PrimaryActorTick.bCanEverTick = true;
 
-	ASC = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("ASC"));
+	/* 컴포넌트 추가 */
 
+	// GAS 관련
+	ASC = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("ASC"));
 	AttributeSet = CreateDefaultSubobject<UEnemyAttributeSet>(TEXT("Stat"));
+
+	// 전투 관련
 	PatternComponent = CreateDefaultSubobject<UEnemyPatternComponent>(TEXT("PatternComponent"));
 	MeleeTraceComponent = CreateDefaultSubobject<UEnemyMeleeTraceComponent>(TEXT("MeleeTraceComponent"));
+
+	/* 기본 회전 속도 제한 */
+
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = false;
+	bUseControllerRotationRoll = false;
+	
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	Movement->bOrientRotationToMovement = false;		// 이동 방향으로 자동 회전하지 않음
+	Movement->bUseControllerDesiredRotation = true;		// 컨트롤러가 바라보는 방향으로 회전
+	Movement->RotationRate = FRotator(0.f, 120.f, 0.f);	// 초당 최대 수평 회전 각도
+
+	// 루트 모션 재생 중에도 컨트롤러 방향으로 회전할 수 있도록 허용
+	Movement->bAllowPhysicsRotationDuringAnimRootMotion = true;
 
 }
 
@@ -59,7 +76,7 @@ float AEnemyCharacter::CalculateHealthAfterDamage(float CurrentHealth, float Max
 	return FMath::Clamp(CurrentHealth - FMath::Max(0.f, Damage), 0.f, MaxHealth);
 }
 
-// Called when the game starts or when spawned
+// 게임 시작 시 초기화한다. or when spawned
 // 컴포넌트 초기화 후 실행 준비
 void AEnemyCharacter::BeginPlay()
 {
@@ -90,32 +107,29 @@ void AEnemyCharacter::BeginPlay()
 	// Health 변경 델리게이트 구독
 	AttributeSet->OnHealthChange.AddUObject(this, &AEnemyCharacter::HandleHealthChanged);
 	
-	// 초기 Ability 부여
-	if (HasAuthority() && IsValid(ASC) && IsValid(EnemyConfig) && !EnemyConfig->PatternSet && EnemyConfig->BasicAttackAbility)
-	{
-		BasicAttackHandle =ASC->GiveAbility(
-			FGameplayAbilitySpec(
-				EnemyConfig->BasicAttackAbility,
-				1,
-				INDEX_NONE,
-				this
-			)
-		);
-	}
-
 	if (UEnemyCharacterMovementComponent* Movement = Cast<UEnemyCharacterMovementComponent>(GetCharacterMovement()))
 	{
 		Movement->InitializeHoverHeight();
 	}
 
-	// PatternSet을 지정한 Enemy만 새 패턴 경로를 사용하여 기존 테스트 BP와 공존
+	// 공격은 잡몹과 보스 모두 패턴 컴포넌트에서 실행
 	if (HasAuthority() && EnemyConfig && EnemyConfig->PatternSet
 		&& !PatternComponent->InitializePatterns(ASC, EnemyConfig->PatternSet))
 	{
 		UE_LOG(LogTemp, Error, TEXT("%s: pattern initialization failed"), *GetName());
 		return;
 	}
-	if (!HasAuthority() || !InitializeEnemyExtensions()) return;
+	// 보스 여부와 관계없이 데이터 에셋의 설정을 개체별 실행 컴포넌트에 전달한다.
+	if (HasAuthority() && EnemyConfig
+		&& !PatternComponent->ConfigureAttackInterval(EnemyConfig->MinAttackInterval, EnemyConfig->MaxAttackInterval))
+	{
+		UE_LOG(LogTemp, Error, TEXT("%s: attack interval configuration failed"), *GetName());
+		return;
+	}
+	if (!HasAuthority() || !InitializeEnemyExtensions())
+	{
+		return;
+	}
 	bEnemyInitialized = true;	// 초기화 완료 기록
 
 	// Controller가 먼저 빙의한 경우, 여기서 AI 시작 요청
@@ -124,14 +138,6 @@ void AEnemyCharacter::BeginPlay()
 		EnemyAI->TryStartEnemyAI();
 	}
 }
-
-// Called every frame
-// 활성 상태의 매 프레임 처리
-//void AEnemyCharacter::Tick(float DeltaTime)
-//{
-//	Super::Tick(DeltaTime);
-//
-//}
 
 // 설정 데이터의 능력치 및 이동 속도를 캐릭터에 적용
 void AEnemyCharacter::ApplyEnemyConfig()
@@ -189,6 +195,7 @@ void AEnemyCharacter::BeginDeath()
 	GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	GetCharacterMovement()->StopMovementImmediately();	// 현재 움직임 제거
+	GetCharacterMovement()->DisableMovement();	// 사망 시점 움직임 제거
 
 	// 사망 연출
 	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
@@ -228,11 +235,8 @@ void AEnemyCharacter::FinishDeath()
 {
 	if (LifeState != EEnemyLifeState::Dying)
 		return;
-	
-	LifeState = EEnemyLifeState::Dead;
 
-	// Capture root-motion/character velocity before stopping CharacterMovement.
-	const FVector RagdollVelocity = GetVelocity();
+	LifeState = EEnemyLifeState::Dead;
 
 	GetCharacterMovement()->StopMovementImmediately();	// 현재 움직임 제거
 	GetCharacterMovement()->DisableMovement();	// 움직임 제한 설정
@@ -249,10 +253,12 @@ void AEnemyCharacter::FinishDeath()
 	// MeshComp 충돌이 플레이어, Enemy는 무시하도록 설정
 	MeshComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 
-	// MeshComp 물리 설정 (공중에서 죽었으면 땅에 떨어져야 하기 때문)
+	// MeshComp 물리 설정 (중력을 적용해 공중의 시체가 아래로 떨어지도록 설정)
 	MeshComp->SetEnableGravity(true);
 	MeshComp->SetSimulatePhysics(true);
-	MeshComp->SetAllPhysicsLinearVelocity(RagdollVelocity);
+
+	// 이전 이동 속도는 시체에 전달하지 않음
+	MeshComp->SetAllPhysicsLinearVelocity(FVector::ZeroVector);
 	MeshComp->WakeAllRigidBodies();
 
 	UE_LOG(LogTemp, Log, TEXT("[%s] FinishDeath"), *GetName());
@@ -294,16 +300,82 @@ bool AEnemyCharacter::CanRunEnemyAI() const
 	return bEnemyInitialized && IsAlive();
 }
 
+bool AEnemyCharacter::CanReceivePlayerPush() const
+{
+	if (!IsAlive()						// 생존 상태 확인
+		|| PlayerPushMultiplier <= 0.f	// 밀려나기 배수가 유효한지 확인
+		|| !PatternComponent)			// 패턴 컴포넌트 준비 됐는지 확인
+	{
+		return false;
+	}
+
+	const bool bRecovering = PatternComponent->IsRecovering();
+
+	// 공격 실행 중에는 밀림 거부
+	// 후딜 중에는 밀림 허용
+	if (!PatternComponent->IsIdle() && !bRecovering)
+		return false;
+
+	// 후딜이 소유한 이동 잠금 1개는 밀림 판정에서만 제외
+	// 다른 이유로 추가된 이동 잠금의 경우에는 여전히 밀림 거부
+	const int32 AllowedLockCount = PatternComponent->OwnsRecoveryMovementLock() ? 1 : 0;
+
+	return AttackMovementLockCount <= AllowedLockCount;
+}
+
+void AEnemyCharacter::ApplyPlayerPush(const FVector& PushVelocity, bool bDirectPush)
+{
+	if (!CanReceivePlayerPush())
+		return;
+
+	UEnemyCharacterMovementComponent* Movement = Cast<UEnemyCharacterMovementComponent>(GetCharacterMovement());
+	if (Movement)
+	{
+		Movement->RequestPlayerPush(PushVelocity * PlayerPushMultiplier, bDirectPush);
+	}
+}
+
 // 기본 초기화 뒤 파생 캐릭터의 추가 설정 준비
 bool AEnemyCharacter::InitializeEnemyExtensions()
 {
 	return IsValid(ASC) && IsValid(AttributeSet) && IsValid(EnemyConfig);
 }
 
+bool AEnemyCharacter::IsRotationLocked() const
+{
+	// Ability 등이 명시적으로 회전을 잠근 경우
+	if (RotationLockCount > 0)
+	{
+		return true;
+	}
+
+	// 패턴 컴포넌트 준비되지 않았으면 회전 제한 없음
+	if (!IsValid(PatternComponent))
+	{
+		return false;
+	}
+
+	FEnemyPatternMovementSettings Movement;
+	AActor* Target = nullptr;
+	int64 RequestId = 0;
+
+	// 공격 중에는 패턴 정책, 후딜 중에는 항상 Stop 반환
+	if (!PatternComponent->GetActiveMovement(Movement, Target, RequestId))
+	{
+		return false;
+	}
+	
+	// 활성화된 패턴이 있으면 패턴의 Movement 정책에 따른 값 반환
+	return Movement.Policy == EEnemyPatternMovementPolicy::Stop;
+}
+
 // 공격 중 회전 제한을 존중하여 Controller 방향 반영
 void AEnemyCharacter::FaceRotation(FRotator NewControlRotation, float DeltaTime)
 {
-	if (!IsRotationLocked()) Super::FaceRotation(NewControlRotation, DeltaTime);
+	if (!IsRotationLocked())
+	{
+		Super::FaceRotation(NewControlRotation, DeltaTime);
+	}
 }
 
 // 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출
@@ -311,6 +383,9 @@ void AEnemyCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	bEnemyInitialized = false;
 	PatternComponent->StopAndInvalidate();
-	if (AttributeSet) AttributeSet->OnHealthChange.RemoveAll(this);
+	if (AttributeSet)
+	{
+		AttributeSet->OnHealthChange.RemoveAll(this);
+	}
 	Super::EndPlay(EndPlayReason);
 }
