@@ -25,6 +25,8 @@ protected:
     virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
         const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
     // ========================================================================================
+public:
+    AActor* GetCarriedActor() const { return bAttachedToCarryPoint ? HeldTarget.Get() : nullptr; }
 protected:
     UFUNCTION()
     void HandleMagnetTick(float DeltaTime);
