@@ -134,7 +134,7 @@ protected:
 	static bool IsActorOfClasses(const AActor* Actor, const TArray<TSubclassOf<AActor>>& Classes);
 
 protected:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> Mesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
