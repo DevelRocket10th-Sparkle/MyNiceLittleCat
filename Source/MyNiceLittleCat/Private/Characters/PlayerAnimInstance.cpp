@@ -5,6 +5,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
+#include "Characters/PlayerCharacter.h"
 #include "Characters/PlayerComponents/LockOnComponent.h"
 
 void UPlayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
@@ -49,35 +50,27 @@ void UPlayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
     bIsLockedOn = false;
     ULockOnComponent* LockOnComponent = OwnerPawn->FindComponentByClass<ULockOnComponent>();
-    if (LockOnComponent)
+    const APlayerCharacter* Player = Cast<APlayerCharacter>(OwnerPawn);
+    const bool bRunning = Player && Player->GetbIsRunning();
+
+    // While running, use normal locomotion (no strafe, no spine aim)
+    bIsLockedOn = LockOnComponent && LockOnComponent->IsLockedOn() && !bRunning;
+
+    float TargetAimYaw = 0.0f;
+    float TargetAimPitch = 0.0f;
+
+    AActor* Target = bIsLockedOn ? LockOnComponent->GetLockedTarget() : nullptr;
+    if (IsValid(Target))
     {
-        bIsLockedOn = LockOnComponent->IsLockedOn();
+        const FVector ToTarget = Target->GetActorLocation() - OwnerPawn->GetActorLocation();
+        FRotator RelativeRotation = ToTarget.Rotation() - OwnerPawn->GetActorRotation();
+        RelativeRotation.Normalize();
+
+        TargetAimYaw = FMath::Clamp(RelativeRotation.Yaw, -360.0f, 360.0f);
+        TargetAimPitch = FMath::Clamp(-RelativeRotation.Pitch, -35.0f, 10.0f);
     }
 
-    AActor* Target = LockOnComponent->GetLockedTarget();
-    if (!IsValid(Target))
-    {
-        return;
-    }
-
-    const FVector ToTarget =
-        Target->GetActorLocation() - OwnerPawn->GetActorLocation();
-
-    const FRotator TargetRotation = ToTarget.Rotation();
-
-    FRotator RelativeRotation =
-        TargetRotation - OwnerPawn->GetActorRotation();
-
-    RelativeRotation.Normalize();
-
-    float TargetAimYaw = FMath::Clamp(RelativeRotation.Yaw, -360.0f, 360.0f);
-    float TargetAimPitch = FMath::Clamp(-RelativeRotation.Pitch, -35.0f, 10.0f);
-
-
-
-    AimYaw = FMath::FInterpTo(
-        AimYaw, TargetAimYaw, DeltaSeconds, 20.0f);
-
-    AimPitch = FMath::FInterpTo(
-        AimPitch, TargetAimPitch, DeltaSeconds, 20.0f);
+    // Eases back to 0 when not aiming, so the spine doesn't snap
+    AimYaw = FMath::FInterpTo(AimYaw, TargetAimYaw, DeltaSeconds, 20.0f);
+    AimPitch = FMath::FInterpTo(AimPitch, TargetAimPitch, DeltaSeconds, 20.0f);
 }

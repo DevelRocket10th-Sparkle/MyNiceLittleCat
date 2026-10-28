@@ -41,6 +41,7 @@ public:
 	void SetbIsAbleToMove(bool bNewIsAbleToMove) { bIsAbleToMove = bNewIsAbleToMove; }
 	bool GetbIsDead() const { return bIsDead; }
 	void SetDodgeInvincible(bool bNewDodgeInvincible) { bIsDodgeInvincible = bNewDodgeInvincible; }
+	bool GetbIsRunning() const { return bIsRunning; }
 
 	UStaticMeshComponent* GetWeaponMesh() const{ return WeaponMesh; }
 	UStaticMeshComponent* GetPotionMesh() const { return PotionMesh; }
@@ -80,7 +81,9 @@ protected:
 
 	// 구르기 입력 시 실행 함수
 	void OnDodgeInput(const FInputActionValue& Value);
-
+	void OnDodgeReleased(const FInputActionValue& Value);
+	void StartRun();
+	void StopRun();
 	// 공격 입력 시 실행 함수
 	void OnMeleeAttackInput(const FInputActionValue& Value);
 
@@ -132,7 +135,7 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Hit Reaction",
 		meta = (ClampMin = "0.0"))
-	float InvincibilityDuration = 1.0f;
+	float InvincibilityDuration = 0.75f;
 
 	UPROPERTY(EditAnywhere, Category = "Hit Reaction",
 		meta = (ClampMin = "0.01"))
@@ -144,6 +147,24 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Hit Reaction")
 	float KnockbackUpwardStrength = 150.f;
 
+	// 해당 시간 보다 오래 홀드 시 달리기 시작 짧으면 구르기
+	UPROPERTY(EditDefaultsOnly, Category = "Movement|Run", meta = (ClampMin = "0.05"))
+	float RunHoldThreshold = 0.3f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Movement|Run", meta = (ClampMin = "1.0"))
+	float RunSpeedMultiplier = 1.3f;
+
+	FTimerHandle RunHoldTimer;
+
+	bool bIsRunning = false;
+	float WalkSpeedBeforeRun = 0.f;
+
+	// 공격 시 허락되는 회전율
+	UPROPERTY(EditDefaultsOnly, Category = "Movement|Attack")
+	float AttackTurnRate = 900.f;
+
+	FVector LastMoveInputDir = FVector::ZeroVector;
+	uint64 LastMoveInputFrame = 0;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<USpringArmComponent> CameraBoom;
@@ -155,7 +176,7 @@ protected:
 	TObjectPtr<ULockOnComponent> LockOnComponent;
 
 	UPROPERTY(EditDefaultsOnly, Category = "LockOn")
-	float BodyTurnThreshold = 20.0f;
+	float BodyTurnThreshold = 10.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "LockOn")
 	float BodyTurnInterpSpeed = 13.5f;
