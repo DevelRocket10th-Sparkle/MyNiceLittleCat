@@ -9,6 +9,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Pet/SpeechBubbleComponent.h"
+#include "Pet/GAS/Ability/GameplayAbility_PetMagnet.h"
 APetCharacter::APetCharacter()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -308,6 +309,21 @@ bool APetCharacter::IsModeAbilityActive(EPetMode _mode) const
 
 	const FGameplayAbilitySpec* Spec = AbilitySystemComponent->FindAbilitySpecFromHandle(Handle);
 	return (nullptr != Spec && true == Spec->IsActive());
+}
+
+AActor* APetCharacter::GetCarriedActor() const
+{
+	if (false == IsValid(AbilitySystemComponent.Get())) return nullptr;
+
+	FGameplayAbilitySpecHandle Handle;
+	if (false == TryGetModeAbilityHandle(EPetMode::Magnet, Handle)) return nullptr;
+
+	const FGameplayAbilitySpec* Spec = AbilitySystemComponent->FindAbilitySpecFromHandle(Handle);
+	if (nullptr == Spec || false == Spec->IsActive()) return nullptr;
+
+	const UGameplayAbility_PetMagnet* MagnetAbility = Cast<UGameplayAbility_PetMagnet>(Spec->GetPrimaryInstance());
+
+	return (true == IsValid(MagnetAbility)) ? MagnetAbility->GetCarriedActor() : nullptr;
 }
 
 void APetCharacter::GrantModeAbilities()

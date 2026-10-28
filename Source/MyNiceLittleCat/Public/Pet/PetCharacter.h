@@ -107,6 +107,9 @@ public:
 	void SetAnimationMovementStyle(EPetMovementStyle _newStyle) { AnimationMovementStyle = _newStyle; }
 
 	class USpeechBubbleComponent* GetSpeechBubble() const { return SpeechBubble; }
+
+	UFUNCTION(BlueprintPure, Category = "Pet|Carry")
+	AActor* GetCarriedActor() const;
 private:
 	void GrantModeAbilities();
 	// =============================================================================
