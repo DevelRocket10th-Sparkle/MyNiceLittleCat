@@ -13,6 +13,9 @@
 #include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 
 #if !UE_BUILD_SHIPPING
 // 테스트용 콘솔 명령: Barrier.Debug <Activate|Deactivate> [이름 일부]
@@ -175,6 +178,21 @@ void ABarrier::BeginPlay()
 	}
 }
 
+void ABarrier::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// 연결선은 생성장치에 붙어 있으므로 배리어가 먼저 사라져도 남지 않게 정리
+	for (const TPair<TObjectPtr<ABarrierGenerator>, TObjectPtr<UNiagaraComponent>>& Pair : TetherComponents)
+	{
+		if (IsValid(Pair.Value))
+		{
+			Pair.Value->DestroyComponent();
+		}
+	}
+	TetherComponents.Reset();
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void ABarrier::Activate_Implementation(AActor* Activator)
 {
 	ActivateBarrier();
@@ -207,6 +225,7 @@ void ABarrier::ActivateBarrier()
 
 	bBarrierActive = true;
 	ApplyVisualState(AppearDuration);
+	ShowTethers();
 	K2_OnBarrierStateChanged(true, false);
 	OnBarrierActivated.Broadcast(this);
 }
@@ -219,6 +238,7 @@ void ABarrier::DeactivateBarrier()
 	}
 
 	bBarrierActive = false;
+	HideAllTethers();
 	DeactivateGenerators();
 	ApplyVisualState(DeactivateDissolveDuration);
 	K2_OnBarrierStateChanged(false, false);
@@ -232,6 +252,7 @@ void ABarrier::BreakBarrier()
 	}
 
 	bBarrierActive = false;
+	HideAllTethers();
 	DeactivateGenerators();
 	ApplyVisualState(BreakDissolveDuration);
 	K2_OnBarrierStateChanged(false, true);
@@ -240,6 +261,8 @@ void ABarrier::BreakBarrier()
 
 void ABarrier::HandleGeneratorDisabled(ABarrierGenerator* Generator)
 {
+	HideTether(Generator, true);
+
 	if (bBarrierActive && AreAllGeneratorsDisabled())
 	{
 		BreakBarrier();
@@ -310,12 +333,14 @@ void ABarrier::StartDissolve(float Target, float Duration)
 		return;
 	}
 
-	SetActorTickEnabled(true);
+	bDissolving = true;
+	RefreshTickEnabled();
 }
 
 void ABarrier::FinishDissolve()
 {
-	SetActorTickEnabled(false);
+	bDissolving = false;
+	RefreshTickEnabled();
 	if (DissolveTarget >= 1.f)
 	{
 		if (Mesh)
@@ -384,14 +409,152 @@ void ABarrier::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	DissolveElapsed += DeltaSeconds;
-	const float Alpha = FMath::Clamp(DissolveElapsed / DissolveDurationCurrent, 0.f, 1.f);
-	SetDissolveValue(FMath::Lerp(DissolveFrom, DissolveTarget, Alpha));
-
-	if (Alpha >= 1.f)
+	if (bDissolving)
 	{
-		FinishDissolve();
+		DissolveElapsed += DeltaSeconds;
+		const float Alpha = FMath::Clamp(DissolveElapsed / DissolveDurationCurrent, 0.f, 1.f);
+		SetDissolveValue(FMath::Lerp(DissolveFrom, DissolveTarget, Alpha));
+
+		if (Alpha >= 1.f)
+		{
+			FinishDissolve();
+		}
 	}
+
+	// 배리어가 보스를 따라 움직이므로 끝점을 매 틱 갱신
+	UpdateTethers();
+}
+
+void ABarrier::RefreshTickEnabled()
+{
+	SetActorTickEnabled(bDissolving || !TetherComponents.IsEmpty());
+}
+
+void ABarrier::ShowTethers()
+{
+	if (!TetherEffect)
+	{
+		return;
+	}
+
+	for (ABarrierGenerator* Generator : Generators)
+	{
+		if (!IsValid(Generator) || Generator->IsDisabled() || TetherComponents.Contains(Generator))
+		{
+			continue;
+		}
+
+		// 생성장치에 붙여 두고(시작점 고정) 끝점만 매 틱 갱신. 파라미터를 넣은 뒤 켬
+		const FVector Start = GetTetherStart(Generator);
+		UNiagaraComponent* Tether = UNiagaraFunctionLibrary::SpawnSystemAttached(TetherEffect, Generator->GetRootComponent(), NAME_None,
+			Start, FRotator::ZeroRotator, EAttachLocation::KeepWorldPosition,
+			/*bAutoDestroy*/ false, /*bAutoActivate*/ false, ENCPoolMethod::None, /*bPreCullCheck*/ false);
+		if (!Tether)
+		{
+			continue;
+		}
+
+		Tether->SetVariableVec3(TetherEndParam, GetTetherEnd(Start));
+		Tether->SetVariableLinearColor(TetherColorParam, TetherColor);
+		Tether->SetVariableFloat(TetherArcHeightParam, TetherArcHeight);
+		Tether->Activate(true);
+
+		TetherComponents.Add(Generator, Tether);
+	}
+
+	RefreshTickEnabled();
+}
+
+void ABarrier::HideTether(ABarrierGenerator* Generator, bool bBroken)
+{
+	TObjectPtr<UNiagaraComponent> Tether;
+	if (!TetherComponents.RemoveAndCopyValue(Generator, Tether))
+	{
+		return;
+	}
+
+	if (IsValid(Tether))
+	{
+		if (bBroken && TetherBreakEffect)
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, TetherBreakEffect, Tether->GetComponentLocation());
+		}
+		Tether->DestroyComponent();
+	}
+
+	RefreshTickEnabled();
+}
+
+void ABarrier::HideAllTethers()
+{
+	TArray<TObjectPtr<ABarrierGenerator>> Keys;
+	TetherComponents.GetKeys(Keys);
+	for (ABarrierGenerator* Generator : Keys)
+	{
+		HideTether(Generator, false);
+	}
+	TetherComponents.Reset();
+	RefreshTickEnabled();
+}
+
+void ABarrier::UpdateTethers()
+{
+	for (const TPair<TObjectPtr<ABarrierGenerator>, TObjectPtr<UNiagaraComponent>>& Pair : TetherComponents)
+	{
+		ABarrierGenerator* Generator = Pair.Key;
+		UNiagaraComponent* Tether = Pair.Value;
+		if (!IsValid(Generator) || !IsValid(Tether))
+		{
+			continue;
+		}
+
+		const FVector Start = GetTetherStart(Generator);
+		Tether->SetWorldLocation(Start);
+		Tether->SetVariableVec3(TetherEndParam, GetTetherEnd(Start));
+	}
+}
+
+FVector ABarrier::GetTetherStart(const ABarrierGenerator* Generator) const
+{
+	if (!TetherSocketTag.IsNone())
+	{
+		TArray<UActorComponent*> Tagged = Generator->GetComponentsByTag(USceneComponent::StaticClass(), TetherSocketTag);
+		if (!Tagged.IsEmpty())
+		{
+			return CastChecked<USceneComponent>(Tagged[0])->GetComponentLocation() + TetherStartOffset;
+		}
+	}
+
+	// 태그 컴포넌트가 없으면 메시들의 바운드 윗면 중앙
+	// (액터 전체 바운드는 감지 볼륨·이펙트 등 다른 컴포넌트까지 포함해 비정상적으로 커질 수 있어 메시만 사용)
+	FBox Bounds(ForceInit);
+	TArray<UMeshComponent*> Meshes;
+	Generator->GetComponents(Meshes);
+	for (const UMeshComponent* MeshComp : Meshes)
+	{
+		if (MeshComp && MeshComp->IsRegistered())
+		{
+			Bounds += MeshComp->Bounds.GetBox();
+		}
+	}
+	const FVector Center = Bounds.IsValid ? Bounds.GetCenter() : Generator->GetActorLocation();
+	const float Top = Bounds.IsValid ? Bounds.Max.Z : Center.Z;
+	return FVector(Center.X, Center.Y, Top) + TetherStartOffset;
+}
+
+FVector ABarrier::GetTetherEnd(const FVector& TetherStart) const
+{
+	if (!Mesh)
+	{
+		return GetActorLocation();
+	}
+
+	// 배리어 메시(구)의 중심에서 시작점 쪽 표면, TetherEndUpBias만큼 꼭대기 쪽으로 올림
+	const FBoxSphereBounds& MeshBounds = Mesh->Bounds;
+	const float Radius = MeshBounds.BoxExtent.GetMin() * TetherEndRadiusScale;
+	const FVector ToStart = (TetherStart - MeshBounds.Origin).GetSafeNormal();
+	const FVector Direction = FMath::Lerp(ToStart, FVector::UpVector, TetherEndUpBias).GetSafeNormal();
+	return MeshBounds.Origin + (Direction.IsNearlyZero() ? ToStart : Direction) * Radius + TetherEndOffset;
 }
 
 void ABarrier::SetDissolveValue(float Value)
