@@ -1,18 +1,18 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BehaviorTree/BTTaskNode.h"
-#include "BTTask_TransitionPhase.generated.h"
+#include "BTTask_Enemy_TransitionPhase.generated.h"
 
 class ABossCharacter;
 
 // 전환 연출이 종료될 때까지 대기하고 다음 페이즈를 적용하는 Task
 UCLASS()
-class MYNICELITTLECAT_API UBTTask_TransitionPhase : public UBTTaskNode
+class MYNICELITTLECAT_API UBTTask_Enemy_TransitionPhase : public UBTTaskNode
 {
 	GENERATED_BODY()
 public :
 	// 보스별 Task 인스턴스와 결과 확인 Tick 설정
-	UBTTask_TransitionPhase();
+	UBTTask_Enemy_TransitionPhase();
 protected :
 	// 기존 공격의 종료를 확인한 뒤 전환 GA 시작
 	// Task 시작 시 행동을 요청하고 비동기 완료까지 InProgress 반환
