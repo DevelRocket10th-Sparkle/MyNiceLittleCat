@@ -508,7 +508,7 @@ void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
 	if (bIsDead || bIsAbleToAttack == false) return;
 
     LastMoveInputFrame = 0;
-
+    LastMoveInputDir = GetActorRotation().Vector();
     for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
     {
         if (Spec.Ability &&
