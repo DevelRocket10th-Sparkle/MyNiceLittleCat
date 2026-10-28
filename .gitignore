@@ -101,3 +101,11 @@ mcp.json
 # 그 외
 .codex/*
 Content/_ExternalAssets/*
+/Content/__ExternalObjects__/_ExternalAssets/ThirdPerson/Lvl_ThirdPerson
+/Content/__ExternalActors__/_ExternalAssets/ThirdPerson/Lvl_ThirdPerson
+/Content/LevelPrototyping
+/Content/Input/Touch
+/Content/Input
+/Content/Characters/Mannequins/Textures
+/Content/Characters/Mannequins
+/Claude outputs

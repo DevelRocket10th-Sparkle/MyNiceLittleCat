@@ -24,6 +24,12 @@ void UBossGimmickComponent::ReceiveLevelGimmickReferences_Implementation(const T
 	AreaCenter = InAreaCenter;
 }
 
+AActor* UBossGimmickComponent::GetPhaseActor(FName Key) const
+{
+	const TObjectPtr<AActor>* FoundActor = PhaseActors.Find(Key);
+	return FoundActor ? FoundActor->Get() : nullptr;
+}
+
 bool UBossGimmickComponent::EnterBossPhase_Implementation(FName PhaseId, int64 PhaseExecutionId)
 {
 	// 이전 페이즈 기믹이 남아 있으면 먼저 정리
@@ -114,6 +120,32 @@ void UBossGimmickComponent::StopAll()
 	{
 		CoinPattern->StopPattern(bClearCoinsOnStop);
 	}
+
+	// 페이즈 진입·재도전 때 항상 첫 순번부터
+	CurrentLaserTurn = FirstLaserTurn;
+}
+
+bool UBossGimmickComponent::IsLaserAlternationPhase() const
+{
+	const ABossCharacter* Boss = Cast<ABossCharacter>(GetOwner());
+	const UBossPhaseComponent* PhaseComponent = Boss ? Boss->GetPhaseComponent() : nullptr;
+	return PhaseComponent && LaserAlternationPhaseIds.Contains(PhaseComponent->GetCurrentPhaseId());
+}
+
+bool UBossGimmickComponent::IsLaserTurnAllowed(EBossLaserTurn Turn) const
+{
+	return !IsLaserAlternationPhase() || CurrentLaserTurn == Turn;
+}
+
+void UBossGimmickComponent::CompleteLaserTurn(EBossLaserTurn FinishedTurn)
+{
+	if (!IsLaserAlternationPhase() || CurrentLaserTurn != FinishedTurn)
+	{
+		return;
+	}
+
+	CurrentLaserTurn = FinishedTurn == EBossLaserTurn::Grid ? EBossLaserTurn::Beam : EBossLaserTurn::Grid;
+	UE_LOG(LogTemp, Log, TEXT("[BossGimmick] 레이저 순번 → %s"), CurrentLaserTurn == EBossLaserTurn::Grid ? TEXT("격자") : TEXT("단일"));
 }
 
 UMagneticCoinPatternComponent* UBossGimmickComponent::GetCoinPattern() const

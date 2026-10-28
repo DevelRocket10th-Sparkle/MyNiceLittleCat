@@ -374,17 +374,17 @@ void ULockOnComponent::UpdateReticle()
     FVector Extent;
     Target->GetActorBounds(false, Origin, Extent);
 
-    DrawDebugSphere(
-        GetWorld(),
-        Origin + FVector(0.f, 0.f, Extent.Z + 20.f),
-        20.f,
-        12,
-        bIsLockedOn ? FColor::Red : FColor::Green,
-        false,
-        0.15f,
-        0,
-        2.f
-    );
+    //DrawDebugSphere(
+    //    GetWorld(),
+    //    Origin + FVector(0.f, 0.f, Extent.Z + 20.f),
+    //    20.f,
+    //    12,
+    //    bIsLockedOn ? FColor::Red : FColor::Green,
+    //    false,
+    //    0.15f,
+    //    0,
+    //    2.f
+    //);
 }
 
 

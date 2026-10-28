@@ -30,6 +30,10 @@ struct FCheckpointSaveData
 	UPROPERTY(BlueprintReadOnly, Category = "Checkpoint")
 	FName CheckpointId;
 
+	// 빠른 이동 목록에 표시할 이름
+	UPROPERTY(BlueprintReadOnly, Category = "Checkpoint")
+	FText DisplayName;
+
 	// 부활 위치 (발 위치 기준) · 방향
 	UPROPERTY(BlueprintReadOnly, Category = "Checkpoint")
 	FTransform RespawnTransform;
@@ -43,13 +47,17 @@ class MYNICELITTLECAT_API UGameProgressSaveGame : public USaveGame
 public:
 	// 세이브 구조 버전 (항목 추가·변경 시 올림)
 	UPROPERTY(BlueprintReadOnly, Category = "Save")
-	int32 SaveVersion = 1;
+	int32 SaveVersion = 2;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Save")
 	FDateTime SavedTime;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Save")
 	FCheckpointSaveData LastCheckpoint;
+
+	// 발견한 체크포인트 (빠른 이동 목적지, 모든 맵)
+	UPROPERTY(BlueprintReadOnly, Category = "Save")
+	TArray<FCheckpointSaveData> DiscoveredCheckpoints;
 
 	// 진행 플래그 (스테이지 클리어, 보스 처치 등). 이름 규칙은 TODO(합의)
 	UPROPERTY(BlueprintReadOnly, Category = "Save")
