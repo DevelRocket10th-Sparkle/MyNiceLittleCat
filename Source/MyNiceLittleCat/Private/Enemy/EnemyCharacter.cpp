@@ -203,6 +203,7 @@ void AEnemyCharacter::BeginDeath()
 	GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	GetCharacterMovement()->StopMovementImmediately();	// 현재 움직임 제거
+	GetCharacterMovement()->DisableMovement();	// 사망 시점 움직임 제거
 
 	// 사망 연출
 	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
@@ -242,11 +243,8 @@ void AEnemyCharacter::FinishDeath()
 {
 	if (LifeState != EEnemyLifeState::Dying)
 		return;
-	
-	LifeState = EEnemyLifeState::Dead;
 
-	// 이동을 중지하기 전에 루트 모션과 캐릭터의 속도를 저장한다.
-	const FVector RagdollVelocity = GetVelocity();
+	LifeState = EEnemyLifeState::Dead;
 
 	GetCharacterMovement()->StopMovementImmediately();	// 현재 움직임 제거
 	GetCharacterMovement()->DisableMovement();	// 움직임 제한 설정
@@ -263,10 +261,12 @@ void AEnemyCharacter::FinishDeath()
 	// MeshComp 충돌이 플레이어, Enemy는 무시하도록 설정
 	MeshComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 
-	// MeshComp 물리 설정 (공중에서 죽었으면 땅에 떨어져야 하기 때문)
+	// MeshComp 물리 설정 (중력을 적용해 공중의 시체가 아래로 떨어지도록 설정)
 	MeshComp->SetEnableGravity(true);
 	MeshComp->SetSimulatePhysics(true);
-	MeshComp->SetAllPhysicsLinearVelocity(RagdollVelocity);
+
+	// 이전 이동 속도는 시체에 전달하지 않음
+	MeshComp->SetAllPhysicsLinearVelocity(FVector::ZeroVector);
 	MeshComp->WakeAllRigidBodies();
 
 	UE_LOG(LogTemp, Log, TEXT("[%s] FinishDeath"), *GetName());
@@ -306,6 +306,41 @@ UEnemyPatternComponent* AEnemyCharacter::GetPatternComponent() const
 bool AEnemyCharacter::CanRunEnemyAI() const
 {
 	return bEnemyInitialized && IsAlive();
+}
+
+bool AEnemyCharacter::CanReceivePlayerPush() const
+{
+	if (!IsAlive()						// 생존 상태 확인
+		|| PlayerPushMultiplier <= 0.f	// 밀려나기 배수가 유효한지 확인
+		|| !PatternComponent)			// 패턴 컴포넌트 준비 됐는지 확인
+	{
+		return false;
+	}
+
+	const bool bRecovering = PatternComponent->IsRecovering();
+
+	// 공격 실행 중에는 밀림 거부
+	// 후딜 중에는 밀림 허용
+	if (!PatternComponent->IsIdle() && !bRecovering)
+		return false;
+
+	// 후딜이 소유한 이동 잠금 1개는 밀림 판정에서만 제외
+	// 다른 이유로 추가된 이동 잠금의 경우에는 여전히 밀림 거부
+	const int32 AllowedLockCount = PatternComponent->OwnsRecoveryMovementLock() ? 1 : 0;
+
+	return AttackMovementLockCount <= AllowedLockCount;
+}
+
+void AEnemyCharacter::ApplyPlayerPush(const FVector& PushVelocity, bool bDirectPush)
+{
+	if (!CanReceivePlayerPush())
+		return;
+
+	UEnemyCharacterMovementComponent* Movement = Cast<UEnemyCharacterMovementComponent>(GetCharacterMovement());
+	if (Movement)
+	{
+		Movement->RequestPlayerPush(PushVelocity * PlayerPushMultiplier, bDirectPush);
+	}
 }
 
 // 기본 초기화 뒤 파생 캐릭터의 추가 설정 준비

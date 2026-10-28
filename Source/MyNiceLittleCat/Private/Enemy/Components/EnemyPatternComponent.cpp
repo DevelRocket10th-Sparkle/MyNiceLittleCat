@@ -694,13 +694,3 @@ void UEnemyPatternComponent::ClearGrantedAbilities()
 	PatternHandles.Reset();
 	AvailablePatterns.Reset();
 }
-
-
-// 게임 시작 시 초기화한다.
-//void UEnemyPatternComponent::BeginPlay()
-//{
-//	Super::BeginPlay();
-//
-//	// ...
-//	
-//}

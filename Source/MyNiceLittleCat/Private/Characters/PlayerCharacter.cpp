@@ -21,6 +21,10 @@
 #include "Characters/GAS/GA_MeleeAttack.h"
 #include "Characters/PlayerComponents/LockOnComponent.h"
 
+#include "Enemy/EnemyCharacter.h"
+#include "Engine/World.h"
+#include "Engine/OverlapResult.h"
+
 // Sets default values
 APlayerCharacter::APlayerCharacter()
 {
@@ -338,6 +342,10 @@ void APlayerCharacter::Move(const FInputActionValue& Value)
     const FVector RightDirection =
         FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
+    // 입력에 따른 Enemy 밀어내기 적용
+    const FVector WorldMoveInput = ForwardDirection * Input.Y + RightDirection * Input.X;
+    PushNearbyEnemies(WorldMoveInput);
+
     AddMovementInput(ForwardDirection, Input.Y);
     AddMovementInput(RightDirection, Input.X);
 }
@@ -651,5 +659,65 @@ void APlayerCharacter::OnDeathMontageNotify(FName NotifyName, const FBranchingPo
     if (NotifyName == TEXT("DropWeapon"))
     {
         DropWeapon();
+    }
+}
+
+void APlayerCharacter::PushNearbyEnemies(const FVector& WorldMoveInput)
+{
+    // WorldMoveInput: 카메라 기준의 2차원 입력을 월드 공간의 이동 방향으로 바꾼 벡터
+    const FVector Direction = WorldMoveInput.GetSafeNormal2D();
+
+    if (Direction.IsNearlyZero())
+        return;
+
+    const float Strength = FMath::Clamp(WorldMoveInput.Size2D(), 0.f, 1.f);
+
+    const UCapsuleComponent* Capsule = GetCapsuleComponent();
+
+    const float Radius = Capsule->GetScaledCapsuleRadius() + EnemyPushContactMargin;    // 실제 캡슐보다 여유 폭만큼 넓은 탐색 반경
+    const float HalfHeight = FMath::Max(Capsule->GetScaledCapsuleHalfHeight(), Radius); // 탐색 캡슐의 절반 높이가 반경보다 작아지지 않도록 보정
+
+    FCollisionObjectQueryParams Objects;
+    Objects.AddObjectTypesToQuery(ECC_Pawn);    // Object Type이 Pawn인 컴포넌트만 탐색
+
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(this);               // 이번 겹침 탐색 결과에서 자기 자신 제외
+
+    TArray<FOverlapResult> Results;
+    // 지정한 캡슐 모양의 영역과 겹친느 컴포넌트 조회
+    GetWorld()->OverlapMultiByObjectType(
+        Results,
+        GetActorLocation(),
+        FQuat::Identity,
+        Objects,
+        FCollisionShape::MakeCapsule(Radius, HalfHeight),
+        Params
+    );
+
+    TSet<AEnemyCharacter*> Processed;	// 이번 탐색에서 이미 확인한 Enemy를 기록해 중복 요청 방지
+    for (const FOverlapResult& Result : Results)
+    {
+        AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(Result.GetActor());
+
+        // 유효한 Enemy가 아니거나 이미 확인한 대상이면 건너뜀
+        if (!IsValid(Enemy) || Processed.Contains(Enemy))
+            continue;
+
+        // 충돌체가 유효하면 처리 목록에 추가
+        Processed.Add(Enemy);
+
+        // 충돌한 Enemy와 자신의 위치 차이와 방향 알아내기
+        const FVector Offset = Enemy->GetActorLocation() - GetActorLocation();
+        const FVector ToEnemy = Offset.GetSafeNormal2D();
+
+        // 이동 입력 방향과 Enemy가 있는 방향의 일치도
+        // 정면일수록 1, 옆이면 0, 반대편이면 -1
+        const float Alignment = FVector::DotProduct(Direction, ToEnemy);
+
+        // 이동 방향 앞쪽에 있는 Enemy만 밀기 대상으로 선택
+        if (Alignment <= MinPushAlignment)
+            continue;
+
+        Enemy->ApplyPlayerPush(ToEnemy * EnemyPushSpeed * Strength * Alignment, true);
     }
 }
