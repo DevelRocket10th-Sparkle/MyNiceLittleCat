@@ -24,31 +24,18 @@ ABossCharacter::ABossCharacter(const FObjectInitializer& ObjectInitializer)
 // 초기화와 생존 및 보스방 전투 상태를 포함한 AI 실행 가능 여부 확인
 bool ABossCharacter::CanRunEnemyAI() const
 {
-	//return Super::CanRunEnemyAI() && bEncounterActive;
 	return Super::CanRunEnemyAI() && IsEncounterActive() && !PhaseComponent->IsCurrentPhaseLogOnly();
 }
 
 // Health 변경 전에 무적 및 페이즈 체력 하한을 반영
 float ABossCharacter::CalculateHealthAfterDamage(float CurrentHealth, float MaxHealth, float Damage) const
 {
-	//// 초기화 중, 전투 대기 중, 사망 중에는 피해 차단
-	//if (!IsAlive() || !bEncounterActive)
-	//{
-	//	return CurrentHealth;
-	//}
-
-	//if (IsDamageBlocked())
-	//{
-	//	return CurrentHealth;
-	//}
-
-	//const float HealthFloor = PhaseComponent->GetDamageHealthFloor(MaxHealth);
-
-	//return 0.0f;
 	if (!IsAlive() || !IsEncounterActive() || !PhaseComponent->IsActive()
 		|| PhaseComponent->IsCurrentPhaseLogOnly()) return CurrentHealth;
+
 	// 이미 하한보다 낮은 경우 체력을 올리지 않도록 현재 체력과 비교
 	const float EffectiveFloor = FMath::Min(CurrentHealth, PhaseComponent->GetDamageHealthFloor(MaxHealth));
+
 	return FMath::Clamp(CurrentHealth - FMath::Max(0.f, Damage), EffectiveFloor, CurrentHealth);
 }
 // 기본 초기화 뒤 파생 캐릭터의 추가 설정 준비

@@ -28,13 +28,6 @@ public:
 	// Sets default values for this actor's properties
 	ATest_Enemy_EffectsCauser();
 
-protected:
-	// 게임 시작 시 초기화한다. or when spawned
-	virtual void BeginPlay() override;
-
-	// 진행 중인 전환 시퀀스의 상태를 확인한다.
-	virtual void Tick(float DeltaTime) override;
-
 public :
 
 	UFUNCTION(CallInEditor, Category = "GAS")

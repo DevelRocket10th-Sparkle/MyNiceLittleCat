@@ -16,20 +16,6 @@ ATest_Enemy_EffectsCauser::ATest_Enemy_EffectsCauser()
 
 }
 
-// 게임 시작 시 초기화한다. or when spawned
-void ATest_Enemy_EffectsCauser::BeginPlay()
-{
-	Super::BeginPlay();
-
-}
-
-// 진행 중인 전환 시퀀스의 상태를 확인한다.
-void ATest_Enemy_EffectsCauser::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-
-}
-
 void ATest_Enemy_EffectsCauser::ApplyGameplayEffect()
 {
 	if (!Source || !Target)

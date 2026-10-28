@@ -21,9 +21,6 @@ UEnemyPhaseComponent::UEnemyPhaseComponent()
 	// ...
 }
 
-
-// 게임 시작 시 초기화한다.
-// 컴포넌트 초기화 후 실행 준비
 //void UEnemyPhaseComponent::BeginPlay()
 //{
 //	Super::BeginPlay();
