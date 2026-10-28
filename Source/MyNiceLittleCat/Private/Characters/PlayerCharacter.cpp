@@ -507,6 +507,8 @@ void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
 
 	if (bIsDead || bIsAbleToAttack == false) return;
 
+    LastMoveInputFrame = 0;
+
     for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
     {
         if (Spec.Ability &&
