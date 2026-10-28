@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
@@ -10,12 +10,9 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "Enemy/Datas/EnemyPatternExecutionSettings.h"
-// 기존 에셋 이전용 필드의 타입; 공통 실행 로직에서는 근접 설정을 사용하지 않음
-#include "Enemy/Datas/EnemyMeleePatternSettings.h"
 #include "EnemyPatternSetData.generated.h"
 
 class UGameplayAbility;
-class UAnimMontage;
 
 UENUM(BlueprintType)
 enum class EEnemyPatternResult : uint8
@@ -25,6 +22,49 @@ enum class EEnemyPatternResult : uint8
 	Completed,
 	Cancelled,
 	Failed
+};
+
+UENUM(BlueprintType)
+enum class EEnemyPatternMovementPolicy : uint8
+{
+	Stop,
+	ChaseTarget,
+	AbilityDriven
+};
+
+USTRUCT(BlueprintType)
+struct FEnemyPatternMovementSettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	EEnemyPatternMovementPolicy Policy = EEnemyPatternMovementPolicy::Stop;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0", Units="cm", EditCondition="Policy == EEnemyPatternMovementPolicy::ChaseTarget"))
+	float AcceptanceRadius = 150.f;
+
+	// 허용 반경이 0이어도 이 옵션이 켜져 있으면 캡슐 크기를 도착 판정에 더한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(EditCondition="Policy == EEnemyPatternMovementPolicy::ChaseTarget"))
+	bool bIncludeAgentRadius = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(EditCondition="Policy == EEnemyPatternMovementPolicy::ChaseTarget"))
+	bool bIncludeGoalRadius = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(EditCondition="Policy == EEnemyPatternMovementPolicy::ChaseTarget"))
+	bool bAllowPartialPath = false;
+
+	bool IsValid() const
+	{
+		return static_cast<uint8>(Policy) <= static_cast<uint8>(EEnemyPatternMovementPolicy::AbilityDriven)
+			&& FMath::IsFinite(AcceptanceRadius) && AcceptanceRadius >= 0.f;
+	}
+
+	bool operator==(const FEnemyPatternMovementSettings& Other) const
+	{
+		return Policy == Other.Policy && AcceptanceRadius == Other.AcceptanceRadius
+			&& bIncludeAgentRadius == Other.bIncludeAgentRadius && bIncludeGoalRadius == Other.bIncludeGoalRadius
+			&& bAllowPartialPath == Other.bAllowPartialPath;
+	}
 };
 
 USTRUCT(BlueprintType)
@@ -49,16 +89,6 @@ struct FEnemyPatternDefinition
 	UPROPERTY(EditDefaultsOnly, Instanced, BlueprintReadOnly, Category = "Execution")
 	TObjectPtr<UEnemyPatternExecutionSettings> ExecutionSettings;
 
-	// 캐릭터 및 패턴별 공격 몽타주
-	// 이전 에셋 호환용: PostLoad에서 ExecutionSettings로 이전
-	UPROPERTY()
-	TObjectPtr<UAnimMontage> Montage;
-
-	// 공격 몽타주 시작 섹션; None이면 기본 위치
-	// 이전 에셋 호환용: 새 설정은 GA 전용 객체에서 편집
-	UPROPERTY()
-	FName MontageSection;
-
 	// 타깃과의 수평 최소 거리
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.0"))
 	float MinRange = 0.f;
@@ -74,6 +104,13 @@ struct FEnemyPatternDefinition
 	// 자동 선택 확률의 상대 가중치; 0이면 직접 지정으로만 실행
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.0"))
 	float Weight = 1.f;
+
+	// GA 정상 종료 후 다음 패턴을 막는 추가 대기 시간이다. 몽타주의 후딜과 합산된다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.0", Units = "s"))
+	float RecoverySeconds = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Movement")
+	FEnemyPatternMovementSettings Movement;
 
 	// 타깃 없이 아레나 전체에 실행할 수 있는 패턴인지 설정
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
@@ -100,16 +137,6 @@ struct FEnemyPatternDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.1"))
 	float MaxExecutionSeconds = 15.f;
 
-	// NotifyState 구간 동안 각 소켓의 이전 위치에서 현재 위치까지 Sphere Sweep
-	UPROPERTY(Instanced)
-	TArray<TObjectPtr<UEnemyMeleeTraceSettings>> MeleeTraceSettings;
-	// 기존 에셋의 설정을 잃지 않도록 PostLoad에서 이전. 에디터에는 표시하지 않음.
-	UPROPERTY()
-	TArray<FEnemyMeleeTraceDefinition> MeleeTraces;
-	// SetByCaller 피해량에 곱할 공격력 배율
-	// 이전 에셋 호환용 배율; 현재 근접 GA는 전용 설정 값을 사용
-	UPROPERTY()
-	float DamageMultiplier = 1.f;
 };
 
 /**
@@ -121,8 +148,9 @@ class MYNICELITTLECAT_API UEnemyPatternSetData : public UDataAsset
 	GENERATED_BODY()
 
 public :
-
+	virtual void Serialize(FArchive& Ar) override;
 	virtual void PostLoad() override;
+
 #if WITH_EDITOR
 	virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
 #endif

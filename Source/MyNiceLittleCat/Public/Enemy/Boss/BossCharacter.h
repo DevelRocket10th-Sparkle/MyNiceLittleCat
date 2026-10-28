@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
@@ -10,11 +10,11 @@
 #include "CoreMinimal.h"
 #include "Enemy/EnemyCharacter.h"
 
-#include "Enemy/Boss/Datas/BossPhaseConfigData.h"
+#include "Enemy/Datas/EnemyPhaseConfigData.h"
 
 #include "BossCharacter.generated.h"
 
-class UBossPhaseComponent;
+class UEnemyPhaseComponent;
 class ABossCharacter;
 
 /**
@@ -48,7 +48,7 @@ public :
 	// Getter: 보스방 전투가 진행 중인지 확인
 	bool IsEncounterActive() const { return bEncounterActive && !bFailurePending; }
 	// Getter: 페이즈 실행 컴포넌트
-	UBossPhaseComponent* GetPhaseComponent() const { return PhaseComponent; }
+	UEnemyPhaseComponent* GetPhaseComponent() const { return PhaseComponent; }
 	// 전환 완료 후 무적과 공격 차단을 해제하고 Blackboard 갱신
 	void FinishPhaseTransition();
 	// 현재 보스 상태를 Blackboard 판단 값에 반영
@@ -87,10 +87,11 @@ protected :
 
 	// 보스 페이즈의 체력 하한 및 전환 상태 관리
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss")
-	TObjectPtr<UBossPhaseComponent> PhaseComponent;
+	TObjectPtr<UEnemyPhaseComponent> PhaseComponent;
 	// 페이즈 순서 및 전환 보호 설정
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss")
-	TObjectPtr<UBossPhaseConfigData> PhaseConfig;
+	TObjectPtr<UEnemyPhaseConfigData> PhaseConfig;
+
 
 private :
 	// 보스에 부착된 기믹 계약 구현 컴포넌트 하나를 찾아 연결; 실제 기믹 클래스는 별도 담당
