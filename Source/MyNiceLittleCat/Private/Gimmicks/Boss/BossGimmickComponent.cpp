@@ -65,21 +65,46 @@ bool UBossGimmickComponent::EnterBossPhase_Implementation(FName PhaseId, int64 P
 		UE_LOG(LogTemp, Log, TEXT("[BossGimmick] %s 진입: 배리어 %s 활성"), *PhaseId.ToString(), *Barrier->GetName());
 	}
 
-	if (CoinPatternPhaseIds.Contains(PhaseId))
-	{
-		if (UMagneticCoinPatternComponent* CoinPattern = GetCoinPattern())
-		{
-			CoinPattern->SetSpawnCenterActor(AreaCenter);
-			CoinPattern->StartPattern();
-			UE_LOG(LogTemp, Log, TEXT("[BossGimmick] %s 진입: 자성 코인 패턴 시작"), *PhaseId.ToString());
-		}
-		else
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[BossGimmick] %s: UMagneticCoinPatternComponent가 없어 코인 패턴을 건너뜁니다."), *GetNameSafe(GetOwner()));
-		}
-	}
+	StartCoinPattern(PhaseId);
 
 	return true;
+}
+
+void UBossGimmickComponent::StartCoinPattern(FName PhaseId)
+{
+	const FName* ActorKey = CoinPatternPhases.Find(PhaseId);
+	if (!ActorKey)
+	{
+		return;
+	}
+
+	UMagneticCoinPatternComponent* CoinPattern = nullptr;
+	if (ActorKey->IsNone())
+	{
+		// 보스 자신의 컴포넌트: 영역 중심은 매니저가 넘긴 중심
+		CoinPattern = GetOwner() ? GetOwner()->FindComponentByClass<UMagneticCoinPatternComponent>() : nullptr;
+		if (CoinPattern)
+		{
+			CoinPattern->SetSpawnCenterActor(AreaCenter);
+		}
+	}
+	else
+	{
+		// 레벨 액터의 컴포넌트: 영역 중심은 그 액터 (인스턴스 설정 유지)
+		const AActor* PatternActor = GetPhaseActor(*ActorKey);
+		CoinPattern = PatternActor ? PatternActor->FindComponentByClass<UMagneticCoinPatternComponent>() : nullptr;
+	}
+
+	if (!CoinPattern)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BossGimmick] %s: %s의 코인 패턴을 찾지 못해 건너뜁니다 (키 %s). 매니저 PhaseGimmickActors 또는 보스 컴포넌트를 확인하세요."),
+			*GetNameSafe(GetOwner()), *PhaseId.ToString(), *ActorKey->ToString());
+		return;
+	}
+
+	ActiveCoinPattern = CoinPattern;
+	CoinPattern->StartPattern();
+	UE_LOG(LogTemp, Log, TEXT("[BossGimmick] %s 진입: 자성 코인 패턴 시작 (%s)"), *PhaseId.ToString(), *GetNameSafe(CoinPattern->GetOwner()));
 }
 
 void UBossGimmickComponent::StopBossGimmicks_Implementation()
@@ -121,10 +146,11 @@ void UBossGimmickComponent::StopAll()
 	ActivePhaseId = NAME_None;
 	ActivePhaseExecutionId = 0;
 
-	if (UMagneticCoinPatternComponent* CoinPattern = GetCoinPattern())
+	if (IsValid(ActiveCoinPattern))
 	{
-		CoinPattern->StopPattern(bClearCoinsOnStop);
+		ActiveCoinPattern->StopPattern(bClearCoinsOnStop);
 	}
+	ActiveCoinPattern = nullptr;
 
 	// 페이즈 진입·재도전 때 항상 첫 순번부터
 	CurrentLaserTurn = FirstLaserTurn;
@@ -151,11 +177,6 @@ void UBossGimmickComponent::CompleteLaserTurn(EBossLaserTurn FinishedTurn)
 
 	CurrentLaserTurn = FinishedTurn == EBossLaserTurn::Grid ? EBossLaserTurn::Beam : EBossLaserTurn::Grid;
 	UE_LOG(LogTemp, Log, TEXT("[BossGimmick] 레이저 순번 → %s"), CurrentLaserTurn == EBossLaserTurn::Grid ? TEXT("격자") : TEXT("단일"));
-}
-
-UMagneticCoinPatternComponent* UBossGimmickComponent::GetCoinPattern() const
-{
-	return GetOwner() ? GetOwner()->FindComponentByClass<UMagneticCoinPatternComponent>() : nullptr;
 }
 
 void UBossGimmickComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)

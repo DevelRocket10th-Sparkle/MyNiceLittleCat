@@ -9,7 +9,8 @@
 /// - Interval:     SpawnInterval마다 한 웨이브(CoinsPerWave개)
 /// - WhenDepleted: 남은 코인(낙하 중 + 바닥)이 RespawnThreshold 이하가 된 뒤 RespawnDelay가 지나면 한 웨이브
 /// 두 방식 모두 남은 코인이 MaxActiveCoins 이상이면 더 스폰하지 않습니다.
-/// 보스전에서는 UBossGimmickComponent가 배리어 페이즈 진입 시 StartPattern, 페이즈 종료 시 StopPattern을 호출합니다.
+/// 보스전에서는 UBossGimmickComponent가 CoinPatternPhases의 페이즈 진입 시 StartPattern, 페이즈 종료 시 StopPattern을 호출합니다.
+/// 경기장마다 설정을 다르게 하려면 AMagneticCoinPatternActor(레벨 배치)에 붙은 것을 사용합니다.
 
 #pragma once
 
