@@ -136,7 +136,7 @@ protected:
 	float BlinkInterval = 0.08f;
 
 	UPROPERTY(EditAnywhere, Category = "Hit Reaction")
-	float KnockbackStrength = 800.f;
+	float KnockbackStrength = 700.f;
 
 	UPROPERTY(EditAnywhere, Category = "Hit Reaction")
 	float KnockbackUpwardStrength = 150.f;

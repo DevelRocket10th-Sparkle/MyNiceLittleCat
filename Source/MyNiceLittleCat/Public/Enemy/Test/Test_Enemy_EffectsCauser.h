@@ -29,10 +29,10 @@ public:
 	ATest_Enemy_EffectsCauser();
 
 protected:
-	// Called when the game starts or when spawned
+	// 게임 시작 시 초기화한다. or when spawned
 	virtual void BeginPlay() override;
 
-	// Called every frame
+	// 진행 중인 전환 시퀀스의 상태를 확인한다.
 	virtual void Tick(float DeltaTime) override;
 
 public :

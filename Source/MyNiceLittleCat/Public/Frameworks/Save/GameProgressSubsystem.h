@@ -50,6 +50,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Progress|Checkpoint")
 	const TArray<FCheckpointSaveData>& GetDiscoveredCheckpoints() const { return CurrentSave->DiscoveredCheckpoints; }
 
+	UFUNCTION(BlueprintCallable, Category = "Progress|Checkpoint")
+	void UnlockCheckpoint(FName LevelName, FName CheckpointId, const FText& DisplayName, bool bSave = true);
+
 	// 저장된 체크포인트 데이터를 그대로 마지막 체크포인트로 지정 (다른 맵 체크포인트로 빠른 이동할 때)
 	void SetCheckpointData(const FCheckpointSaveData& Data, bool bSave = true);
 

@@ -1,41 +1,54 @@
-﻿#include "Enemy/Datas/EnemyPatternSetData.h"
-#include "Animation/AnimMontage.h"
+#include "Enemy/Datas/EnemyPatternSetData.h"
+#include "Serialization/CustomVersion.h"
+#include "Enemy/Datas/MoneyGunPatternSettings.h"
+#include "Enemy/GAS/Abilities/GA_Enemy_RushAttack.h"
 
-// 기존 에셋의 근접 필드만 전용 설정으로 이전; 이미 전용 설정이 있으면 덮어쓰지 않음
+namespace EnemyPatternSetVersion
+{
+	const FGuid Guid(0x9D3E658A, 0xAB414EE8, 0xB37D17B0, 0x13604BF2);
+	constexpr int32 CommonRecovery = 1;
+	constexpr int32 CommonMovement = 2;
+	const FCustomVersionRegistration Registration(Guid, CommonMovement, TEXT("EnemyPatternSetVersion"));
+}
+
+void UEnemyPatternSetData::Serialize(FArchive& Ar)
+{
+	Super::Serialize(Ar);
+	Ar.UsingCustomVersion(EnemyPatternSetVersion::Guid);
+}
+
 void UEnemyPatternSetData::PostLoad()
 {
 	Super::PostLoad();
-	for (FEnemyPatternDefinition& Pattern : Patterns)
+	if (GetLinkerCustomVersion(EnemyPatternSetVersion::Guid) < EnemyPatternSetVersion::CommonRecovery)
 	{
-		if (!Pattern.ExecutionSettings && (Pattern.Montage || !Pattern.MeleeTraceSettings.IsEmpty() || !Pattern.MeleeTraces.IsEmpty()))
+		// 저장 형식이 바뀐 에셋만 이전하여 사용자가 새 위치에 지정한 0초도 보존한다.
+		for (FEnemyPatternDefinition& Pattern : Patterns)
 		{
-			// 기존 몽타주와 피해 배율을 보관할 근접 전용 객체
-			UEnemyMeleePatternSettings* Melee = NewObject<UEnemyMeleePatternSettings>(this, NAME_None, RF_Transactional);
-			Melee->Montage = Pattern.Montage;
-			Melee->MontageSection = Pattern.MontageSection;
-			Melee->DamageMultiplier = Pattern.DamageMultiplier;
-			for (const UEnemyMeleeTraceSettings* Previous : Pattern.MeleeTraceSettings)
-				if (Previous) Melee->MeleeTraceSettings.Add(DuplicateObject<UEnemyMeleeTraceSettings>(Previous, Melee));
-			if (Melee->MeleeTraceSettings.IsEmpty())
+			if (Pattern.ExecutionSettings)
 			{
-				for (const FEnemyMeleeTraceDefinition& Previous : Pattern.MeleeTraces)
-				{
-					UEnemyMeleeTraceSettings* Settings = NewObject<UEnemyMeleeTraceSettings>(Melee, NAME_None, RF_Transactional);
-					Settings->SourceName = Previous.SourceName;
-					Settings->SocketNames = Previous.SocketNames;
-					Settings->Radius = Previous.Radius;
-#if WITH_EDITORONLY_DATA
-					Settings->SocketSourceMesh = Previous.SocketSourceMesh;
-#endif
-					Melee->MeleeTraceSettings.Add(Settings);
-				}
+				Pattern.ExecutionSettings->ConditionalPostLoad();
+				Pattern.RecoverySeconds = Pattern.ExecutionSettings->RecoverySeconds;
 			}
-			Pattern.ExecutionSettings = Melee;
 		}
-		Pattern.Montage = nullptr;
-		Pattern.MontageSection = NAME_None;
-		Pattern.MeleeTraceSettings.Reset();
-		Pattern.MeleeTraces.Reset();
+	}
+	if (GetLinkerCustomVersion(EnemyPatternSetVersion::Guid) < EnemyPatternSetVersion::CommonMovement)
+	{
+		// 기존 설정의 0 반경도 그대로 이전하고, 새 형식으로 저장된 값은 덮어쓰지 않는다.
+		for (FEnemyPatternDefinition& Pattern : Patterns)
+		{
+			if (UMoneyGunPatternSettings* MoneyGun = Cast<UMoneyGunPatternSettings>(Pattern.ExecutionSettings))
+			{
+				MoneyGun->ConditionalPostLoad();
+				Pattern.Movement.Policy = MoneyGun->bChaseTarget
+					? EEnemyPatternMovementPolicy::ChaseTarget : EEnemyPatternMovementPolicy::Stop;
+				Pattern.Movement.AcceptanceRadius = MoneyGun->ChaseAcceptanceRadius;
+			}
+			else if (Pattern.AbilityClass && Pattern.AbilityClass->IsChildOf(UGA_Enemy_RushAttack::StaticClass()))
+			{
+				Pattern.Movement.Policy = EEnemyPatternMovementPolicy::AbilityDriven;
+			}
+		}
 	}
 }
 
@@ -45,7 +58,10 @@ void UEnemyPatternSetData::PostEditChangeChainProperty(FPropertyChangedChainEven
 {
 	// GA별 설정의 편집 처리는 전용 객체에 위임하여 공통 에셋이 판정 방식을 알 필요가 없게 함
 	for (FEnemyPatternDefinition& Pattern : Patterns)
-		if (Pattern.ExecutionSettings) Pattern.ExecutionSettings->PostEditChangeChainProperty(PropertyChangedEvent);
+		if (Pattern.ExecutionSettings)
+		{
+			Pattern.ExecutionSettings->PostEditChangeChainProperty(PropertyChangedEvent);
+		}
 	Super::PostEditChangeChainProperty(PropertyChangedEvent);
 }
 #endif

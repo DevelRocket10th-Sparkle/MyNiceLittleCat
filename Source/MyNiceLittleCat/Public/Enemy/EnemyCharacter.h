@@ -13,7 +13,6 @@
 
 #include "AbilitySystemInterface.h"
 #include "EnemyTypes.h"
-#include "GameplayAbilitySpec.h"
 #include "Interfaces/TargetableInterface.h"
 
 #include "EnemyCharacter.generated.h"
@@ -34,7 +33,7 @@ class MYNICELITTLECAT_API AEnemyCharacter : public ACharacter, public IAbilitySy
 
 public:
 
-	// Sets default values for this character's properties
+	// 캐릭터의 기본 속성을 설정한다.
 	AEnemyCharacter(const FObjectInitializer& ObjectInitializer);
 
 	// Getter: 이 캐릭터의 능력 실행 컴포넌트
@@ -43,22 +42,19 @@ public:
 	// 사망 후처리 - 사망 연출 종료 시점에 실행
 	virtual void FinishDeath();
 
-	// Getter: AttributeSet
+	// 전투 속성 집합을 반환한다.
 	inline UEnemyAttributeSet* GetAttributeSet() const { return AttributeSet; }
 
-	// Getter: EnemyConfig
+	// 적 설정 데이터를 반환한다.
 	// 앞 const: 반환된 포인터를 사용한 EnemyConfig 내용 수정 방지
 	// 뒤 const: EnemyCharacter의 일반 멤버 변수인 EnemyConfig 변경 방지
 	UFUNCTION(BlueprintPure, Category = "Config")
 	const UEnemyConfigData* GetEnemyConfig() const { return EnemyConfig; }
 
-	// Getter: bWantsToMvoe
+	// 이동 의도 여부를 반환한다.
 	bool GetWantsToMove() const { return bWantsToMove; }
-	// Setter: bWantsToMove
+	// 이동 의도 여부를 설정한다.
 	void SetWantsToMove(bool bNewWantsToMove)	{ bWantsToMove = bNewWantsToMove; }
-
-	// Getter: BasicAttackHandle
-	FGameplayAbilitySpecHandle GetBasicAttackHandle() const { return BasicAttackHandle; }
 
 	// AI가 실행될 준비가 되었는지 확인
 	bool IsEnemyInitialized() const { return bEnemyInitialized; }
@@ -92,8 +88,8 @@ public:
 	void AcquireRotationLock() { ++RotationLockCount; }
 	// 공격 종료 시 자신이 획득한 회전 제한 해제
 	void ReleaseRotationLock() { RotationLockCount = FMath::Max(0, RotationLockCount - 1); }
-	// Getter: 공격 중 회전 제한 여부
-	bool IsRotationLocked() const { return RotationLockCount > 0; }
+	// 공격 중 회전 제한 여부
+	bool IsRotationLocked() const;
 	// 회전 제한 중 Controller의 방향 갱신이 액터를 회전시키지 않도록 처리
 	// 공격 중 회전 제한을 존중하여 Controller 방향 반영
 	virtual void FaceRotation(FRotator NewControlRotation, float DeltaTime = 0.f) override;
@@ -103,11 +99,11 @@ public:
 
 protected:
 
-	// Called when the game starts or when spawned
+	// 게임 시작 시 초기화한다. or when spawned
 	// 컴포넌트 초기화 후 실행 준비
 	virtual void BeginPlay() override;
 	
-	// Called every frame
+	// 진행 중인 전환 시퀀스의 상태를 확인한다.
 	// 활성 상태의 매 프레임 처리
 	//virtual void Tick(float DeltaTime) override;
 
@@ -126,10 +122,6 @@ protected:
 	virtual void HandleHealthChanged(float NewHealth, float MaxHealth);
 
 	void HandleDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted);
-
-	// Test용
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
-	TObjectPtr<UAnimMontage> BasicAttackMontage;
 
 	/* Pattern Component */
 
@@ -169,9 +161,6 @@ protected :
 
 	// ASC, 능력치 등 초기화 완료 여부
 	bool bEnemyInitialized = false;
-
-	// ASC에 부여된 기본 공격 식별
-	FGameplayAbilitySpecHandle BasicAttackHandle;
 
 	// 캐릭터별 패턴 실행 상태 및 GA 핸들 관리
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")

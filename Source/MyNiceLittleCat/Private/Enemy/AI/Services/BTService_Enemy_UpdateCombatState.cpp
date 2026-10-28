@@ -9,7 +9,6 @@
 #include "BehaviorTree/BlackboardComponent.h"
 
 #include "Enemy/EnemyCharacter.h"
-#include "Enemy/Datas/EnemyConfigData.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
 
 namespace EnemyCombatKeys
@@ -17,6 +16,7 @@ namespace EnemyCombatKeys
 	const FName TargetActor(TEXT("TargetActor"));
 	const FName IsInAttackRange(TEXT("IsInAttackRange"));
 	const FName HasLineOfSight(TEXT("HasLineOfSight"));
+	const FName CanStartAttack(TEXT("CanStartAttack"));
 }
 
 UBTService_Enemy_UpdateCombatState::UBTService_Enemy_UpdateCombatState()
@@ -46,8 +46,6 @@ void UBTService_Enemy_UpdateCombatState::TickNode(UBehaviorTreeComponent & Owner
 
 void UBTService_Enemy_UpdateCombatState::UpdateCombatState(UBehaviorTreeComponent& OwnerComp)
 {
-	UE_LOG(LogTemp, Warning, TEXT("[CombatService] Called"));
-
 	UBlackboardComponent* Blackboard = OwnerComp.GetBlackboardComponent();
 	if (!IsValid(Blackboard))
 		return;
@@ -63,40 +61,23 @@ void UBTService_Enemy_UpdateCombatState::UpdateCombatState(UBehaviorTreeComponen
 	// Target 찾기
 	AActor* Target = Cast<AActor>(Blackboard->GetValueAsObject(EnemyCombatKeys::TargetActor));
 
-	// 현재 Enemy 설정값 읽기: AttackRange 필요
-	const UEnemyConfigData* Config =
-		IsValid(Enemy)
-		? Enemy->GetEnemyConfig()
-		: nullptr;
-
-	UE_LOG(LogTemp, Warning,
-		TEXT("[CombatService] Enemy=%s Alive=%d Target=%s Config=%s"),
-		*GetNameSafe(Enemy),
-		IsValid(Enemy) && Enemy->IsAlive(),
-		*GetNameSafe(Target),
-		*GetNameSafe(Config)
-	);
-
 	bool bInAttackRange = false;
 	bool bHasLineOfSight = false;
+	const bool bCanStartAttack = IsValid(Enemy) && Enemy->GetPatternComponent()->CanStartAttack();
 
 	if (IsValid(Enemy) && Enemy->IsAlive()
-		&& IsValid(Target) && Target != Enemy
-		&& IsValid(Config))
+		&& IsValid(Target) && Target != Enemy)
 	{
-		// Actor 중심 사이의 수평 거리 기준
-		const float DistanceSqaured = FVector::DistSquared2D(Enemy->GetActorLocation(), Target->GetActorLocation());
-
-		bInAttackRange = Enemy->GetPatternComponent()->HasPatterns()
-			? Enemy->GetPatternComponent()->HasPatternInRange(Target)
-			: DistanceSqaured <= FMath::Square(Config->AttackRange);
-
+		bInAttackRange = Enemy->GetPatternComponent()->HasPatternInRange(Target);
 		bHasLineOfSight = AI->LineOfSightTo(Target);
-		
-		//UE_LOG(LogTemp, Log, TEXT("[%s] Target Distance Squared: %.1f"), *Enemy->GetName(), DistanceSqaured);
 	}
 
 	// Blackboard 값 설정: 참조한 값들이 nullptr이든 말든 Blackboard 값 업데이트는 해줘야 함
 	Blackboard->SetValueAsBool(EnemyCombatKeys::IsInAttackRange, bInAttackRange);
 	Blackboard->SetValueAsBool(EnemyCombatKeys::HasLineOfSight, bHasLineOfSight);
+	// 기존 블랙보드도 사용할 수 있도록 새 키를 추가한 BT에서만 준비 상태를 게시한다.
+	if (Blackboard->GetKeyID(EnemyCombatKeys::CanStartAttack) != FBlackboard::InvalidKey)
+	{
+		Blackboard->SetValueAsBool(EnemyCombatKeys::CanStartAttack, bCanStartAttack);
+	}
 }

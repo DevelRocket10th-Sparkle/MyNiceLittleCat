@@ -1,4 +1,4 @@
-﻿#include "Enemy/Datas/EnemyMeleePatternSettings.h"
+#include "Enemy/Datas/EnemyMeleePatternSettings.h"
 
 #if WITH_EDITOR
 #include "Engine/SkeletalMesh.h"
@@ -11,7 +11,10 @@
 void UEnemyMeleePatternSettings::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent)
 {
 	for (TObjectPtr<UEnemyMeleeTraceSettings>& Settings : MeleeTraceSettings)
-		if (!Settings) Settings = NewObject<UEnemyMeleeTraceSettings>(this, NAME_None, RF_Transactional);
+		if (!Settings)
+		{
+			Settings = NewObject<UEnemyMeleeTraceSettings>(this, NAME_None, RF_Transactional);
+		}
 	Super::PostEditChangeChainProperty(PropertyChangedEvent);
 }
 
@@ -23,14 +26,20 @@ TArray<FName> UEnemyMeleeTraceSettings::GetSocketOptions() const
 	{
 		for (const USkeletalMeshSocket* Socket : SkeletalMesh->GetActiveSocketList())
 		{
-			if (Socket) Names.AddUnique(Socket->SocketName);
+			if (Socket)
+			{
+				Names.AddUnique(Socket->SocketName);
+			}
 		}
 	}
 	else if (const UStaticMesh* StaticMesh = Cast<UStaticMesh>(Mesh))
 	{
 		for (const UStaticMeshSocket* Socket : StaticMesh->Sockets)
 		{
-			if (Socket) Names.AddUnique(Socket->SocketName);
+			if (Socket)
+			{
+				Names.AddUnique(Socket->SocketName);
+			}
 		}
 	}
 	Names.Sort(FNameLexicalLess());
