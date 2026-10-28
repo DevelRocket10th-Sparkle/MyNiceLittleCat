@@ -112,10 +112,6 @@ protected:
 	// 게임 시작 시 초기화한다. or when spawned
 	// 컴포넌트 초기화 후 실행 준비
 	virtual void BeginPlay() override;
-	
-	// 진행 중인 전환 시퀀스의 상태를 확인한다.
-	// 활성 상태의 매 프레임 처리
-	//virtual void Tick(float DeltaTime) override;
 
 	// Enemy 능력치 적용
 	// 설정 데이터의 능력치 및 이동 속도를 캐릭터에 적용
@@ -124,7 +120,7 @@ protected:
 
 	// 사망 전처리 - 사망 판정 직후 실행
 	// 중복 사망을 막고 공격과 AI를 정리한 뒤 사망 연출 시작
-	virtual void BeginDeath();	// 필요할 경우 EnemyTypes에 선언된 구조체 FEnemyDeathContext 받기
+	virtual void BeginDeath();
 
 	/* 델리게이트 반응 함수 */
 

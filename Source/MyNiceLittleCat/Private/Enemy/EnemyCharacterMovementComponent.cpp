@@ -64,28 +64,31 @@ FVector UEnemyCharacterMovementComponent::GetActorFeetLocation() const
 	}
 
 #if ENABLE_DRAW_DEBUG
-	if (UWorld* World = GetWorld())
+	if (bDrawNavigationFeet)
 	{
-		// 초록색: 실제 캡슐 발 위치
-		DrawDebugSphere(
-			World,
-			ActorFeetLocation,
-			8.f,	// 반지름
-			12,		// 구체 분할 수
-			FColor::Green,
-			false,
-			0.05f
-		);
-		// 파란색: 길 찾기용 발 위치
-		DrawDebugSphere(
-			World,
-			NavFeetLocation,
-			10.f,	// 반지름
-			12,		// 구체 분할 수
-			FColor::Blue,
-			false,
-			0.05f
-		);
+		if (UWorld* World = GetWorld())
+		{
+			// 초록색: 실제 캡슐 발 위치
+			DrawDebugSphere(
+				World,
+				ActorFeetLocation,
+				8.f,	// 반지름
+				12,		// 구체 분할 수
+				FColor::Green,
+				false,
+				0.05f
+			);
+			// 파란색: 길 찾기용 발 위치
+			DrawDebugSphere(
+				World,
+				NavFeetLocation,
+				10.f,	// 반지름
+				12,		// 구체 분할 수
+				FColor::Blue,
+				false,
+				0.05f
+			);
+		}
 	}
 #endif
 

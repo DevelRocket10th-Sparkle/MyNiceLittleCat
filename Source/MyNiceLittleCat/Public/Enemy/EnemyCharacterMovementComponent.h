@@ -64,6 +64,10 @@ protected:
 	
 	virtual void CalcVelocity(float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration) override;
 
+	// 실제 발 위치와 내비게이션 기준 위치 표시
+	UPROPERTY(EditAnywhere, Category = "Debug")
+	bool bDrawNavigationFeet = false;
+
 private :
 
 	FTransform FilterFlightRootMotion(const FTransform& LocalRootMotion,
