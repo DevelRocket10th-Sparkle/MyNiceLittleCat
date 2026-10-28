@@ -280,7 +280,7 @@ void ATutorialManager::PlacePet(AActor* _Point)
 void ATutorialManager::PetMoveTo(AActor* _Point, float _Speed)
 {
 	APetCharacter* PetPtr = Pet.Get();
-	if (nullptr == __ExceptionPtrRethrow || nullptr == _Point)
+	if (nullptr == PetPtr || nullptr == _Point)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] PetMoveTo: 펫 또는 지점이 없음."));
 		return;
