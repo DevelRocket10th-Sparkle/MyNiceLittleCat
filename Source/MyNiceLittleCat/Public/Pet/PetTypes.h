@@ -60,5 +60,7 @@ enum class EPetMovementStyle : uint8
 {
     Normal           UMETA(DisplayName = "Normal"),
     Magnet           UMETA(DisplayName = "Magnet"),
-    ReflectPlacement UMETA(DisplayName = "Reflect Placement")
+    ReflectPlacement UMETA(DisplayName = "Reflect Placement"),
+
+    Fly              UMETA(DisplayName = "Fly") // 튜토리얼 등에서 펫이 공중으로 날아갈 때
 };

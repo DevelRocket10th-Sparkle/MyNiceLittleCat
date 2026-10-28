@@ -48,6 +48,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+    virtual void Tick(float DeltaSeconds) override; // 펫 비행 중에만 켜짐
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     // =========================================================
 public:
@@ -66,6 +67,7 @@ protected:
     // 구간별(ETutorialStage) 동작 목록 만들기
     void BuildActions(ETutorialStage Stage, TArray<FTutorialAction>& OutActions);
     void BuildMovementActions(TArray<FTutorialAction>& OutActions);
+    void BuildDashActions(TArray<FTutorialAction>& OutActions);
 
     // 동작 실행기
     void RunNextAction();
@@ -98,6 +100,9 @@ protected:
     void PlacePet(AActor* _Point);                      // 지점으로 순간이동
     void PetMoveTo(AActor* _Point, float _Speed = 0.f); // 지점까지 걸어가기. _Speed 0 = 원래 속도
     void PetSay(const FText& _Message);                 // 말풍선
+    void PetFlyTo(AActor* _Point, float _Duration); // 펫 날리기: 지금 위치에서 지점까지 포물선으로 _Duration 초 동안 날아감
+    void StopPetFly(); // 비행 정리 (이동 모드/애니메이션 원래대로, Tick 끄기)
+    void PetFacePlayer(); // 펫을 플레이어 쪽으로 한 번 돌려놓기 (실시간 추적 X)
 
     // ETutorialWait == PetArrive
     bool BeginWaitPetArrive(AActor* _Point, float _TimeOut); // 계속 기다려야 하면 true, 바로 넘어가도 되면 false
@@ -129,6 +134,22 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Tutorial|Camera", meta = (ClampMin = "0.0"))
     float CameraReturnBlendTime = 1.f; // 연출 끝나고 플레이어 카메라로 돌아오는 시간(초)
 
+    // ===== 대시 구간 연출 시간 (PIE 보면서 조절) =====
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Dash", meta = (ClampMin = "0.0"))
+    float DashCameraBlendTime = 1.f; // 플레이어 카메라 -> 통로 전체 샷으로 넘어가는 시간
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Dash", meta = (ClampMin = "0.1"))
+    float DashFlyTime = 2.f;         // 펫이 레이저 위를 날아 통로 끝까지 가는 시간
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Dash", meta = (ClampMin = "0.0"))
+    float DashShowTime = 1.5f;        // 말풍선 + Shift 데칼 보여주는 시간
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Pet", meta = (ClampMin = "0.0"))
+    float PetFlyArcHeight = 150.f;    // 비행 포물선의 가장 높은 지점 (시작/끝 높이 기준 +)
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Pet", meta = (ClampMin = "1.0"))
+    float PetTurnSpeed = 540.f; // 플레이어 쪽으로 돌 때 초당 회전 각도 (180도 = 약 0.33초)
+
 private:
     bool bChangingStage = false; // 구간 전환 도중에 또 전환되는 것을 막는 불값
     
@@ -152,4 +173,15 @@ private:
     bool bInCinematic = false; // 연출중? (카메라 전환 + 입력 잠금)
     bool bIntroApplied = false; // 시작 연출을 이미 걸었는지
     TWeakObjectPtr<APawn> LockedPawn; // 입력을 끈 캐릭터
+
+    // 펫 비행 관련 변수들
+    bool bPetFlying = false;
+    FVector FlyStart = FVector::ZeroVector;
+    FVector FlyEnd = FVector::ZeroVector;
+    float FlyDuration = 0.f;
+    float FlyElapsed = 0.f;
+
+    // 펫을 플레이어 방향으로 돌려놓기
+    bool bPetTurning = false;
+    float PetTurnTargetYaw = 0.f;
 };

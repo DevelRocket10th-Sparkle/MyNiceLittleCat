@@ -5,10 +5,13 @@
 #include "Pet/PetCharacter.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Pet/SpeechBubbleComponent.h"
+#include "AIController.h"                 // 비행 전 길찾기 이동 멈추기
+#include "Components/CapsuleComponent.h"  // 착지 높이 계산
 
 // 튜토리얼에서 찾는 레벨 액터의 태그 이름 (레벨 액터의 Actor Tags에 똑같이 적어야 함)
 namespace TutorialTag
 {
+	//! 이동 구간
 	const FName CameraDoor01(TEXT("Tutorial.Camera.Door01")); // 이동 구간 시작 연출 카메라 (문 쪽을 보여줌)
 
 	const FName TriggerDoor01(TEXT("Tutorial.Trigger.Door01")); // 이동 구간 문 앞 트리거
@@ -18,11 +21,21 @@ namespace TutorialTag
 	const FName PetPointStart(TEXT("Tutorial.PetPoint.Start"));             // 펫 첫 등장 위치
 	const FName PetPointDoor01(TEXT("Tutorial.PetPoint.Door01"));           // 이동 구간 문 앞
 	const FName PetPointAfterDoor01(TEXT("Tutorial.PetPoint.AfterDoor01")); // 이동 구간 문 너머
+
+	//! 대시 구간
+	const FName TriggerDashEnter(TEXT("Tutorial.Trigger.DashEnter"));          // 대시 방 입구 (구간 실제 시작)
+	const FName CameraDashCorridor(TEXT("Tutorial.Camera.DashCorridor"));      // 카메라 C
+	const FName PetPointDashEnd(TEXT("Tutorial.PetPoint.DashEnd"));            // 펫 착지 지점 (통로 끝)
+	const FName PetPointAfterDoor02(TEXT("Tutorial.PetPoint.AfterDoor02"));    // 다음 문 너머
+	const FName DecalShift(TEXT("Tutorial.Decal.Shift"));                      // Shift 데칼
+	const FName TriggerDoor02(TEXT("Tutorial.Trigger.Door02"));                // 통로 끝 문 앞
+	const FName Gate02(TEXT("Tutorial.Gate.02"));                              // 대시 -> 락온 사이 문
 }
 
 ATutorialManager::ATutorialManager()
 {
- 	PrimaryActorTick.bCanEverTick = false;
+ 	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 }
 
 void ATutorialManager::BeginPlay()
@@ -39,10 +52,61 @@ void ATutorialManager::BeginPlay()
 	TryStartTutorial(); // 먼저 걸어봄
 }
 
+void ATutorialManager::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	APetCharacter* PetPtr = Pet.Get();
+	if (nullptr == PetPtr)
+	{
+		StopPetFly();
+		bPetTurning = false;
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	//! ---- 비행 ----
+	if (true == bPetFlying)
+	{
+		FlyElapsed += DeltaSeconds;
+		const float Alpha = FMath::Clamp(FlyElapsed / FlyDuration, 0.f, 1.f);
+		const float Eased = FMath::InterpEaseInOut(0.f, 1.f, Alpha, 2.f); // 천천히 출발해서 천천히 착지
+
+		// 직선 위치 + 포물선 높이 (가운데에서 가장 높고 양 끝에서 0)
+		FVector Location = FMath::Lerp(FlyStart, FlyEnd, Eased);
+		Location.Z += PetFlyArcHeight * 4.f * Eased * (1.f - Eased);
+		PetPtr->SetActorLocation(Location);
+
+		if (Alpha >= 1.f)
+			StopPetFly(); // 착지	
+	}
+
+	//! ---- 플레이어 쪽으로 돌기 ----
+	if (true == bPetTurning)
+	{
+		const FRotator Target(0.f, PetTurnTargetYaw, 0.f);
+		const FRotator NewRot = FMath::RInterpConstantTo(PetPtr->GetActorRotation(), Target, DeltaSeconds, PetTurnSpeed);
+		PetPtr->SetActorRotation(NewRot);
+
+		// 거의 다 돌았으면 딱 맞추고 끝 (-180/180 경계도 NormalizeAxis 로 처리)
+		if (FMath::Abs(FRotator::NormalizeAxis(NewRot.Yaw - PetTurnTargetYaw)) < 1.f)
+		{
+			PetPtr->SetActorRotation(Target);
+			bPetTurning = false;
+		}
+	}
+
+	// 할 일이 다 끝나면 Tick 끄기 -> 평소엔 비용 없음
+	if (false == bPetFlying && false == bPetTurning)
+		SetActorTickEnabled(false);
+}
+
 void ATutorialManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	// 매니저가 사라질 때 잠금이 남아 있으면 조작 불가 버그 → 무조건 정리
 	EndCinematic(0.f);
+	StopPetFly();
+	bPetTurning = false;
 	StopWaitPetArrive();
 	Super::EndPlay(EndPlayReason);
 }
@@ -109,6 +173,8 @@ void ATutorialManager::StageEnd(ETutorialStage Stage)
 	StopWaitPlayerEnter();
 	StopWaitPetArrive(); // 펫 도착 대기 중이었다면 정리
 	EndCinematic(0.f);   // 구간이 바뀌면 연출은 무조건 끝 (잠금이 다음 구간으로 새지 않게)
+	StopPetFly(); // 비행 도중 구간이 바뀌어도 펫이 공중에 남지 않게
+	bPetTurning = false;
 	Actions.Reset();
 	ActionIndex = INDEX_NONE;
 }
@@ -118,6 +184,7 @@ void ATutorialManager::BuildActions(ETutorialStage Stage, TArray<FTutorialAction
 	switch (Stage)
 	{
 	case ETutorialStage::Movement: BuildMovementActions(OutActions); break;
+	case ETutorialStage::Dash: BuildDashActions(OutActions); break;
 	default: break;
 	}
 }
@@ -151,6 +218,8 @@ void ATutorialManager::BuildMovementActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(Do([this, PetDoor01] {PetMoveTo(PetDoor01.Get(), SlowPetSpeed); }));
 	OutActions.Add(Do([this] { PetSay(INVTEXT("Follow Me!")); }));
 	OutActions.Add(WaitPetArrive(PetDoor01.Get())); // 펫이 문 앞에 도착할 때까지 (최대 8초)
+	OutActions.Add(Do([this] { PetFacePlayer(); })); // 문 앞에 도착하면 플레이어 쪽으로 돌아봄
+	OutActions.Add(WaitSeconds(0.2f));                // 돌아보는 모습이 보이고 나서 카메라 복귀
 
 	// 3-1) 연출 끝 : 플레이어 카메라로 복귀 + 조작 되돌리기
 	OutActions.Add(Do([this] {EndCinematic(CameraReturnBlendTime); }));
@@ -160,6 +229,45 @@ void ATutorialManager::BuildMovementActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(Do([this, Gate01] {SetActivated(Gate01.Get(), true); })); // 문 열기
 	OutActions.Add(WaitSeconds(0.6f)); // 문짝이 다 열리기 전에 펫이 부딪히지 않게
 	OutActions.Add(Do([this, PetAfterDoor01] {PetMoveTo(PetAfterDoor01.Get()); }));
+}
+
+void ATutorialManager::BuildDashActions(TArray<FTutorialAction>& OutActions)
+{
+	AActor* TriggerDashEnter = FindActorByTag(TutorialTag::TriggerDashEnter);
+	AActor* TriggerDoor02 = FindActorByTag(TutorialTag::TriggerDoor02);
+
+	TWeakObjectPtr<AActor> CamCorridor = FindActorByTag(TutorialTag::CameraDashCorridor);
+	TWeakObjectPtr<AActor> PetDashEnd = FindActorByTag(TutorialTag::PetPointDashEnd);
+	TWeakObjectPtr<AActor> PetAfterDoor02 = FindActorByTag(TutorialTag::PetPointAfterDoor02);
+	TWeakObjectPtr<AActor> DecalShift = FindActorByTag(TutorialTag::DecalShift);
+	TWeakObjectPtr<AActor> Gate02 = FindActorByTag(TutorialTag::Gate02);
+
+	// 0) 구간은 이미 시작됐지만, 실제 연출은 플레이어가 대시 방에 들어와야 시작
+	OutActions.Add(WaitPlayerEnter(TriggerDashEnter));
+
+	// 1) (잠금) 통로 전체 샷으로 전환. 카메라가 다 도착한 뒤에 펫이 출발해야 비행 전체가 보임
+	OutActions.Add(Do([this, CamCorridor] { BeginCinematic(CamCorridor.Get(), DashCameraBlendTime); }));
+	OutActions.Add(WaitSeconds(DashCameraBlendTime));
+
+	// 2) 카메라는 가만히, 펫이 레이저 위를 날아감 -> 플레이어 시선이 펫을 따라 레이저와 끝 지점을 봄
+	OutActions.Add(Do([this, PetDashEnd] { PetFlyTo(PetDashEnd.Get(), DashFlyTime); }));
+	OutActions.Add(WaitSeconds(DashFlyTime));
+
+	// 3) 착지 직후 부르기 + Shift 데칼 ("날아가서 -> 저기서 부른다" 가 한 흐름으로 읽히게)
+	OutActions.Add(Do([this] { PetFacePlayer(); })); // 착지하면 플레이어 쪽으로 돌아봄
+	OutActions.Add(WaitSeconds(0.3f));                // 돌고 나서 "Dash!" (등 돌린 채 말하지 않게)
+	OutActions.Add(Do([this] { PetSay(INVTEXT("Follow Me!")); })); 
+	OutActions.Add(Do([this, DecalShift] { SetActivated(DecalShift.Get(), true); }));
+	OutActions.Add(WaitSeconds(DashShowTime));
+
+	// 4) (잠금 해제) 플레이어 카메라로 복귀
+	OutActions.Add(Do([this] { EndCinematic(CameraReturnBlendTime); }));
+
+	// 5) 플레이어가 통로 끝에 도착하면 문 열고 펫 통과
+	OutActions.Add(WaitPlayerEnter(TriggerDoor02));
+	OutActions.Add(Do([this, Gate02] { SetActivated(Gate02.Get(), true); }));
+	OutActions.Add(WaitSeconds(0.6f)); // 문짝에 펫이 부딪히지 않게
+	OutActions.Add(Do([this, PetAfterDoor02] { PetMoveTo(PetAfterDoor02.Get()); }));
 }
 
 void ATutorialManager::RunNextAction()
@@ -353,6 +461,79 @@ void ATutorialManager::PetSay(const FText& _Message)
 
 	if (USpeechBubbleComponent* Bubble = PetPtr->GetSpeechBubble())
 		Bubble->Say(_Message, 4.f);
+}
+
+void ATutorialManager::PetFlyTo(AActor* _Point, float _Duration)
+{
+	APetCharacter* PetPtr = Pet.Get();
+	if(nullptr == PetPtr || nullptr == _Point)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] PetFlyTo: 펫 또는 지점이 없음"));
+		return;
+	}
+
+	// 1) StateTree 를 Idle 로 비켜 세움 -> 날아가는 동안 StateTree 가 펫을 끌고 가지 않음
+	PetPtr->RequestBehavior(EPetBehavior::Idle);
+	if (AAIController* AIC = Cast<AAIController>(PetPtr->GetController()))
+		AIC->StopMovement(); // 진행 중이던 길찾기 이동도 멈춤
+
+	// 2) 중력 끄기 (캐릭터라 공중에 두면 매 프레임 떨어지려 함)
+	UCharacterMovementComponent* Move = PetPtr->GetCharacterMovement();
+	Move->StopMovementImmediately();
+	Move->SetMovementMode(MOVE_Flying);
+
+	// 3) Fly 애니메이션. RequestBehavior 가 Normal 로 되돌리므로 반드시 그 "뒤에"
+	PetPtr->SetAnimationMovementStyle(EPetMovementStyle::Fly);
+
+	// 비행 경로: 지점은 바닥 위치라, 캡슐 절반 높이만큼 올려야 바닥에 묻히지 않음
+	FlyStart = PetPtr->GetActorLocation();
+	FlyEnd = _Point->GetActorLocation();
+	FlyEnd.Z += PetPtr->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	FlyDuration = FMath::Max(_Duration, 0.1f);
+	FlyElapsed = 0.f;
+
+	// 도착 방향을 바라보게
+	const FVector Dir = FlyEnd - FlyStart;
+	PetPtr->SetActorRotation(FRotator(0.f, Dir.Rotation().Yaw, 0.f));
+
+	bPetFlying = true;
+	SetActorTickEnabled(true); // 비행 중에만 Tick
+}
+
+void ATutorialManager::StopPetFly()
+{
+	if (false == bPetFlying) return;
+	bPetFlying = false;
+	//SetActorTickEnabled(false);
+
+	if (APetCharacter* PetPtr = Pet.Get())
+	{
+		// 원래대로: 걷기 모드 + Normal 애니메이션. 행동은 Idle 그대로 (도착 지점에서 기다림)
+		PetPtr->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+		PetPtr->SetAnimationMovementStyle(EPetMovementStyle::Normal);
+	}
+}
+
+void ATutorialManager::PetFacePlayer()
+{
+	APetCharacter* PetPtr = Pet.Get();
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	if (nullptr == PetPtr || nullptr == PlayerPawn) return;
+
+	// 도착 반경 안에 들어왔어도 마지막 몇 cm 를 걷는 중일 수 있음
+	// -> 걸으면 "이동 방향 바라보기"가 회전을 덮어쓰니, 먼저 확실히 세워둠
+	PetPtr->RequestBehavior(EPetBehavior::Idle);
+	if (AAIController* AIC = Cast<AAIController>(PetPtr->GetController()))
+		AIC->StopMovement();
+
+	// 높이 차이는 무시하고 수평 방향만 (위아래로 고개 꺾이지 않게)
+	FVector ToPlayer = PlayerPawn->GetActorLocation() - PetPtr->GetActorLocation();
+	ToPlayer.Z = 0.f;
+	if (true == ToPlayer.IsNearlyZero()) return;
+
+	PetTurnTargetYaw = ToPlayer.Rotation().Yaw;
+	bPetTurning = true;
+	SetActorTickEnabled(true);
 }
 
 bool ATutorialManager::BeginWaitPetArrive(AActor* _Point, float _TimeOut)
