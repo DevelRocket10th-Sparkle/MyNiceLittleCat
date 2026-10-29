@@ -4,6 +4,7 @@
 #include "Navigation/PathFollowingComponent.h"
 #include "StateTreeExecutionContext.h"
 #include "StateTreeAsyncExecutionContext.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 EStateTreeRunStatus FPetMoveToTask::EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
 {
@@ -13,6 +14,8 @@ EStateTreeRunStatus FPetMoveToTask::EnterState(FStateTreeExecutionContext& Conte
     Data.MoveId = FAIRequestID::InvalidRequest;
     Data.FinishedHandle.Reset();
     Data.AbilityMoveRequestId.Invalidate();
+    Data.Movement.Reset();
+    Data.bHasSavedMoveSpeed = false;
 
     if (false == IsValid(Data.Pet.Get()))
         return EStateTreeRunStatus::Failed;
@@ -65,6 +68,17 @@ EStateTreeRunStatus FPetMoveToTask::EnterState(FStateTreeExecutionContext& Conte
     }
 
     Data.MoveId = RequestResult.MoveId;
+    if (Data.MoveSpeedOverride > 0.f)
+    {
+        if (UCharacterMovementComponent* Movement = Data.Pet->GetCharacterMovement())
+        {
+            Data.Movement = Movement;
+            Data.OriginalMaxWalkSpeed = Movement->MaxWalkSpeed;
+            Data.bHasSavedMoveSpeed = true;
+
+            Movement->MaxWalkSpeed = Data.MoveSpeedOverride;
+        }
+    }
 
     const FStateTreeWeakExecutionContext WeakContext = Context.MakeWeakExecutionContext();
     const FAIRequestID ExpectedMoveId = Data.MoveId;
@@ -77,6 +91,8 @@ EStateTreeRunStatus FPetMoveToTask::EnterState(FStateTreeExecutionContext& Conte
         {
             if (RequestId != ExpectedMoveId) return;
 
+            UE_LOG(LogTemp, Warning, TEXT("[PetMove] PathFinished: %s"),*Result.ToString());
+
             ReportAbilityMoveResult(WeakPet.Get(), AbilityRequestId, Result.IsSuccess());
             WeakContext.FinishTask(Result.IsSuccess() ? EStateTreeFinishTaskType::Succeeded : EStateTreeFinishTaskType::Failed);
         });
@@ -87,6 +103,9 @@ EStateTreeRunStatus FPetMoveToTask::EnterState(FStateTreeExecutionContext& Conte
 void FPetMoveToTask::ExitState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
 {
     FInstanceDataType& Data = Context.GetInstanceData(*this);
+
+    UE_LOG(LogTemp, Warning, TEXT("[PetMove] ExitState: Behavior=%d, AbilityRequestValid=%d"),
+        IsValid(Data.Pet.Get()) ? static_cast<int32>(Data.Pet->GetRequestedBehavior()) : -1, Data.AbilityMoveRequestId.IsValid() ? 1 : 0);
 
     if (AAIController* Controller = Data.Controller.Get())
     {
@@ -100,6 +119,15 @@ void FPetMoveToTask::ExitState(FStateTreeExecutionContext& Context, const FState
                 Controller->StopMovement();
         }
     }
+
+    if (true == Data.bHasSavedMoveSpeed)
+    {
+        if (UCharacterMovementComponent* Movement = Data.Movement.Get())
+            Movement->MaxWalkSpeed = Data.OriginalMaxWalkSpeed;
+    }
+
+    Data.bHasSavedMoveSpeed = false;
+    Data.Movement.Reset();
 
     const FGuid AbilityRequestId = Data.AbilityMoveRequestId;
     Data.FinishedHandle.Reset();

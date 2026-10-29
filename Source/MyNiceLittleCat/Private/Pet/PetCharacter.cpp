@@ -7,6 +7,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "GameplayTagContainer.h"
 #include "Components/SceneComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Pet/SpeechBubbleComponent.h"
 #include "Pet/GAS/Ability/GameplayAbility_PetMagnet.h"
@@ -42,6 +43,12 @@ APetCharacter::APetCharacter()
 	// 말풍선
 	SpeechBubble = CreateDefaultSubobject<USpeechBubbleComponent>(TEXT("SpeechBubble"));
 	SpeechBubble->SetupAttachment(GetRootComponent()); // 캡슐 기준이라 메시 애니메이션에 흔들리지 않음
+
+	// Collision 관련
+	// 지형 충돌은 캡슐에서 담당
+	GetCapsuleComponent()->SetCollisionProfileName(TEXT("Pet"));
+	// 외형 메시는 충돌 판정에서 제외
+	GetMesh()->SetCollisionProfileName(TEXT("NoCollision"));
 }
 
 void APetCharacter::BeginPlay()
