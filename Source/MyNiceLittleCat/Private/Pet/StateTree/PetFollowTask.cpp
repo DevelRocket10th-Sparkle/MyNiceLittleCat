@@ -15,6 +15,10 @@ EStateTreeRunStatus FPetFollowTask::EnterState(FStateTreeExecutionContext& Conte
     Data.MoveTarget.Reset();
     Data.TimeUntilNextCheck = 0.f;
     Data.bHasSavedMoveSpeed = false;
+    Data.MoveRetryCount = 0;
+    Data.RetryTimeRemaining = 0.f;
+    Data.bWaitingToRetry = false;
+    Data.bMoveRequestFailed = false;
 
     // 펫이 없다 : Task 실패
     if (false == IsValid(Data.Pet.Get()))
@@ -45,17 +49,15 @@ EStateTreeRunStatus FPetFollowTask::EnterState(FStateTreeExecutionContext& Conte
 
     // Target에게로 이동 요청 실패 : Task 실패
     // MoveToActor(따라갈 대상, 도착 허용 거리, 펫 반경을 허용 거리에 추가할지)
-    const EPathFollowingRequestResult::Type Result =
-        Controller->MoveToActor(Target, Data.FollowDistance, false);
-
-    if (EPathFollowingRequestResult::Failed == Result)
-    {
-        Data.Pet->SetAnimationMovementStyle(EPetMovementStyle::Normal);
-        return EStateTreeRunStatus::Failed;
-    }
-
-    // Task 성공 ~
+    const EPathFollowingRequestResult::Type Result = Controller->MoveToActor(Target, Data.FollowDistance, false);
+   
     Data.MoveTarget = Target;
+    Data.bMoveRequestFailed = Result == EPathFollowingRequestResult::Failed;
+
+    if (true == Data.bMoveRequestFailed)
+        Data.Pet->SetAnimationMovementStyle(EPetMovementStyle::Normal);
+
+    // 이동 요청 실패여도 Task를 유지해서 Tick에서 재시도
     return EStateTreeRunStatus::Running;
 }
 
@@ -101,6 +103,8 @@ EStateTreeRunStatus FPetFollowTask::Tick(FStateTreeExecutionContext& Context, co
     if (false == IsValid(Movement))
         return EStateTreeRunStatus::Failed;
 
+    Data.RetryTimeRemaining = FMath::Max(0.f, Data.RetryTimeRemaining - DeltaTime);
+
     // 설치 후 복귀가 실제 도착으로 끝났다면 일반 이동으로 복원
     if (Data.Pet->GetRequestedBehavior() == EPetBehavior::Follow && 
         Data.Pet->GetAnmationMovementStyle() == EPetMovementStyle::ReflectPlacement)
@@ -131,31 +135,75 @@ EStateTreeRunStatus FPetFollowTask::Tick(FStateTreeExecutionContext& Context, co
 
     Data.TimeUntilNextCheck = 0.2f; //! 이동명령 주기 임시값
 
-    const bool bTargetChanged = Data.MoveTarget.Get() != Target;
+    UPathFollowingComponent* PathFollowing = Controller->GetPathFollowingComponent();
 
-    if (false == bTargetChanged)
+    if (false == IsValid(PathFollowing))
+        return EStateTreeRunStatus::Failed;
+
+    const bool bTargetChanged = Data.MoveTarget.Get() != Target;
+    bool bIsRetry = false;
+
+    if (true == bTargetChanged)
     {
-        // 기존 이동 요청이 진행 중이면 다시 요청하지 않아요
+        Data.MoveRetryCount = 0;
+        Data.bWaitingToRetry = false;
+        Data.bMoveRequestFailed = false;
+    }
+    else
+    {
+        // 이동 중이거나 경로를 기다리는 동안은 현재 이동 유지
         if (Controller->GetMoveStatus() != EPathFollowingStatus::Idle)
             return EStateTreeRunStatus::Running;
-  
-        const float RestartDistance = FMath::Max(Data.ResumeDistance, Data.FollowDistance);
-        const float DistanceSquared = FVector::DistSquared2D(Data.Pet->GetActorLocation(), Target->GetActorLocation());
 
-        if (DistanceSquared <= FMath::Square(RestartDistance))
-            return EStateTreeRunStatus::Running;
+        const bool bStoppedWithoutArrival = Data.bMoveRequestFailed || false == PathFollowing->DidMoveReachGoal();
+        if (true == bStoppedWithoutArrival)
+        {
+            // 실패를 감지한 뒤 NavMesh 갱신을 기다림
+            if (false == Data.bWaitingToRetry)
+            {
+                Data.bWaitingToRetry = true;
+                Data.RetryTimeRemaining = Data.MoveRetryInterval;
+                return EStateTreeRunStatus::Running;
+            }
+
+            if (Data.RetryTimeRemaining > 0.f) return EStateTreeRunStatus::Running;
+            if (Data.MoveRetryCount >= Data.MaxMoveRetries) return EStateTreeRunStatus::Running;
+
+            ++Data.MoveRetryCount;
+            Data.bWaitingToRetry = false;
+            bIsRetry = true;
+        }
+        else
+        {
+            // 정상 도착한 경우에만 기존 재출발 거리 사용
+            Data.MoveRetryCount = 0;
+            Data.bWaitingToRetry = false;
+
+            const float RestartDistance = FMath::Max(Data.ResumeDistance, Data.FollowDistance);
+            const float DistanceSquared = FVector::DistSquared2D(Data.Pet->GetActorLocation(), Target->GetActorLocation());
+            if (DistanceSquared <= FMath::Square(RestartDistance)) return EStateTreeRunStatus::Running;
+        }
     }
 
-    // 이동 요청 실패? : Task 실패
-    const EPathFollowingRequestResult::Type Result =
-        Controller->MoveToActor(Target, Data.FollowDistance, false);
-    
-    if (Result == EPathFollowingRequestResult::Failed)
-    {
-        Data.Pet->SetAnimationMovementStyle(EPetMovementStyle::Normal);
-        return EStateTreeRunStatus::Failed;
-    }
+    const EPathFollowingRequestResult::Type Result = Controller->MoveToActor(Target, Data.FollowDistance, false);
 
     Data.MoveTarget = Target;
+    Data.bMoveRequestFailed = Result == EPathFollowingRequestResult::Failed;
+
+    if (true == bIsRetry)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[PetFollow] Retry %d/%d, RequestResult=%d"),
+            Data.MoveRetryCount, Data.MaxMoveRetries, static_cast<int32>(Result));
+    }
+
+    if (true == Data.bMoveRequestFailed)
+        Data.Pet->SetAnimationMovementStyle(EPetMovementStyle::Normal);
+    
+    else if (Result == EPathFollowingRequestResult::AlreadyAtGoal)
+    {
+        Data.MoveRetryCount = 0;
+        Data.bWaitingToRetry = false;
+    }
+
     return EStateTreeRunStatus::Running;
 }

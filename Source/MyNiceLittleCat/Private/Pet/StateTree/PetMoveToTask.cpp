@@ -93,6 +93,24 @@ EStateTreeRunStatus FPetMoveToTask::EnterState(FStateTreeExecutionContext& Conte
 
             UE_LOG(LogTemp, Warning, TEXT("[PetMove] PathFinished: %s"),*Result.ToString());
 
+            if (APetCharacter* Pet = WeakPet.Get())
+            {
+                if (UCharacterMovementComponent* Movement = Pet->GetCharacterMovement())
+                {
+                    const FVector Feet = Movement->GetActorFeetLocation();
+                    const FVector Goal = Pet->GetMoveDestination();
+
+                    UE_LOG(LogTemp, Warning,
+                        TEXT("[PetMove] Feet=%s Goal=%s DistXY=%.1f DeltaZ=%.1f Speed=%.1f MaxSpeed=%.1f"),
+                        *Feet.ToString(),
+                        *Goal.ToString(),
+                        FVector::Dist2D(Feet, Goal),
+                        Goal.Z - Feet.Z,
+                        Pet->GetVelocity().Size2D(),
+                        Movement->MaxWalkSpeed);
+                }
+            }
+
             ReportAbilityMoveResult(WeakPet.Get(), AbilityRequestId, Result.IsSuccess());
             WeakContext.FinishTask(Result.IsSuccess() ? EStateTreeFinishTaskType::Succeeded : EStateTreeFinishTaskType::Failed);
         });
