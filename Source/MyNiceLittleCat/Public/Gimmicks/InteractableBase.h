@@ -7,6 +7,7 @@
 /// LinkedActors 중 IActivatableInterface 구현체에 Activate/Deactivate 신호를 보냅니다.
 /// AlignMode와 InteractionPoint 컴포넌트로 상호작용 전 캐릭터의 위치·방향 정렬을 지정합니다.
 /// 감지 거리 판정은 InteractionVolume 컴포넌트(없으면 메시)에서 플레이어와 가장 가까운 점 기준입니다.
+/// 포커스 중 안내 UI는 PromptText(동작 텍스트)와 PromptAnchorTag 컴포넌트(없으면 메시 윗면) 위치로 표시됩니다.
 
 #pragma once
 
@@ -36,6 +37,7 @@ public:
 	virtual void OnFocusEnd_Implementation(AActor* InteractInstigator) override;
 	virtual FInteractAlignment GetInteractAlignment_Implementation(AActor* InteractInstigator) const override;
 	virtual FVector GetInteractFocusLocation_Implementation(AActor* InteractInstigator) const override;
+	virtual FInteractPromptInfo GetInteractPrompt_Implementation(AActor* InteractInstigator) const override;
 
 	// 활성 상태 변경 (같은 상태면 무시). 델리게이트 브로드캐스트 + 연결 대상에 신호 전달
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
@@ -110,6 +112,26 @@ protected:
 	// 목표 위치가 이보다 멀면 이동하지 않고 바라보기만 함 (먼 거리를 미끄러지듯 이동하는 것 방지)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Align", meta = (ClampMin = "0.0", EditCondition = "AlignMode == EInteractAlignMode::SnapToPoint"))
 	float MaxAlignDistance = 150.f;
+
+	// 포커스 중 안내 UI(키 + 동작 텍스트) 표시
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Prompt")
+	bool bShowPrompt = true;
+
+	// 동작 텍스트 (예: "당기기"). 비면 키만 표시
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Prompt", meta = (EditCondition = "bShowPrompt"))
+	FText PromptText;
+
+	// 활성 상태일 때 동작 텍스트 (예: 켜기/끄기). 비면 PromptText 사용
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Prompt", meta = (EditCondition = "bShowPrompt"))
+	FText PromptTextActivated;
+
+	// 이 태그가 붙은 씬 컴포넌트가 있으면 그 위치에 표시, 없으면 메시 바운드 윗면 중앙
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Prompt", meta = (EditCondition = "bShowPrompt"))
+	FName PromptAnchorTag = TEXT("InteractPrompt");
+
+	// 표시 위치에 더할 월드 오프셋
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Prompt", meta = (EditCondition = "bShowPrompt"))
+	FVector PromptOffset = FVector(0.f, 0.f, 30.f);
 
 private:
 	UPROPERTY(VisibleInstanceOnly, Category = "Interaction")

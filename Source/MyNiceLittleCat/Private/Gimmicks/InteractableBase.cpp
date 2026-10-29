@@ -163,6 +163,29 @@ FVector AInteractableBase::GetInteractFocusLocation_Implementation(AActor* Inter
 	return Mesh ? GetClosestPointOn(Mesh, From) : GetActorLocation();
 }
 
+FInteractPromptInfo AInteractableBase::GetInteractPrompt_Implementation(AActor* InteractInstigator) const
+{
+	FInteractPromptInfo Result;
+	Result.bShowPrompt = bShowPrompt;
+	Result.ActionText = (bActivated && !PromptTextActivated.IsEmpty()) ? PromptTextActivated : PromptText;
+
+	// 태그 붙은 컴포넌트 위치, 없으면 메시 바운드 윗면 중앙
+	FVector BaseLocation = GetActorLocation();
+	const USceneComponent* Anchor = PromptAnchorTag.IsNone() ? nullptr : FindComponentByTag<USceneComponent>(PromptAnchorTag);
+	if (Anchor)
+	{
+		BaseLocation = Anchor->GetComponentLocation();
+	}
+	else if (Mesh)
+	{
+		const FBoxSphereBounds& Bounds = Mesh->Bounds;
+		BaseLocation = Bounds.Origin + FVector(0.f, 0.f, Bounds.BoxExtent.Z);
+	}
+
+	Result.WorldLocation = BaseLocation + PromptOffset;
+	return Result;
+}
+
 FVector AInteractableBase::GetClosestPointOn(const UPrimitiveComponent* Primitive, const FVector& From)
 {
 	// 콜리전 기준 가장 가까운 점 (안쪽이면 From 그대로). 콜리전이 없으면 바운드 박스 기준
