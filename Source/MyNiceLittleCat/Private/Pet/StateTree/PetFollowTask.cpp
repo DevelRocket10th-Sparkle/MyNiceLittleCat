@@ -40,6 +40,9 @@ EStateTreeRunStatus FPetFollowTask::EnterState(FStateTreeExecutionContext& Conte
     Data.OriginalMaxWalkSpeed = Movement->MaxWalkSpeed;
     Data.bHasSavedMoveSpeed = true;
 
+    // Controller와 속도 정보는 준비하고, 이동 요청만 보류
+    if (true == Data.Pet->IsNavigationRecoveryPending()) return EStateTreeRunStatus::Running;
+
     // Target에게로 이동 요청 실패 : Task 실패
     // MoveToActor(따라갈 대상, 도착 허용 거리, 펫 반경을 허용 거리에 추가할지)
     const EPathFollowingRequestResult::Type Result =
@@ -83,6 +86,9 @@ EStateTreeRunStatus FPetFollowTask::Tick(FStateTreeExecutionContext& Context, co
     AAIController* Controller = Data.Controller.Get();
     if (false == IsValid(Data.Pet.Get()) || false == IsValid(Controller))
         return EStateTreeRunStatus::Failed;
+
+    if (true == Data.Pet->IsNavigationRecoveryPending())
+        return EStateTreeRunStatus::Running;
 
     AActor* Target = Data.Pet->GetPartnerPlayer();
     if (false == IsValid(Target))

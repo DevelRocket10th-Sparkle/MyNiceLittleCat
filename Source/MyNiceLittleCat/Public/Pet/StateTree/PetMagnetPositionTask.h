@@ -34,6 +34,12 @@ struct MYNICELITTLECAT_API FPetMagnetPositionTaskInstanceData
 
     UPROPERTY()
     bool bHasSavedMovement = false;
+
+    UPROPERTY()
+    FVector SafeLocation = FVector::ZeroVector;
+
+    bool bHasSafeLocation = false;
+    float TimeUntilSafeSearch = 0.f;
 };
 
 USTRUCT(meta = (DisplayName = "Pet Magnet Position"))
