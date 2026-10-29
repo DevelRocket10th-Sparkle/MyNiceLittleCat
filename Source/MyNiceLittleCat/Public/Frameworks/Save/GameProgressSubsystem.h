@@ -19,6 +19,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnProgressSaved, bool, bSuccess);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPlayerRested);
 // 세이브 직전 (맵의 기믹 등이 현재 상태를 세이브 데이터에 기록)
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnCollectSaveData, UGameProgressSaveGame*);
+// 세이브 데이터가 통째로 바뀜 (슬롯 로드, 새 게임 초기화) → 세이브를 캐시하는 쪽이 다시 읽음
+DECLARE_MULTICAST_DELEGATE(FOnSaveDataReplaced);
 
 UCLASS()
 class MYNICELITTLECAT_API UGameProgressSubsystem : public UGameInstanceSubsystem
@@ -111,6 +113,9 @@ public:
 
 	// 세이브 직전 (C++ 전용)
 	FOnCollectSaveData OnCollectSaveData;
+
+	// 세이브 데이터가 통째로 바뀐 뒤 (C++ 전용)
+	FOnSaveDataReplaced OnSaveDataReplaced;
 
 	// 세이브 슬롯 (TODO(합의): 슬롯 여러 개 / 이어하기 UI 생기면 조정)
 	FString SaveSlotName = TEXT("GameProgress");

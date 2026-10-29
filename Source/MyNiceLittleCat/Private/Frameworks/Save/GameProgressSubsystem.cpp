@@ -183,6 +183,7 @@ bool UGameProgressSubsystem::LoadProgress()
 	}
 
 	CurrentSave = Loaded;
+	OnSaveDataReplaced.Broadcast();
 	OnCheckpointChanged.Broadcast(CurrentSave->LastCheckpoint.CheckpointId);
 	return true;
 }
@@ -196,6 +197,7 @@ void UGameProgressSubsystem::ResetProgress()
 
 	CurrentSave = Cast<UGameProgressSaveGame>(UGameplayStatics::CreateSaveGameObject(UGameProgressSaveGame::StaticClass()));
 	OnCheckpointChanged.Broadcast(NAME_None);
+	OnSaveDataReplaced.Broadcast();
 }
 
 bool UGameProgressSubsystem::HasSaveSlot() const

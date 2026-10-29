@@ -47,7 +47,7 @@ class MYNICELITTLECAT_API UGameProgressSaveGame : public USaveGame
 public:
 	// 세이브 구조 버전 (항목 추가·변경 시 올림)
 	UPROPERTY(BlueprintReadOnly, Category = "Save")
-	int32 SaveVersion = 3;
+	int32 SaveVersion = 4;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Save")
 	FDateTime SavedTime;
@@ -66,4 +66,8 @@ public:
 	// 기믹 켜짐 상태 ("맵 이름/세이브 이름" → 켜짐). AGimmickActorBase의 bSaveState가 켜진 기믹만 기록
 	UPROPERTY(BlueprintReadOnly, Category = "Save")
 	TMap<FName, bool> GimmickStates;
+
+	// 인벤토리 (아이템 데이터 에셋 경로 → 개수). UInventorySubsystem이 세이브 직전 기록
+	UPROPERTY(BlueprintReadOnly, Category = "Save")
+	TMap<FSoftObjectPath, int32> InventoryItems;
 };
