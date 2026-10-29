@@ -8,6 +8,7 @@
 #include "Interfaces/ActivatableInterface.h"
 #include "Gimmicks/InteractionPointComponent.h"
 #include "Gimmicks/InteractionVolumeComponent.h"
+#include "Gimmicks/InteractPromptAnchorComponent.h"
 
 AInteractableBase::AInteractableBase()
 {
@@ -169,9 +170,9 @@ FInteractPromptInfo AInteractableBase::GetInteractPrompt_Implementation(AActor* 
 	Result.bShowPrompt = bShowPrompt;
 	Result.ActionText = (bActivated && !PromptTextActivated.IsEmpty()) ? PromptTextActivated : PromptText;
 
-	// 태그 붙은 컴포넌트 위치, 없으면 메시 바운드 윗면 중앙
+	// 안내 UI 위치 컴포넌트, 없으면 메시 바운드 윗면 중앙
 	FVector BaseLocation = GetActorLocation();
-	const USceneComponent* Anchor = PromptAnchorTag.IsNone() ? nullptr : FindComponentByTag<USceneComponent>(PromptAnchorTag);
+	const UInteractPromptAnchorComponent* Anchor = FindComponentByClass<UInteractPromptAnchorComponent>();
 	if (Anchor)
 	{
 		BaseLocation = Anchor->GetComponentLocation();

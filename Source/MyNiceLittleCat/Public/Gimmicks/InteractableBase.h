@@ -7,7 +7,7 @@
 /// LinkedActors 중 IActivatableInterface 구현체에 Activate/Deactivate 신호를 보냅니다.
 /// AlignMode와 InteractionPoint 컴포넌트로 상호작용 전 캐릭터의 위치·방향 정렬을 지정합니다.
 /// 감지 거리 판정은 InteractionVolume 컴포넌트(없으면 메시)에서 플레이어와 가장 가까운 점 기준입니다.
-/// 포커스 중 안내 UI는 PromptText(동작 텍스트)와 PromptAnchorTag 컴포넌트(없으면 메시 윗면) 위치로 표시됩니다.
+/// 포커스 중 안내 UI는 PromptText(동작 텍스트)와 InteractPromptAnchor 컴포넌트(없으면 메시 윗면) 위치로 표시됩니다.
 
 #pragma once
 
@@ -125,11 +125,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Prompt", meta = (EditCondition = "bShowPrompt"))
 	FText PromptTextActivated;
 
-	// 이 태그가 붙은 씬 컴포넌트가 있으면 그 위치에 표시, 없으면 메시 바운드 윗면 중앙
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Prompt", meta = (EditCondition = "bShowPrompt"))
-	FName PromptAnchorTag = TEXT("InteractPrompt");
-
-	// 표시 위치에 더할 월드 오프셋
+	// 표시 위치(InteractPromptAnchor 컴포넌트, 없으면 메시 바운드 윗면 중앙)에 더할 월드 오프셋
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Prompt", meta = (EditCondition = "bShowPrompt"))
 	FVector PromptOffset = FVector(0.f, 0.f, 30.f);
 
