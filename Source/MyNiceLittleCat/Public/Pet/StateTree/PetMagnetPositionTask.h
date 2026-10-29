@@ -40,6 +40,9 @@ struct MYNICELITTLECAT_API FPetMagnetPositionTaskInstanceData
 
     bool bHasSafeLocation = false;
     float TimeUntilSafeSearch = 0.f;
+
+    UPROPERTY(EditAnywhere, Category = "Parameter", meta = (ClampMin = "1.0", Units = "cm"))
+    float MaxSafeDistanceFromPlayer = 200.f;
 };
 
 USTRUCT(meta = (DisplayName = "Pet Magnet Position"))

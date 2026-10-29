@@ -37,6 +37,14 @@ EStateTreeRunStatus FPetMagnetPositionTask::EnterState(FStateTreeExecutionContex
     Movement->DisableMovement();
     Movement->bOrientRotationToMovement = false;
 
+    // 자성 시작 전의 현재 위치가 안전하면 초기 기억으로 사용
+    const FVector InitialLocation = Data.Pet->GetActorLocation();
+    if (true == Data.Pet->CanUseMagnetPosition(InitialLocation))
+    {
+        Data.SafeLocation = InitialLocation;
+        Data.bHasSafeLocation = true;
+    }
+
     // 진입한 프레임부터 위치를 적용!
     return Tick(Context, 0.f);
 }
@@ -62,39 +70,53 @@ EStateTreeRunStatus FPetMagnetPositionTask::Tick(FStateTreeExecutionContext& Con
     {
         // 원래 목표가 다시 유효해지면 즉시 원래 배치로 복귀
         PositionToUse = TargetLocation;
-        Data.bHasSafeLocation = false;
+        //Data.bHasSafeLocation = false;
         Data.TimeUntilSafeSearch = 0.f;
     }
     else
     {
-        // 안전 위치 탐색에는 경로 검사가 포함되므로 주기를 제한
-        if (Data.TimeUntilSafeSearch <= 0.f)
-        {
-            Data.TimeUntilSafeSearch = 0.2f;
+        const float MaxSafeDistance = FMath::Max(Data.MaxSafeDistanceFromPlayer, Data.DistanceFromPlayer);
 
-            FVector NewSafeLocation;
-            if (true == Data.Pet->TryFindSafeRecoveryLocation(TargetLocation, NewSafeLocation))
+        const bool bRememberedPositionUsable = Data.bHasSafeLocation && FVector::DistSquared2D(Data.SafeLocation, Player->GetActorLocation())
+            <= FMath::Square(MaxSafeDistance) && Data.Pet->CanUseMagnetPosition(Data.SafeLocation);
+
+        if (false == bRememberedPositionUsable)
+        {
+            Data.bHasSafeLocation = false;
+
+            // 시작부터 안전 위치가 없거나,
+            // 기억한 위치가 무효가 된 예외에서만 탐색
+            if (Data.TimeUntilSafeSearch <= 0.f)
             {
-                Data.SafeLocation = NewSafeLocation;
-                Data.bHasSafeLocation = true;
+                Data.TimeUntilSafeSearch = 0.2f;
+                FVector NewSafeLocation;
+                if (true == Data.Pet->TryFindSafeRecoveryLocation(TargetLocation, NewSafeLocation))
+                {
+                    Data.SafeLocation = NewSafeLocation;
+                    Data.bHasSafeLocation = true;
+                }
             }
         }
 
-        // 후보가 없으면 현재 위치를 유지하고 다음 Tick에도 재검사
-        if (false == Data.bHasSafeLocation
-            || false == Data.Pet->CanUseMagnetPosition(Data.SafeLocation))
+        if (false == Data.bHasSafeLocation)
         {
+            // 잘못된 좌표로 이동하지 않고 다음 Tick에 재검사
             Data.Pet->SetActorRotation(TargetRotation);
             return EStateTreeRunStatus::Running;
         }
 
+        // 원래 목표가 무효여도 최근 안전 위치가 유효하면 유지
         PositionToUse = Data.SafeLocation;
     }
 
-    // 검증한 끝점으로 배치.
-   // 안전 위치와 원래 위치 사이의 기둥에 Sweep이 막혀
-   // 원래 배치로 돌아오지 못하는 상황을 방지.
-    Data.Pet->SetActorLocationAndRotation(PositionToUse, TargetRotation, false, nullptr, ETeleportType::TeleportPhysics);
+    const bool bMoved = Data.Pet->SetActorLocationAndRotation(PositionToUse, TargetRotation, false, nullptr, ETeleportType::TeleportPhysics);
+    // 실제 배치에 성공한 위치를 가장 최근 안전 위치로 기억
+    if (true == bMoved)
+    {
+        Data.SafeLocation = Data.Pet->GetActorLocation();
+        Data.bHasSafeLocation = true;
+    }
+
     return EStateTreeRunStatus::Running;
 }
 
