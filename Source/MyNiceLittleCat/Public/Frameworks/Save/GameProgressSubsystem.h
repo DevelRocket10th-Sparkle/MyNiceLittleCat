@@ -17,6 +17,8 @@
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCheckpointChanged, FName, CheckpointId);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnProgressSaved, bool, bSuccess);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPlayerRested);
+// 세이브 직전 (맵의 기믹 등이 현재 상태를 세이브 데이터에 기록)
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnCollectSaveData, UGameProgressSaveGame*);
 
 UCLASS()
 class MYNICELITTLECAT_API UGameProgressSubsystem : public UGameInstanceSubsystem
@@ -64,8 +66,20 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Progress|Flag")
 	bool HasProgressFlag(FName Flag) const;
 
+	// ---- 기믹 상태 ----
+
+	// 현재 맵 기믹의 켜짐 상태 기록 (보통 세이브 직전 OnCollectSaveData에서 호출)
+	UFUNCTION(BlueprintCallable, Category = "Progress|Gimmick", meta = (WorldContext = "WorldContextObject"))
+	void SetGimmickState(const UObject* WorldContextObject, FName GimmickId, bool bActivated);
+
+	// 현재 맵 기믹의 저장된 켜짐 상태 (기록이 없으면 false)
+	UFUNCTION(BlueprintCallable, Category = "Progress|Gimmick", meta = (WorldContext = "WorldContextObject"))
+	bool GetGimmickState(const UObject* WorldContextObject, FName GimmickId, bool& bOutActivated) const;
+
 	// ---- 저장·로드 ----
 
+	// 슬롯에 저장. 체크포인트 상호작용 때 호출되고, 자동 저장 등 다른 시점에도 어디서든 호출 가능
+	// 저장 직전 OnCollectSaveData를 브로드캐스트해 맵 기믹 상태를 모음
 	UFUNCTION(BlueprintCallable, Category = "Progress|Save")
 	bool SaveProgress();
 
@@ -95,12 +109,16 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Progress")
 	FOnPlayerRested OnPlayerRested;
 
+	// 세이브 직전 (C++ 전용)
+	FOnCollectSaveData OnCollectSaveData;
+
 	// 세이브 슬롯 (TODO(합의): 슬롯 여러 개 / 이어하기 UI 생기면 조정)
 	FString SaveSlotName = TEXT("GameProgress");
 	int32 SaveUserIndex = 0;
 
 private:
 	static FString GetLevelName(const UObject* WorldContextObject);
+	static FName MakeGimmickKey(const UObject* WorldContextObject, FName GimmickId);
 
 private:
 	UPROPERTY(Transient)

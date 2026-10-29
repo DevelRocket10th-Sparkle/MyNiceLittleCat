@@ -120,8 +120,43 @@ bool UGameProgressSubsystem::HasProgressFlag(FName Flag) const
 	return CurrentSave->ProgressFlags.Contains(Flag);
 }
 
+FName UGameProgressSubsystem::MakeGimmickKey(const UObject* WorldContextObject, FName GimmickId)
+{
+	return FName(*FString::Printf(TEXT("%s/%s"), *GetLevelName(WorldContextObject), *GimmickId.ToString()));
+}
+
+void UGameProgressSubsystem::SetGimmickState(const UObject* WorldContextObject, FName GimmickId, bool bActivated)
+{
+	if (GimmickId.IsNone())
+	{
+		return;
+	}
+	CurrentSave->GimmickStates.Add(MakeGimmickKey(WorldContextObject, GimmickId), bActivated);
+}
+
+bool UGameProgressSubsystem::GetGimmickState(const UObject* WorldContextObject, FName GimmickId, bool& bOutActivated) const
+{
+	bOutActivated = false;
+	if (GimmickId.IsNone())
+	{
+		return false;
+	}
+
+	const bool* Found = CurrentSave->GimmickStates.Find(MakeGimmickKey(WorldContextObject, GimmickId));
+	if (!Found)
+	{
+		return false;
+	}
+
+	bOutActivated = *Found;
+	return true;
+}
+
 bool UGameProgressSubsystem::SaveProgress()
 {
+	// 맵 기믹 등이 현재 상태를 기록
+	OnCollectSaveData.Broadcast(CurrentSave);
+
 	CurrentSave->SavedTime = FDateTime::Now();
 
 	const bool bSuccess = UGameplayStatics::SaveGameToSlot(CurrentSave, SaveSlotName, SaveUserIndex);

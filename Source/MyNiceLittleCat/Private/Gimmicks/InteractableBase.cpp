@@ -5,7 +5,6 @@
 
 #include "Gimmicks/InteractableBase.h"
 #include "Components/StaticMeshComponent.h"
-#include "Interfaces/ActivatableInterface.h"
 #include "Gimmicks/InteractionPointComponent.h"
 #include "Gimmicks/InteractionVolumeComponent.h"
 #include "Gimmicks/InteractPromptAnchorComponent.h"
@@ -18,16 +17,6 @@ AInteractableBase::AInteractableBase()
 	SetRootComponent(Mesh);
 }
 
-void AInteractableBase::BeginPlay()
-{
-	Super::BeginPlay();
-
-	if (bStartActivated)
-	{
-		SetActivated(true, this);
-	}
-}
-
 void AInteractableBase::Interact_Implementation(AActor* InteractInstigator)
 {
 	if (!IInteractableInterface::Execute_CanInteract(this, InteractInstigator))
@@ -35,7 +24,7 @@ void AInteractableBase::Interact_Implementation(AActor* InteractInstigator)
 		return;
 	}
 
-	SetActivated(!bActivated, InteractInstigator);
+	SetActivated(!IsActivated(), InteractInstigator);
 }
 
 bool AInteractableBase::CanInteract_Implementation(AActor* InteractInstigator) const
@@ -46,7 +35,7 @@ bool AInteractableBase::CanInteract_Implementation(AActor* InteractInstigator) c
 	}
 
 	// 토글 불가 기믹은 한 번 켜지면 잠김
-	return bToggleable || !bActivated;
+	return bToggleable || !IsActivated();
 }
 
 void AInteractableBase::OnFocusBegin_Implementation(AActor* InteractInstigator)
@@ -168,7 +157,7 @@ FInteractPromptInfo AInteractableBase::GetInteractPrompt_Implementation(AActor* 
 {
 	FInteractPromptInfo Result;
 	Result.bShowPrompt = bShowPrompt;
-	Result.ActionText = (bActivated && !PromptTextActivated.IsEmpty()) ? PromptTextActivated : PromptText;
+	Result.ActionText = (IsActivated() &&!PromptTextActivated.IsEmpty()) ? PromptTextActivated : PromptText;
 
 	// 안내 UI 위치 컴포넌트, 없으면 메시 바운드 윗면 중앙
 	FVector BaseLocation = GetActorLocation();
@@ -196,40 +185,4 @@ FVector AInteractableBase::GetClosestPointOn(const UPrimitiveComponent* Primitiv
 		return Point;
 	}
 	return Primitive->Bounds.GetBox().GetClosestPointTo(From);
-}
-
-void AInteractableBase::SetActivated(bool bNewActivated, AActor* ChangeInstigator)
-{
-	if (bActivated == bNewActivated)
-	{
-		return;
-	}
-
-	bActivated = bNewActivated;
-
-	HandleActivationChanged(bActivated, ChangeInstigator);
-	K2_OnActivationChanged(bActivated, ChangeInstigator);
-	OnActivationChanged.Broadcast(this, bActivated, ChangeInstigator);
-
-	NotifyLinkedActors();
-}
-
-void AInteractableBase::NotifyLinkedActors()
-{
-	for (AActor* Linked : LinkedActors)
-	{
-		if (!IsValid(Linked) || !Linked->Implements<UActivatableInterface>())
-		{
-			continue;
-		}
-
-		if (bActivated)
-		{
-			IActivatableInterface::Execute_Activate(Linked, this);
-		}
-		else
-		{
-			IActivatableInterface::Execute_Deactivate(Linked, this);
-		}
-	}
 }

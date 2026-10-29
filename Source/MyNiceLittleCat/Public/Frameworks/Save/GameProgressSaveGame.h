@@ -47,7 +47,7 @@ class MYNICELITTLECAT_API UGameProgressSaveGame : public USaveGame
 public:
 	// 세이브 구조 버전 (항목 추가·변경 시 올림)
 	UPROPERTY(BlueprintReadOnly, Category = "Save")
-	int32 SaveVersion = 2;
+	int32 SaveVersion = 3;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Save")
 	FDateTime SavedTime;
@@ -62,4 +62,8 @@ public:
 	// 진행 플래그 (스테이지 클리어, 보스 처치 등). 이름 규칙은 TODO(합의)
 	UPROPERTY(BlueprintReadOnly, Category = "Save")
 	TSet<FName> ProgressFlags;
+
+	// 기믹 켜짐 상태 ("맵 이름/세이브 이름" → 켜짐). AGimmickActorBase의 bSaveState가 켜진 기믹만 기록
+	UPROPERTY(BlueprintReadOnly, Category = "Save")
+	TMap<FName, bool> GimmickStates;
 };
