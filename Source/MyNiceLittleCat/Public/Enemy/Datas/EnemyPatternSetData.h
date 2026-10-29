@@ -29,7 +29,8 @@ enum class EEnemyPatternMovementPolicy : uint8
 {
 	Stop,
 	ChaseTarget,
-	AbilityDriven
+	AbilityDriven,
+	UsePhaseDefault		// 현재 페이즈 기본 이동 정책 사용
 };
 
 USTRUCT(BlueprintType)
@@ -55,8 +56,10 @@ struct FEnemyPatternMovementSettings
 
 	bool IsValid() const
 	{
-		return static_cast<uint8>(Policy) <= static_cast<uint8>(EEnemyPatternMovementPolicy::AbilityDriven)
-			&& FMath::IsFinite(AcceptanceRadius) && AcceptanceRadius >= 0.f;
+		return
+			static_cast<uint8>(Policy) <= static_cast<uint8>(EEnemyPatternMovementPolicy::UsePhaseDefault)
+			&& FMath::IsFinite(AcceptanceRadius)
+			&& AcceptanceRadius >= 0.f;
 	}
 
 	bool operator==(const FEnemyPatternMovementSettings& Other) const

@@ -343,30 +343,14 @@ bool AEnemyCharacter::InitializeEnemyExtensions()
 
 bool AEnemyCharacter::IsRotationLocked() const
 {
-	// Ability 등이 명시적으로 회전을 잠근 경우
+	// GA 등이 명시적으로 회전을 잠근 경우
 	if (RotationLockCount > 0)
 	{
 		return true;
 	}
 
-	// 패턴 컴포넌트 준비되지 않았으면 회전 제한 없음
-	if (!IsValid(PatternComponent))
-	{
-		return false;
-	}
-
-	FEnemyPatternMovementSettings Movement;
-	AActor* Target = nullptr;
-	int64 RequestId = 0;
-
-	// 공격 중에는 패턴 정책, 후딜 중에는 항상 Stop 반환
-	if (!PatternComponent->GetActiveMovement(Movement, Target, RequestId))
-	{
-		return false;
-	}
-	
-	// 활성화된 패턴이 있으면 패턴의 Movement 정책에 따른 값 반환
-	return Movement.Policy == EEnemyPatternMovementPolicy::Stop;
+	// 후딜 중에는 공격 종료 시점의 몸 방향을 유지
+	return IsValid(PatternComponent) && PatternComponent->IsRecovering();
 }
 
 // 공격 중 회전 제한을 존중하여 Controller 방향 반영

@@ -38,6 +38,11 @@ float ABossCharacter::CalculateHealthAfterDamage(float CurrentHealth, float MaxH
 
 	return FMath::Clamp(CurrentHealth - FMath::Max(0.f, Damage), EffectiveFloor, CurrentHealth);
 }
+void ABossCharacter::SetLevelMovementRoutes(const TMap<FName, FBossMovementRoute>& InRoutes)
+{
+	PhaseComponent->SetMovementRoutes(InRoutes);
+}
+
 // 기본 초기화 뒤 파생 캐릭터의 추가 설정 준비
 bool ABossCharacter::InitializeEnemyExtensions()
 {
@@ -104,15 +109,26 @@ void ABossCharacter::HandleTransitionRequested()
 	{
 		return;
 	}
+
+
 	GetPatternComponent()->SetRequestsBlocked(true);
 	GetPatternComponent()->CancelActiveRequest();
+	
 	// 이전 페이즈의 대기를 새 페이즈 첫 공격에 넘기지 않는다.
 	GetPatternComponent()->ResetAttackInterval();
+
 	StopPhaseGimmicks();
+
 	if (AEnemyAIController* AI = Cast<AEnemyAIController>(GetController()))
 	{
 		AI->StopMovement();
+
+		// 이전 페이즈의 Hold Focus와 공격 정렬 Focus 해제
+		// 기본 플레이어 Gameplay Focus는 유지
+		AI->ClearPhaseHold();
+		AI->ClearFocus(EnemyFocusPriority::AttackFacing);
 	}
+
 	RefreshBossBlackboard();
 }
 
@@ -144,13 +160,35 @@ void ABossCharacter::FinishPhaseTransition()
 	{
 		return;
 	}
-	// 마지막 로그 페이즈까지 통과했으면 이전 공격 목록을 재사용하지 않음
-	if (PhaseComponent->IsCurrentPhaseLogOnly()) GetPatternComponent()->SetAvailablePatterns({});
-	GetPatternComponent()->SetRequestsBlocked(PhaseComponent->IsCurrentPhaseLogOnly());
+
+	const bool bLogOnly = PhaseComponent->IsCurrentPhaseLogOnly();
+	
+	// 로그 전용 페이즈에서 이전 페이즈의 공격 목록이 남지 않도록 비움
+	if (bLogOnly)
+	{
+		GetPatternComponent()->SetAvailablePatterns({});
+	}
+
+	// 첫 페이즈 시작과 각 페이즈 전환 완료 시 기준 방향 설정
+	if (AEnemyAIController* AI = Cast<AEnemyAIController>(GetController()))
+	{
+		const FBossPhaseDefinition* Phase = PhaseComponent->GetCurrentPhase();
+
+		if (!bLogOnly
+			&& Phase && Phase->RotationMode == EBossPhaseRotationMode::Hold)
+		{
+			// 전환 연출 후 현재 Actor의 수평 방향을 이번 페이즈의 기준으로 저장
+			AI->SetPhaseHoldYaw(GetActorRotation().Yaw);
+		}
+		else
+		{
+			AI->ClearPhaseHold();
+		}
+	}
+
+	GetPatternComponent()->SetRequestsBlocked(bLogOnly);
 	RefreshBossBlackboard();
 }
-
-
 
 // 체력 변경 시 사망 판정을 먼저 수행한 뒤 추가 상태 처리
 void ABossCharacter::HandleHealthChanged(float NewHealth, float MaxHealth)
@@ -209,23 +247,31 @@ void ABossCharacter::StopEncounter()
 {
 	bEncounterActive = false;
 	bFailurePending = false;
+
 	++EncounterGeneration;
+
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(FailureTimerHandle);
 	}
+
 	PhaseComponent->StopAndInvalidate();
 	GetPatternComponent()->StopAndInvalidate();
 	StopPhaseGimmicks();
+
 	if (AEnemyAIController* AI = Cast<AEnemyAIController>(GetController()))
 	{
 		if (UBrainComponent* Brain = AI->GetBrainComponent())
 		{
 			Brain->StopLogic(TEXT("Boss encounter stopped"));
 		}
+
 		AI->StopMovement();
+		AI->ClearPhaseHold();
+		AI->ClearFocus(EnemyFocusPriority::AttackFacing);
 		AI->ClearCombatTarget();
 	}
+
 	GetCharacterMovement()->StopMovementImmediately();
 	SetWantsToMove(false);
 	RefreshBossBlackboard();

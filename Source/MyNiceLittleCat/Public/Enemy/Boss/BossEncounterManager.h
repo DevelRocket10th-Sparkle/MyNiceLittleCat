@@ -1,6 +1,9 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+
+#include "Enemy/Datas/BossMovementTypes.h"
+
 #include "BossEncounterManager.generated.h"
 
 class ABossCharacter;
@@ -9,7 +12,13 @@ class USceneComponent;
 
 // 보스방의 준비, 전투, 초기화, 클리어 및 재도전 대기 상태
 UENUM(BlueprintType)
-enum class EBossEncounterState : uint8 { Ready, Running, Resetting, Cleared, Waiting };
+enum class EBossEncounterState : uint8 {
+	Ready,
+	Running,
+	Resetting,
+	Cleared,
+	Waiting
+};
 
 // 플레이어 사망 시 보스를 유지하며 대기하고, 명시적 초기화나 전환 실패 시 재생성
 UCLASS()
@@ -26,6 +35,7 @@ public :
 	// 보스와 기믹 정리 후 새 보스를 생성하여 체력 및 페이즈 초기화
 	UFUNCTION(BlueprintCallable, Category = "Boss")
 	void ResetEncounter();
+
 protected :
 	// 컴포넌트 초기화 후 실행 준비
 	virtual void BeginPlay() override;
@@ -52,6 +62,8 @@ protected :
 	// 이벤트 해제 및 전투 정리 후 현재 보스 제거
 	void RemoveCurrentBoss();
 
+protected :
+
 	// 레벨 배치 위치를 제공하는 루트 컴포넌트
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	TObjectPtr<USceneComponent> SceneRoot;
@@ -70,6 +82,11 @@ protected :
 	// 기믹 영역 중심 (코인 스폰 기준 등): 비우면 기믹 쪽 기본값 사용
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Boss|Gimmick")
 	TObjectPtr<AActor> GimmickAreaCenter;
+
+	// Waypoints 이동 정책 시 움직일 경로 저장
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Boss|Movement")
+	TMap<FName, FBossMovementRoute> MovementRoutes;
+
 private :
 	// 이번 전투의 단일 플레이어
 	UPROPERTY(Transient)

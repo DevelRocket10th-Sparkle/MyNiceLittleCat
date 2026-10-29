@@ -39,8 +39,13 @@ bool ABossEncounterManager::SpawnBoss()
 	CurrentBoss = Boss;
 	Boss->OnDefeated.AddUniqueDynamic(this, &ABossEncounterManager::HandleBossDefeated);
 	Boss->OnEncounterFailed.AddUniqueDynamic(this, &ABossEncounterManager::HandleBossFailed);
+	// 보스에 페이즈에서 사용하는 기믹 관련 요소 설정
 	Boss->SetLevelGimmickReferences(PhaseGimmickActors, GimmickAreaCenter);
+	// 보스에 페이즈별 이동 경로 설정
+	Boss->SetLevelMovementRoutes(MovementRoutes);
+	// 보스 스폰 완료 처리
 	Boss->FinishSpawning(SpawnTransform);
+
 	if (!Boss->GetController())
 	{
 		Boss->SpawnDefaultController();
@@ -81,7 +86,10 @@ void ABossEncounterManager::ResetEncounter()
 	{
 		EncounterState = EBossEncounterState::Ready;
 	}
-	else UE_LOG(LogTemp, Error, TEXT("Boss room initialization failed: %s"), *GetName());
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("Boss room initialization failed: %s"), *GetName());
+	}
 }
 
 // 준비된 보스방의 첫 페이즈와 타깃 선정 시작
