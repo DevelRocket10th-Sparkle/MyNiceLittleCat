@@ -106,6 +106,10 @@ public:
 
 	void SetAnimationMovementStyle(EPetMovementStyle _newStyle) { AnimationMovementStyle = _newStyle; }
 
+	class USpeechBubbleComponent* GetSpeechBubble() const { return SpeechBubble; }
+
+	UFUNCTION(BlueprintPure, Category = "Pet|Carry")
+	AActor* GetCarriedActor() const;
 private:
 	void GrantModeAbilities();
 	// =============================================================================
@@ -157,6 +161,9 @@ protected:
 
 	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Pet|Animation")
 	EPetMovementStyle AnimationMovementStyle = EPetMovementStyle::Normal;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pet|SpeechBubble")
+	TObjectPtr<class USpeechBubbleComponent> SpeechBubble; // 머리 위 말풍선
 private:
 	// 초기화 됨?
 	UPROPERTY(Transient)

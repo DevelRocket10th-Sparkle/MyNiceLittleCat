@@ -70,6 +70,12 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Melee Hit")
     TObjectPtr<USoundBase> HitSound;
 
+    UPROPERTY(EditAnywhere, Category = "Melee Hit|Hit Stop", meta = (ClampMin = "0.0"))
+    float HitStopDuration = 0.08f;
+
+    UPROPERTY(EditAnywhere, Category = "Melee Hit|Hit Stop", meta = (ClampMin = "0.0"))
+    float KillHitStopDuration = 0.2f;
+
 private:
     TMap<TWeakObjectPtr<USkeletalMeshComponent>, TSet<TWeakObjectPtr<AActor>>> HitActorsByMesh;
     TMap<TWeakObjectPtr<USkeletalMeshComponent>, FTimerHandle> HitStopTimers;

@@ -37,6 +37,7 @@ APlayerCharacter::APlayerCharacter()
 
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.f, 1080.f, 0.f);
+    GetCharacterMovement()->bAllowPhysicsRotationDuringAnimRootMotion = true;
 
 	// 카메라 붐
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -144,7 +145,17 @@ void APlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-    if (!IsValid(LockOnComponent) || !LockOnComponent->IsLockedOn()) return;
+    // 공격 중 회전
+    const UAnimInstance* Anim = GetMesh()->GetAnimInstance();
+    const bool bAttacking = Anim && Anim->GetCurrentActiveMontage() && !bIsDodging;
+    if (bAttacking && bIsAbleToMove && LastMoveInputFrame >= GFrameCounter - 1 && !LastMoveInputDir.IsNearlyZero())
+    {
+        const FRotator Target(0.f, LastMoveInputDir.Rotation().Yaw, 0.f);
+        SetActorRotation(FMath::RInterpConstantTo(GetActorRotation(), Target, DeltaTime, AttackTurnRate));
+    }
+
+    // 락온 시 회전
+    if (GetbIsRunning() || !IsValid(LockOnComponent) || !LockOnComponent->IsLockedOn()) return;
 
     AActor* Target = LockOnComponent->GetLockedTarget();
     if (!IsValid(Target)) return;
@@ -220,6 +231,12 @@ void APlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 			ETriggerEvent::Started,
 			this,
 			&APlayerCharacter::OnDodgeInput
+		);
+		EnhancedInput->BindAction(
+			IA_Dodge,
+			ETriggerEvent::Completed,
+			this,
+			&APlayerCharacter::OnDodgeReleased
 		);
 	}
     if (IA_MeleeAttack)
@@ -348,6 +365,9 @@ void APlayerCharacter::Move(const FInputActionValue& Value)
 
     AddMovementInput(ForwardDirection, Input.Y);
     AddMovementInput(RightDirection, Input.X);
+
+    LastMoveInputDir = (ForwardDirection * Input.Y + RightDirection * Input.X).GetSafeNormal2D();
+    LastMoveInputFrame = GFrameCounter;
 }
 
 void APlayerCharacter::ToggleTargetLock()
@@ -448,7 +468,45 @@ void APlayerCharacter::EndDodge()
 
 void APlayerCharacter::OnDodgeInput(const FInputActionValue& Value)
 {
-    StartDodge();
+    GetWorldTimerManager().SetTimer(RunHoldTimer, this, &APlayerCharacter::StartRun, RunHoldThreshold, false);
+}
+
+void APlayerCharacter::OnDodgeReleased(const FInputActionValue& Value)
+{
+    // Released before the run kicked in → tap → dodge
+    if (GetWorldTimerManager().IsTimerActive(RunHoldTimer))
+    {
+        GetWorldTimerManager().ClearTimer(RunHoldTimer);
+        StartDodge();
+        return;
+    }
+    StopRun();
+}
+
+void APlayerCharacter::StartRun()
+{
+    if (bIsDead || bIsRunning) return;
+
+    // Still rolling: try again shortly so holding through a roll turns into a run
+    if (bIsDodging)
+    {
+        GetWorldTimerManager().SetTimer(RunHoldTimer, this, &APlayerCharacter::StartRun, 0.05f, false);
+        return;
+    }
+
+    bIsRunning = true;
+    UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+    WalkSpeedBeforeRun = MoveComp->MaxWalkSpeed;
+    MoveComp->MaxWalkSpeed = WalkSpeedBeforeRun * RunSpeedMultiplier;
+}
+
+void APlayerCharacter::StopRun()
+{
+    GetWorldTimerManager().ClearTimer(RunHoldTimer);
+    if (!bIsRunning) return;
+
+    bIsRunning = false;
+    GetCharacterMovement()->MaxWalkSpeed = WalkSpeedBeforeRun;
 }
 
 void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
@@ -457,6 +515,8 @@ void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
 
 	if (bIsDead || bIsAbleToAttack == false) return;
 
+    LastMoveInputFrame = 0;
+    LastMoveInputDir = GetActorRotation().Vector();
     for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
     {
         if (Spec.Ability &&
@@ -484,6 +544,10 @@ void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
     }
 
     AbilitySystemComponent->TryActivateAbilityByClass(MeleeAttackAbilityClass);
+    if (bIsRunning)
+    {
+        StopRun();
+    }
 }
 
 void APlayerCharacter::OnHealthChanged(const FOnAttributeChangeData& Data)

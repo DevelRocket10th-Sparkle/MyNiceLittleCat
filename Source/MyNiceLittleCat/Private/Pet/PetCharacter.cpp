@@ -8,7 +8,8 @@
 #include "GameplayTagContainer.h"
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-
+#include "Pet/SpeechBubbleComponent.h"
+#include "Pet/GAS/Ability/GameplayAbility_PetMagnet.h"
 APetCharacter::APetCharacter()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -37,6 +38,10 @@ APetCharacter::APetCharacter()
 
 	CarryPoint = CreateDefaultSubobject<USceneComponent>(TEXT("CarryPoint"));
 	CarryPoint->SetupAttachment(GetMesh(), TEXT("CarrySocket"));
+
+	// 말풍선
+	SpeechBubble = CreateDefaultSubobject<USpeechBubbleComponent>(TEXT("SpeechBubble"));
+	SpeechBubble->SetupAttachment(GetRootComponent()); // 캡슐 기준이라 메시 애니메이션에 흔들리지 않음
 }
 
 void APetCharacter::BeginPlay()
@@ -304,6 +309,21 @@ bool APetCharacter::IsModeAbilityActive(EPetMode _mode) const
 
 	const FGameplayAbilitySpec* Spec = AbilitySystemComponent->FindAbilitySpecFromHandle(Handle);
 	return (nullptr != Spec && true == Spec->IsActive());
+}
+
+AActor* APetCharacter::GetCarriedActor() const
+{
+	if (false == IsValid(AbilitySystemComponent.Get())) return nullptr;
+
+	FGameplayAbilitySpecHandle Handle;
+	if (false == TryGetModeAbilityHandle(EPetMode::Magnet, Handle)) return nullptr;
+
+	const FGameplayAbilitySpec* Spec = AbilitySystemComponent->FindAbilitySpecFromHandle(Handle);
+	if (nullptr == Spec || false == Spec->IsActive()) return nullptr;
+
+	const UGameplayAbility_PetMagnet* MagnetAbility = Cast<UGameplayAbility_PetMagnet>(Spec->GetPrimaryInstance());
+
+	return (true == IsValid(MagnetAbility)) ? MagnetAbility->GetCarriedActor() : nullptr;
 }
 
 void APetCharacter::GrantModeAbilities()
