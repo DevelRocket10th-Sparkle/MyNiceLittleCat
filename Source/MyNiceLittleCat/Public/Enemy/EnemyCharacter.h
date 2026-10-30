@@ -19,14 +19,13 @@
 
 class UEnemyAttributeSet;
 class UEnemyConfigData;
-class UWidgetComponent;
 
 class UEnemyPatternComponent;
 class UEnemyMeleeTraceComponent;
 
-// Test용
 class UAnimMontage;
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnEnemyDeathStarted, AEnemyCharacter*);
 UCLASS()
 class MYNICELITTLECAT_API AEnemyCharacter : public ACharacter, public IAbilitySystemInterface, public ITargetableInterface
 {
@@ -36,7 +35,6 @@ public:
 
 	// 캐릭터의 기본 속성을 설정한다.
 	AEnemyCharacter(const FObjectInitializer& ObjectInitializer);
-	virtual void Tick(float DeltaSeconds) override;
 
 	// Getter: 이 캐릭터의 능력 실행 컴포넌트
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent()const override;
@@ -115,12 +113,6 @@ protected:
 	// 컴포넌트 초기화 후 실행 준비
 	virtual void BeginPlay() override;
 
-	UFUNCTION(BlueprintCallable)
-	void InitializeOverheadWidget();
-
-	/** 카메라 시선과 마주보도록 위젯 컴포넌트의 월드 회전을 갱신 */
-	virtual void UpdateOverheadWidgetRotation();
-
 	// Enemy 능력치 적용
 	// 설정 데이터의 능력치 및 이동 속도를 캐릭터에 적용
 	UFUNCTION(CallInEditor)
@@ -146,31 +138,12 @@ protected:
 	// 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-	/* 밀려나기 */
-	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float PlayerPushMultiplier = 1.f;	// 보스는 0으로 설정하기
+public :
 
+	// FOnEnemyDeathStarted 델리게이트: 사망 상태로 전환된 직후 방송
+	FOnEnemyDeathStarted OnDeathStarted;
 
 protected :
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
-	TObjectPtr<UWidgetComponent> HealthBarWidgetComp = nullptr;
-
-	// 위젯 BP의 기본값보다 몬스터별 설정을 우선 적용한다.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Overhead", meta = (DisplayName = "Show Health Text"))
-	bool bShowHealthText = true;
-
-	/** 위젯이 항상 카메라를 바라보도록 회전할지 여부 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Overhead")
-	bool bFaceCamera = true;
-
-	/** 빌보드 회전 시 상하 기울기(Pitch)를 고정(0)할지 여부 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Overhead")
-	bool bLockWidgetPitch = false;
-
-	/** 빌보드 회전 시 좌우 기울기(Roll)를 고정(0)할지 여부 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Overhead")
-	bool bLockWidgetRoll = true;
 
 	// 능력을 부여하고 실행할 ASC 참조
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS")
@@ -209,5 +182,9 @@ protected :
 	int32 AttackMovementLockCount = 0;
 	// 현재 회전 제한을 획득한 공격 실행 수
 	int32 RotationLockCount = 0;
+
+	/* 밀려나기 */
+	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float PlayerPushMultiplier = 1.f;	// 보스는 0으로 설정하기
 
 };

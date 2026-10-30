@@ -7,6 +7,7 @@
 #include "EnemyOverheadHealthBarWidget.generated.h"
 
 class UResourceBarWidget;
+class UEnemyAttributeSet;
 
 /**
  * 
@@ -20,12 +21,15 @@ public:
 
 	virtual void InitializeOverheadHealthBar(AActor* InActor);
 
+	void UnbindOverheadHealthBar();
+
 	UFUNCTION(BlueprintCallable, Category = "Health Bar")
 	void SetShowHealthText(bool bShow);
 
 protected:
 
 	virtual void NativePreConstruct() override;
+	virtual void NativeDestruct() override;
 	
 protected :
 
@@ -34,5 +38,10 @@ protected :
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UResourceBarWidget> HealthBar = nullptr;
+
+private:
+
+	// 현재 연결된 Enemy의 스탯
+	TWeakObjectPtr<UEnemyAttributeSet> ObservedStats;
 	
 };

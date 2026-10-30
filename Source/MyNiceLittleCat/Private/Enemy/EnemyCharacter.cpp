@@ -20,11 +20,6 @@
 #include "Enemy/AI/EnemyAIController.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
-#include "Components/WidgetComponent.h"
-#include "Enemy/Boss/BossCharacter.h"
-#include "WIdgets/Enemy/EnemyOverheadHealthBarWidget.h"
-#include "Kismet/GameplayStatics.h"
-#include "Camera/PlayerCameraManager.h"
 
 // 캐릭터의 기본 상태를 설정한다.
 AEnemyCharacter::AEnemyCharacter(const FObjectInitializer& ObjectInitializer)
@@ -42,17 +37,6 @@ AEnemyCharacter::AEnemyCharacter(const FObjectInitializer& ObjectInitializer)
 	// 전투 관련
 	PatternComponent = CreateDefaultSubobject<UEnemyPatternComponent>(TEXT("PatternComponent"));
 	MeleeTraceComponent = CreateDefaultSubobject<UEnemyMeleeTraceComponent>(TEXT("MeleeTraceComponent"));
-
-	HealthBarWidgetComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidgetComponent"));
-	HealthBarWidgetComp->SetupAttachment(RootComponent);
-
-	HealthBarWidgetComp->SetWidgetSpace(EWidgetSpace::World);
-	HealthBarWidgetComp->SetDrawSize(FVector2D(750.f, 50.f));
-	HealthBarWidgetComp->SetRelativeScale3D(FVector(0.12f));
-	HealthBarWidgetComp->SetRelativeLocation(FVector(0.f, 0.f, 120.f));
-	HealthBarWidgetComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	HealthBarWidgetComp->SetGenerateOverlapEvents(false);
-	HealthBarWidgetComp->SetVisibility(true);
 
 	/* 기본 회전 속도 제한 */
 
@@ -122,18 +106,6 @@ void AEnemyCharacter::BeginPlay()
 	
 	// Health 변경 델리게이트 구독
 	AttributeSet->OnHealthChange.AddUObject(this, &AEnemyCharacter::HandleHealthChanged);
-
-	// Boss HP belongs to the encounter HUD. Dedicated servers need no widgets.
-	if (!IsA<ABossCharacter>() && GetNetMode() != NM_DedicatedServer)
-	{
-		HealthBarWidgetComp->InitWidget();
-		InitializeOverheadWidget();
-		HealthBarWidgetComp->SetVisibility(IsAlive());
-	}
-	else
-	{
-		HealthBarWidgetComp->SetVisibility(false);
-	}
 	
 	if (UEnemyCharacterMovementComponent* Movement = Cast<UEnemyCharacterMovementComponent>(GetCharacterMovement()))
 	{
@@ -197,7 +169,9 @@ void AEnemyCharacter::BeginDeath()
 		return;
 
 	LifeState = EEnemyLifeState::Dying;	// 중복 방지를 위해 최우선 처리 필요
-	HealthBarWidgetComp->SetVisibility(false);
+
+	OnDeathStarted.Broadcast(this);
+
 	PatternComponent->StopAndInvalidate();
 
 	SetWantsToMove(false);
@@ -401,52 +375,4 @@ void AEnemyCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		AttributeSet->OnHealthChange.RemoveAll(this);
 	}
 	Super::EndPlay(EndPlayReason);
-}
-
-void AEnemyCharacter::Tick(float DeltaSeconds)
-{
-	Super::Tick(DeltaSeconds);
-	if (bFaceCamera && HealthBarWidgetComp->IsVisible())
-	{
-		UpdateOverheadWidgetRotation();
-	}
-}
-
-void AEnemyCharacter::InitializeOverheadWidget()
-{
-	if (!HealthBarWidgetComp)
-		return;
-
-	if (UUserWidget* UserWidget = HealthBarWidgetComp->GetUserWidgetObject())
-	{
-		if (UEnemyOverheadHealthBarWidget* HealthBarWidget = Cast<UEnemyOverheadHealthBarWidget>(UserWidget))
-		{
-			HealthBarWidget->SetShowHealthText(bShowHealthText);
-			HealthBarWidget->InitializeOverheadHealthBar(this);
-		}
-	}
-}
-
-void AEnemyCharacter::UpdateOverheadWidgetRotation()
-{
-	if (!HealthBarWidgetComp)
-		return;
-
-	if (APlayerCameraManager* CameraManager = UGameplayStatics::GetPlayerCameraManager(this, 0))
-	{
-		// 카메라의 전방 벡터와 정확히 마주보는 방향(-CameraForward, 사이각 180도)으로 회전
-		const FVector CameraForward = CameraManager->GetCameraRotation().Vector();
-		FRotator WidgetRotation = (-CameraForward).Rotation();
-
-		if (bLockWidgetPitch)
-		{
-			WidgetRotation.Pitch = 0.f;
-		}
-		if (bLockWidgetRoll)
-		{
-			WidgetRotation.Roll = 0.f;
-		}
-
-		HealthBarWidgetComp->SetWorldRotation(WidgetRotation);
-	}
 }
