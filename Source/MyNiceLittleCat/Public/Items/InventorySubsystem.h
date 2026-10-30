@@ -52,9 +52,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	TArray<FItemStack> GetAllItems() const;
 
-	// 획득 UI 표시 (프로젝트 설정 > Item의 위젯)
+	// 획득 UI 표시 (프로젝트 설정 > Item의 위젯). bWaitForClose면 자동으로 숨기지 않고 닫기 안내를 표시 (닫기는 호출한 쪽이 HideItems)
 	UFUNCTION(BlueprintCallable, Category = "Inventory", meta = (WorldContext = "WorldContextObject"))
-	void ShowAcquireUI(const UObject* WorldContextObject, const TArray<FItemStack>& InItems);
+	UItemAcquireWidget* ShowAcquireUI(const UObject* WorldContextObject, const TArray<FItemStack>& InItems, bool bWaitForClose = false);
 
 public:
 	UPROPERTY(BlueprintAssignable, Category = "Inventory")

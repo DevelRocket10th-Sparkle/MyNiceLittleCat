@@ -19,8 +19,13 @@ FText UItemAcquireWidget::MakeItemLine(const FItemStack& Stack)
 	return FText::Format(INVTEXT("{0} ×{1}"), Stack.Item->GetDisplayNameOrDefault(), FText::AsNumber(Stack.Count));
 }
 
-void UItemAcquireWidget::ShowItems(const TArray<FItemStack>& Items, float Duration)
+void UItemAcquireWidget::ShowItems(const TArray<FItemStack>& Items, float Duration, bool bShowCloseHint)
 {
+	if (CloseHintText)
+	{
+		CloseHintText->SetVisibility(bShowCloseHint ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+
 	if (ItemListText)
 	{
 		TArray<FText> Lines;

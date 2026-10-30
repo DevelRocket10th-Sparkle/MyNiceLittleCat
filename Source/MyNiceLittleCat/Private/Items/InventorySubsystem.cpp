@@ -168,7 +168,7 @@ TArray<FItemStack> UInventorySubsystem::GetAllItems() const
 	return Result;
 }
 
-void UInventorySubsystem::ShowAcquireUI(const UObject* WorldContextObject, const TArray<FItemStack>& InItems)
+UItemAcquireWidget* UInventorySubsystem::ShowAcquireUI(const UObject* WorldContextObject, const TArray<FItemStack>& InItems, bool bWaitForClose)
 {
 	TArray<FItemStack> Visible;
 	for (const FItemStack& Stack : InItems)
@@ -180,7 +180,7 @@ void UInventorySubsystem::ShowAcquireUI(const UObject* WorldContextObject, const
 	}
 	if (Visible.Num() == 0)
 	{
-		return;
+		return nullptr;
 	}
 
 	const UItemSettings* Settings = GetDefault<UItemSettings>();
@@ -189,7 +189,7 @@ void UInventorySubsystem::ShowAcquireUI(const UObject* WorldContextObject, const
 	if (!WidgetClass || !PlayerController)
 	{
 		UE_LOG(LogTemp, Log, TEXT("[Inventory] 획득 UI 없음 (프로젝트 설정 > Item > Acquire Widget Class 확인)"));
-		return;
+		return nullptr;
 	}
 
 	// 위젯 하나를 재사용 (맵이 바뀌거나 플레이어 컨트롤러가 바뀌면 다시 만듦)
@@ -199,12 +199,14 @@ void UInventorySubsystem::ShowAcquireUI(const UObject* WorldContextObject, const
 	}
 	if (!AcquireWidget)
 	{
-		return;
+		return nullptr;
 	}
 
 	if (!AcquireWidget->IsInViewport())
 	{
 		AcquireWidget->AddToViewport(Settings->AcquireWidgetZOrder);
 	}
-	AcquireWidget->ShowItems(Visible, Settings->AcquireDisplayTime);
+	// 닫기를 기다리면 자동으로 숨기지 않음
+	AcquireWidget->ShowItems(Visible, bWaitForClose ? 0.f : Settings->AcquireDisplayTime, bWaitForClose);
+	return AcquireWidget;
 }
