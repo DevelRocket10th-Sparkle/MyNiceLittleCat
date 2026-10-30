@@ -82,9 +82,9 @@ void UGA_BossLaserBeam::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	{
 		OriginalDamagePerHit = Laser->GetDamagePerHit();
 		bOverrodeDamage = true;
-		Laser->SetDamagePerHit(Enemy->GetAttributeSet()->GetAttackPower() * LaserSettings->DamageMultiplier);
+		Laser->SetDamagePerHit(Enemy->GetAttributeSet()->GetAttackPower() * ExecutionPattern.DamageMultiplier);
 		UE_LOG(LogTemp, Log, TEXT("[BossLaser] %s: 피해 %.1f (공격력 %.1f × %.2f)"), *Enemy->GetName(), Laser->GetDamagePerHit(),
-			Enemy->GetAttributeSet()->GetAttackPower(), LaserSettings->DamageMultiplier);
+			Enemy->GetAttributeSet()->GetAttackPower(), ExecutionPattern.DamageMultiplier);
 	}
 
 	// 이동 잠금이 걸리면 경로 이동이 막히므로 이동을 먼저

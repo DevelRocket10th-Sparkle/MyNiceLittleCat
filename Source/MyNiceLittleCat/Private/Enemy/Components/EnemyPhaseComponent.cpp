@@ -11,6 +11,8 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 
+#include "Engine/TargetPoint.h"
+
 // 컴포넌트의 기본 실행 상태를 설정한다.
 UEnemyPhaseComponent::UEnemyPhaseComponent()
 {
@@ -56,6 +58,12 @@ bool UEnemyPhaseComponent::InitializePhases(UAbilitySystemComponent* InASC, UEne
 		UE_LOG(LogTemp, Error, TEXT("Phase initialization failed: %s"), *Error);
 		return false;
 	}
+	if (!ValidateMovementRoutes(Error))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Phase initialization failed: %s"), *Error);
+		return false;		
+	}
+
 	return true;
 }
 
@@ -90,6 +98,83 @@ FName UEnemyPhaseComponent::GetCurrentPhaseId() const
 	// 초기화 전에는 유효한 페이즈가 없으므로 None 반환
 	const FBossPhaseDefinition* Phase = GetCurrentPhase();
 	return Phase ? Phase->PhaseId : NAME_None;
+}
+
+void UEnemyPhaseComponent::SetMovementRoutes(const TMap<FName, FBossMovementRoute>& InRoutes)
+{
+	MovementRoutes = InRoutes;
+}
+
+bool UEnemyPhaseComponent::GetCurrentWaypoint(FVector & OutLocation) const
+{
+	const FBossPhaseDefinition* Phase = GetCurrentPhase();
+	// 유효하지 않은 페이즈이거나 이동 정책이 Waypoints가 아니면 실행하지 않음
+	if (!IsActive() || IsCurrentPhaseLogOnly() || !Phase
+		|| Phase->MovementMode != EBossPhaseMovementMode::Waypoints)
+	{
+		return false;
+	}
+
+	const FBossMovementRoute* Route = MovementRoutes.Find(Phase->MovementRouteId);
+	// 경로나 지정된 경로의 Waypoint가 유효하지 않으면 실행하지 않음
+	if (!Route
+		|| !Route->Points.IsValidIndex(CurrentWaypointIndex))
+	{
+		return false;
+	}
+
+	// 페이즈와 경로가 모두 유효하면 목표 Waypoint 찾기
+	const ATargetPoint* Point = Route->Points[CurrentWaypointIndex].Get();
+	if (!IsValid(Point))
+	{
+		return false;
+	}
+
+	OutLocation = Point->GetActorLocation();	// 목표 Waypoint 위치 기록
+	return true;	// 목표 Waypoint 찾았기 때문에 true 반환
+}
+
+void UEnemyPhaseComponent::AdvanceWaypoint(int64 PhaseExecutionId)
+{
+	// 아래 조건에서 실행하지 않음
+	// - 페이즈가 전환 중이거나 정지 상태
+	// - 유효한 페이즈 실행 ID 없음
+	// - 도착한 이동 알림이 현재 페이즈의 알림이 아닌 경우
+	if (!IsActive() || PhaseExecutionId == 0
+		|| PhaseExecutionId != GetCurrentPhaseExecutionId())
+	{
+		return;
+	}
+
+	const FBossPhaseDefinition* Phase = GetCurrentPhase();
+	// 유효하지 않은 페이즈이거나 이동 정책이 Waypoints가 아니면 실행하지 않음
+	if (!Phase
+		|| Phase->MovementMode != EBossPhaseMovementMode::Waypoints)
+	{
+		return;
+	}
+
+	const FBossMovementRoute* Route = MovementRoutes.Find(Phase->MovementRouteId);
+	// 경로나 지정된 경로의 Waypoint가 복수가 아니면 실행하지 않음
+	if (!Route
+		|| Route->Points.Num() <= 1)
+	{
+		return;
+	}
+
+	const int32 LastIndex = Route->Points.Num() - 1;	// 경로의 마지막 Waypoint 인덱스
+	
+	// 처음과 마지막 Waypoint에서 순회 방향 전환
+	if (CurrentWaypointIndex >= LastIndex)
+	{
+		WaypointDirection = -1;
+	}
+	else if (CurrentWaypointIndex <= 0)
+	{
+		WaypointDirection = 1;
+	}
+
+	CurrentWaypointIndex += WaypointDirection;	// 현재 Waypoint 인덱스 업데이트
 }
 
 // 현재 전투 페이즈에서 허용하는 최소 체력 반환
@@ -270,6 +355,108 @@ void UEnemyPhaseComponent::CleanupTransitionSequence()
 	}
 }
 
+bool UEnemyPhaseComponent::ValidateMovementRoutes(FString& OutError) const
+{
+	OutError.Reset();
+
+	if (!IsValid(Config))
+	{
+		OutError = TEXT("Phase config is invalid.");
+		return false;
+	}
+
+	// 페이즈별로 유효성 검사
+	for (int32 PhaseIndex = 0; PhaseIndex < Config->Phases.Num(); ++PhaseIndex)
+	{
+		// 로그 전용 페이즈는 실제 이동을 실행하지 않음
+		if (Config->IsLogOnlyPhase(PhaseIndex))
+		{
+			continue;
+		}
+
+		const FBossPhaseDefinition& Phase = Config->Phases[PhaseIndex];
+
+		// Stop, Chasing은 경로 사용 안 함
+		if (Phase.MovementMode != EBossPhaseMovementMode::Waypoints)
+		{
+			continue;
+		}
+
+		// 유효하지 않은 경로 ID
+		if (Phase.MovementRouteId.IsNone())
+		{
+			OutError = FString::Printf(
+				TEXT("Phase '%s': MovementRouteId is None."),
+				*Phase.PhaseId.ToString()
+			);
+			return false;
+		}
+
+		const FBossMovementRoute* Route = MovementRoutes.Find(Phase.MovementRouteId);
+
+		// 찾아온 경로가 유효하지 않음
+		if (!Route)
+		{
+			OutError = FString::Printf(
+				TEXT("Phase '%s': Route '%s' is not registered."),
+				*Phase.PhaseId.ToString(),
+				*Phase.MovementRouteId.ToString()
+			);
+			return false;
+		}
+
+		// 경로에 Waypoints가 등록되지 않음
+		if (Route->Points.IsEmpty())
+		{
+			OutError = FString::Printf(
+				TEXT("Phase '%s': Route '%s' has no points."),
+				*Phase.PhaseId.ToString(),
+				*Phase.MovementRouteId.ToString()
+			);
+			return false;
+		}
+
+		// 각 Waypoints 유효성 검사
+		for (int32 PointIndex = 0; PointIndex < Route->Points.Num(); ++PointIndex)
+		{
+			const ATargetPoint* Point = Route->Points[PointIndex].Get();
+
+			// Waypoint가 유효하지 않음
+			if (!IsValid(Point))
+			{
+				OutError = FString::Printf(
+					TEXT("Phase '%s': Route '%s', point [%d] is invalid."),
+					*Phase.PhaseId.ToString(),
+					*Phase.MovementRouteId.ToString(),
+					PointIndex
+				);
+				return false;
+			}
+
+			// 다른 World에 있는 Waypoint가 추가돼 있음
+			if (Point->GetWorld() != GetWorld())
+			{
+				OutError = FString::Printf(
+					TEXT("Phase '%s': Route '%s', point [%d] belongs to another world"),
+					*Phase.PhaseId.ToString(),
+					*Phase.MovementRouteId.ToString(),
+					PointIndex
+				);
+				return false;
+			}
+		}
+	}
+
+	// 모든 페이즈에서 위 검사 모두 통과하면 유효함
+	return true;
+}
+
+void UEnemyPhaseComponent::ResetPhaseMovement()
+{
+	CurrentWaypointIndex = 0;
+	WaypointDirection = 1;
+}
+
 // 정상 종료한 전환에 한해 다음 페이즈 설정 확정
 bool UEnemyPhaseComponent::CompleteTransition(int64 TransitionId)
 {
@@ -308,6 +495,9 @@ void UEnemyPhaseComponent::StopAndInvalidate()
 	PendingPhaseIndex = INDEX_NONE;
 	TransitionResult = EEnemyPatternResult::Invalid;
 	CleanupTransitionSequence();
+
+	// 페이즈의 Waypoints 이동 정책 설정 초기화 (MovementRoutes는 유지)
+	ResetPhaseMovement();
 }
 
 // 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출
@@ -358,14 +548,24 @@ bool UEnemyPhaseComponent::ApplyCurrentPhase()
 	{
 		return false;
 	}
+
+	// 페이즈의 Waypoints 이동 정책 설정 초기화 (MovementRoutes는 유지)
+	ResetPhaseMovement();
+
 	ActivePhaseExecutionId = ++NextPhaseExecutionId;
+
 	const int64 ApplyingExecutionId = ActivePhaseExecutionId;
 	bPendingGimmickCompletion = false;
 	bApplyingPhase = true;
+	
 	if (IsCurrentPhaseLogOnly())
+	{
 		UE_LOG(LogTemp, Log, TEXT("[BossPhase][LogOnly] %s waiting for manual completion"),
 			*Config->Phases[CurrentPhaseIndex].PhaseId.ToString());
+	}
+
 	const bool bApplied = IsCurrentPhaseLogOnly() || ApplyPhase.Execute(Config->Phases[CurrentPhaseIndex]);
 	bApplyingPhase = false;
+
 	return bApplied && IsTransitioning() && ActivePhaseExecutionId == ApplyingExecutionId;
 }
