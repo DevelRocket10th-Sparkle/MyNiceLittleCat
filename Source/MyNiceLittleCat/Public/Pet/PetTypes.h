@@ -12,7 +12,8 @@ enum class EPetBehavior : uint8
     Idle   UMETA(DisplayName = "Idle"),
     Follow UMETA(DisplayName = "Follow"),
     MoveTo UMETA(DisplayName = "MoveTo"),
-    AbilityMoveTo UMETA(DisplayName = "AbilityMoveTo") // 능력이 요청하고 결과를 기다리는 이동..
+    AbilityMoveTo UMETA(DisplayName = "AbilityMoveTo"), // 능력이 요청하고 결과를 기다리는 이동..
+    RecoverFollow UMETA(DisplayName = "Recover Follow")
 };
 
 // 플레이어가 선택한 펫 능력 모드
@@ -60,6 +61,8 @@ enum class EPetMovementStyle : uint8
 {
     Normal           UMETA(DisplayName = "Normal"),
     Magnet           UMETA(DisplayName = "Magnet"),
+    ReflectPlacement UMETA(DisplayName = "Reflect Placement"),
+    FollowRecovery   UMETA(DisplayName = "Follow Recovery")
     ReflectPlacement UMETA(DisplayName = "Reflect Placement"),
 
     Fly              UMETA(DisplayName = "Fly") // 튜토리얼 등에서 펫이 공중으로 날아갈 때
