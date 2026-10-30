@@ -30,6 +30,7 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	// =============================================================================
 public:
 	UFUNCTION(BlueprintCallable, Category = "Pet|Init")
@@ -110,8 +111,24 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Pet|Carry")
 	AActor* GetCarriedActor() const;
+
+	// CapsuleLocation: 검사할 펫 캡슐 중심의 월드 위치
+	bool CanResumeFollowingAt(const FVector& CapsuleLocation);
+
+	// 성공했을 때만 OutLocation에 안전한 캡슐 중심 위치를 반환
+	bool TryFindSafeRecoveryLocation(const FVector& PreferredLocation, FVector& OutLocation);
+
+	void ResumeNavigationSafely(EMovementMode RestoreMode, uint8 RestoreCustomMode = 0);
+
+	void CancelNavigationRecovery();
+
+	bool IsNavigationRecoveryPending() { return bNavigationRecoveryPending;}
+
+	// 자성 사용 중 이 캡슐 위치에 배치해도 되는지 검사
+	bool CanUseMagnetPosition(const FVector& CapsuleLocation);
 private:
 	void GrantModeAbilities();
+	void TryCompleteNavigationRecovery();
 	// =============================================================================
 public:
 	UPROPERTY(BlueprintAssignable, Category = "Pet|Mode")
@@ -164,6 +181,14 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pet|SpeechBubble")
 	TObjectPtr<class USpeechBubbleComponent> SpeechBubble; // 머리 위 말풍선
+
+	UPROPERTY(EditDefaultsOnly, Category = "Pet|Recovery",
+		meta = (ClampMin = "100.0", Units = "cm"))
+	float RecoveryStartRadius = 180.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Pet|Recovery",
+		meta = (ClampMin = "10.0", Units = "cm"))
+	float RecoveryRadiusStep = 100.f;
 private:
 	// 초기화 됨?
 	UPROPERTY(Transient)
@@ -176,4 +201,12 @@ private:
 	// 요청 벊로
 	UPROPERTY(Transient, VisibleInstanceOnly, Category = "Pet|Behavior")
 	FGuid ActiveAbilityMoveRequestId;
+
+	FTimerHandle NavigationRecoveryTimer;
+
+	bool bNavigationRecoveryPending = false;
+
+	TEnumAsByte<EMovementMode> RecoveryMovementMode = MOVE_Walking;
+
+	uint8 RecoveryCustomMovementMode = 0;
 };
