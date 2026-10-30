@@ -97,15 +97,21 @@ public:
 	// 초기화와 생존 및 보스방 전투 상태를 포함한 AI 실행 가능 여부 확인
 	virtual bool CanRunEnemyAI() const;
 
+	/* 밀려나기 */
+
+	// 직접 밀기와 주변 몬스터의 양보 요청에 공통 사용
+	bool CanReceivePlayerPush() const;
+	
+	// bDirectPush
+	// - true: 플레이어가 직접 밀기
+	// - false: 다른 몬스터에게 공간 양보
+	void ApplyPlayerPush(const FVector& PushVelocity, bool bDirectPush = true);
+
 protected:
 
 	// 게임 시작 시 초기화한다. or when spawned
 	// 컴포넌트 초기화 후 실행 준비
 	virtual void BeginPlay() override;
-	
-	// 진행 중인 전환 시퀀스의 상태를 확인한다.
-	// 활성 상태의 매 프레임 처리
-	//virtual void Tick(float DeltaTime) override;
 
 	// Enemy 능력치 적용
 	// 설정 데이터의 능력치 및 이동 속도를 캐릭터에 적용
@@ -114,7 +120,7 @@ protected:
 
 	// 사망 전처리 - 사망 판정 직후 실행
 	// 중복 사망을 막고 공격과 AI를 정리한 뒤 사망 연출 시작
-	virtual void BeginDeath();	// 필요할 경우 EnemyTypes에 선언된 구조체 FEnemyDeathContext 받기
+	virtual void BeginDeath();
 
 	/* 델리게이트 반응 함수 */
 
@@ -131,6 +137,11 @@ protected:
 	// 제거 중 이전 공격의 이벤트가 동작하지 않도록 실행 무효화
 	// 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	/* 밀려나기 */
+	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float PlayerPushMultiplier = 1.f;	// 보스는 0으로 설정하기
+
 
 protected :
 

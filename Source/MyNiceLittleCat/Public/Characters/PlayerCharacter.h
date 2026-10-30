@@ -102,6 +102,9 @@ protected:
 	UFUNCTION()
 	void OnDeathMontageNotify(FName NotifyName, const FBranchingPointNotifyPayload& Payload);
 
+	// 근접한 Enemy 밀어내기
+	void PushNearbyEnemies(const FVector& WorldMoveInput);
+
 private:
 	void StartHitReaction(FVector HitDirection);
 	void ToggleHitFlash();
@@ -219,6 +222,20 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<UStaticMeshComponent> PotionMesh;
+
+	/* Enemy 밀어내기 관련 */
+
+	// 입력 세기와 방향 일치도를 곱하기 전의 기준 밀기 속력 (cm/s)
+	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0"))
+	float EnemyPushSpeed = 120.f;
+
+	// 직접 밀기 대상 탐색 시 캡슐 반경에 더할 여유 폭 (cm)
+	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0"))
+	float EnemyPushContactMargin = 8.f;
+
+	// 이 값보다 방향 일치도가 큰 Enemy만 직접 밀기 대상으로 선택
+	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float MinPushAlignment = 0.2f;
 
 private:
 	bool bIsDodging = false;

@@ -2,6 +2,7 @@
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Gimmicks/Reflection/ReflectionMath.h"
+#include "NavAreas/NavArea_Null.h"
 
 APetReflector::APetReflector()
 {
@@ -32,6 +33,14 @@ void APetReflector::BeginPlay()
     // 실제 설치된 반사판은 이동을 막음
     CollisionBox->SetCollisionProfileName(TEXT("BlockAllDynamic"));
 
+    // 기존 내비게이션 등록을 해제하고, 동적 장애물 설정을 적용한 뒤 다시 등록
+    CollisionBox->SetCanEverAffectNavigation(false);
+
+    CollisionBox->bDynamicObstacle = true;
+    CollisionBox->SetAreaClassOverride(UNavArea_Null::StaticClass());
+
+    CollisionBox->SetCanEverAffectNavigation(true);
+
     // 설치된 시점부터 수명 시작
     SetLifeSpan(ReflectorLifeSpan);
 }
@@ -60,4 +69,14 @@ bool APetReflector::TryGetReflection_Implementation(const FVector& IncomingDirec
 
     return FReflectionMath::TryReflectFrontFace(
         IncomingDirection, CollisionBox->GetForwardVector(), FVector(Hit.ImpactNormal), OutDirection);
+}
+
+// [추가: 최요환 2026-10-27] 파괴형 레이저에 맞으면 즉시 제거 (수명 종료와 같은 처리)
+// TODO: 깨지는 연출(이펙트·사운드)이 필요하면 여기서 재생하거나 BP 이벤트로 노출
+bool APetReflector::BreakByLaser_Implementation(AActor* LaserInstigator)
+{
+    if (IsActorBeingDestroyed()) return true;
+
+    Destroy();
+    return true;
 }
