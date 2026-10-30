@@ -29,7 +29,8 @@ enum class EEnemyPatternMovementPolicy : uint8
 {
 	Stop,
 	ChaseTarget,
-	AbilityDriven
+	AbilityDriven,
+	UsePhaseDefault		// 현재 페이즈 기본 이동 정책 사용
 };
 
 USTRUCT(BlueprintType)
@@ -55,8 +56,10 @@ struct FEnemyPatternMovementSettings
 
 	bool IsValid() const
 	{
-		return static_cast<uint8>(Policy) <= static_cast<uint8>(EEnemyPatternMovementPolicy::AbilityDriven)
-			&& FMath::IsFinite(AcceptanceRadius) && AcceptanceRadius >= 0.f;
+		return
+			static_cast<uint8>(Policy) <= static_cast<uint8>(EEnemyPatternMovementPolicy::UsePhaseDefault)
+			&& FMath::IsFinite(AcceptanceRadius)
+			&& AcceptanceRadius >= 0.f;
 	}
 
 	bool operator==(const FEnemyPatternMovementSettings& Other) const
@@ -88,6 +91,10 @@ struct FEnemyPatternDefinition
 	// GA별 전용 설정; 몽타주와 근접 판정이 필요 없는 패턴은 비워도 됨
 	UPROPERTY(EditDefaultsOnly, Instanced, BlueprintReadOnly, Category = "Execution")
 	TObjectPtr<UEnemyPatternExecutionSettings> ExecutionSettings;
+
+	// 패턴의 1회 타격 피해량 = AttackPower × DamageMultiplier
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage", meta = (ClampMin = "0.0"))
+	float DamageMultiplier = 1.f;
 
 	// 타깃과의 수평 최소 거리
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.0"))

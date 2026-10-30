@@ -17,6 +17,19 @@ class UAIPerceptionComponent;
 class UAISenseConfig_Sight;
 struct FAIStimulus;
 
+// Focus 우선순위: 숫자가 클수록 우선순위가 높음
+namespace EnemyFocusPriority
+{
+	// 기존 Gameplay Foucs보다 높은 페이즈 기본 방향
+	inline const EAIFocusPriority::Type PhaseHold =
+		static_cast<EAIFocusPriority::Type>(EAIFocusPriority::Gameplay + 1);
+
+	// 사전 회전이 필요한 공격에서 설정
+	// - 공격, 후딜 종료 또는 Task 중단 시 해제
+	inline const EAIFocusPriority::Type AttackFacing =
+		static_cast<EAIFocusPriority::Type>(EAIFocusPriority::Gameplay + 2);
+}
+
 /**
  * 
  */
@@ -40,6 +53,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Enemy|AI")
 	void ClearCombatTarget();
 
+	// 페이즈 기준 방향을 저장하고, Hold Focus 설정
+	void SetPhaseHoldYaw(float Yaw);
+
+	// 페이즈 Hold Focus 해제
+	void ClearPhaseHold();
+
 protected :
 
 	virtual void Tick(float DeltaSeconds) override;
@@ -57,5 +76,13 @@ protected :
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Perception")
 	TObjectPtr<UAISenseConfig_Sight> SightConfig;
+
+private :
+
+	// 페이즈 시작 방향을 바라보는 Focus 사용 여부
+	bool bPhaseHoldActive = false;
+
+	// 월드 기준으로 유지할 수평 방향
+	FVector PhaseHoldDirection = FVector::ForwardVector;
 
 };

@@ -9,6 +9,9 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+
+#include "Enemy/Datas/BossMovementTypes.h"
+
 #include "EnemyPhaseConfigData.generated.h"
 
 class ULevelSequence;
@@ -59,6 +62,28 @@ struct FBossPhaseDefinition
 	// 기믹과 전환 연출 없이 진입 로그를 출력하고 수동 완료 요청까지 대기
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	bool bLogOnly = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement")
+	EBossPhaseMovementMode MovementMode = EBossPhaseMovementMode::Chasing;
+
+	// MovementMode가 Waypoints일 때만 MovementRouteId 편집 가능
+	// EditConditionHides 설정으로 인해 Stop, Chasing 모드일 때는 설정 숨김
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement",
+		meta = (
+			EditCondition = "MovementMode == EBossPhaseMovementMode::Waypoints",
+			EditConditionHides
+		)
+	)
+	FName MovementRouteId;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement", meta = (ClampMin = "0.0", Units = "cm"))
+	float MovementAcceptanceRadius = 100.f;
+
+	// 페이즈의 기본 회전 목표
+	// Hold는 페이즈 시작 방항 사용 (공격 회전 정렬 Focus가 일시적으로 우선함)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rotation")
+	EBossPhaseRotationMode RotationMode = EBossPhaseRotationMode::FaceTarget;
+
 };
 
 /**
