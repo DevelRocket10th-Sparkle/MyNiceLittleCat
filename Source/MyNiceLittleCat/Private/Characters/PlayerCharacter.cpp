@@ -33,7 +33,7 @@ APlayerCharacter::APlayerCharacter()
 
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.f, 1080.f, 0.f);
-    GetCharacterMovement()->bAllowPhysicsRotationDuringAnimRootMotion = true;
+    GetCharacterMovement()->bAllowPhysicsRotationDuringAnimRootMotion = false;
 
 	// 카메라 붐
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
