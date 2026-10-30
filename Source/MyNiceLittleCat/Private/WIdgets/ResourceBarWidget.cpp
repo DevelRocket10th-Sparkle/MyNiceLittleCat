@@ -5,6 +5,7 @@
 
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
+#include "Components/SizeBox.h"
 
 void UResourceBarWidget::NativePreConstruct()
 {
@@ -50,13 +51,10 @@ void UResourceBarWidget::UpdateResourceBar(float InCurrent, float InMax)
 void UResourceBarWidget::SetShowValueText(bool bShow)
 {
 	bShowValueText = bShow;
+
 	const ESlateVisibility TextVisibility = bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
-	if (ValueTextContainer)
-		ValueTextContainer->SetVisibility(TextVisibility);
-	if (CurrentText)
-		CurrentText->SetVisibility(TextVisibility);
-	if (MaxText)
-		MaxText->SetVisibility(TextVisibility);
+	if (ValueTextSizeBox)
+		ValueTextSizeBox->SetVisibility(TextVisibility);
 }
 
 void UResourceBarWidget::SetResourceBarColor(FLinearColor InColor)

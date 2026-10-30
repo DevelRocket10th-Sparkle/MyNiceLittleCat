@@ -16,19 +16,23 @@ class MYNICELITTLECAT_API UEnemyOverheadHealthBarWidget : public UUserWidget
 {
 	GENERATED_BODY()
 
-protected:
-	virtual void NativePreConstruct() override;
+public:
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Health Bar", meta = (DisplayName = "Show Health Text"))
+	virtual void InitializeOverheadHealthBar(AActor* InActor);
+
+	UFUNCTION(BlueprintCallable, Category = "Health Bar")
+	void SetShowHealthText(bool bShow);
+
+protected:
+
+	virtual void NativePreConstruct() override;
+	
+protected :
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar", meta = (DisplayName = "Show Health Text"))
 	bool bShowHealthText = true;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UResourceBarWidget> HealthBar = nullptr;
-
-public:
-	UFUNCTION(BlueprintCallable, Category = "Enemy|Health Bar")
-	void SetShowHealthText(bool bShow);
-
-	virtual void InitializeOverheadHealthBar(AActor* InActor);
 	
 };

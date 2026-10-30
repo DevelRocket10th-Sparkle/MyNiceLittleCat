@@ -10,6 +10,8 @@ class ABossCharacter;
 class APlayerCharacter;
 class USceneComponent;
 
+class AMainHUD;
+
 // 보스방의 준비, 전투, 초기화, 클리어 및 재도전 대기 상태
 UENUM(BlueprintType)
 enum class EBossEncounterState : uint8 {
@@ -62,6 +64,11 @@ protected :
 	// 이벤트 해제 및 전투 정리 후 현재 보스 제거
 	void RemoveCurrentBoss();
 
+private :
+
+	void ShowEncounterHealthBar();
+	void HideEncounterHealthBar();
+
 protected :
 
 	// 레벨 배치 위치를 제공하는 루트 컴포넌트
@@ -97,4 +104,7 @@ private :
 	FTimerHandle ResetTimerHandle;
 	// 새 전투 및 초기화 시 증가하는 세션 번호
 	int64 EncounterGeneration = 0;
+
+	// 보스 체력바를 표시한 HUD를 약한 참조로 보관하고, 유효할 때만 사용
+	TWeakObjectPtr<AMainHUD> EncounterHUD;
 };

@@ -8,6 +8,7 @@
 
 class UProgressBar;
 class UTextBlock;
+class USizeBox;
 
 /**
  * 
@@ -48,9 +49,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> MaxText;
 
-	// Current / Max와 구분자(/)를 함께 담는 패널.
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UWidget> ValueTextContainer;
+	// CurrentText, MaxText, / 를 담는 크기 박스
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<USizeBox> ValueTextSizeBox;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resource Bar")
 	bool bShowValueText = true;
