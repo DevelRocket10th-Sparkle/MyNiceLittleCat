@@ -94,6 +94,22 @@ UAbilitySystemComponent* APlayerCharacter::GetAbilitySystemComponent() const
     return AbilitySystemComponent;
 }
 
+void APlayerCharacter::PlayDeflect()
+{
+    UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+    if (!Anim || !DeflectMontage || bIsDead || bIsDeflected) return;
+
+
+    if (bIsRunning) StopRun();
+    GetMesh()->GlobalAnimRateScale = 1.f;
+    bIsDeflected = true;
+    Anim->Montage_Play(DeflectMontage);
+
+    FOnMontageBlendingOutStarted OnOut;
+    OnOut.BindUObject(this, &APlayerCharacter::OnDeflectBlendingOut);
+    Anim->Montage_SetBlendingOutDelegate(OnOut, DeflectMontage);
+}
+
 // Called when the game starts or when spawned
 void APlayerCharacter::BeginPlay()
 {
@@ -339,6 +355,8 @@ void APlayerCharacter::Move(const FInputActionValue& Value)
     if (bIsDead) return;
     if (bIsDodging) return;
     if (!bIsAbleToMove) return;
+    if (bIsDeflected) return;
+
     const FVector2D Input = Value.Get<FVector2D>();
 
     if (Input.IsNearlyZero()) return;
@@ -388,7 +406,7 @@ void APlayerCharacter::SwitchTarget(const FInputActionValue& Value)
 
 void APlayerCharacter::StartDodge()
 {
-    if (bIsDead || bIsDodging || !DodgeMontage || !bIsAbleToDodge) return;
+    if (bIsDead || bIsDodging || !DodgeMontage || !bIsAbleToDodge || bIsDeflected) return;
 
     bIsDodging = true;
 
@@ -468,6 +486,7 @@ void APlayerCharacter::EndDodge()
 
 void APlayerCharacter::OnDodgeInput(const FInputActionValue& Value)
 {
+    if (bIsDeflected) return;
     GetWorldTimerManager().SetTimer(RunHoldTimer, this, &APlayerCharacter::StartRun, RunHoldThreshold, false);
 }
 
@@ -513,7 +532,7 @@ void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
 {
     bool bIsMeleeAttackActive = false;
 
-	if (bIsDead || bIsAbleToAttack == false) return;
+	if (bIsDead || bIsAbleToAttack == false || bIsDeflected) return;
 
     LastMoveInputFrame = 0;
     LastMoveInputDir = GetActorRotation().Vector();
@@ -716,6 +735,13 @@ void APlayerCharacter::DropWeapon()
         WeaponMesh->SetCollisionProfileName(TEXT("PhysicsActor"));
         WeaponMesh->SetSimulatePhysics(true);
     }
+}
+
+void APlayerCharacter::OnDeflectBlendingOut(UAnimMontage* Montage, bool bInterrupted)
+{
+    UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+    if (bInterrupted && Anim && Anim->Montage_IsPlaying(DeflectMontage)) return;
+    bIsDeflected = false;
 }
 
 void APlayerCharacter::OnDeathMontageNotify(FName NotifyName, const FBranchingPointNotifyPayload& Payload)
