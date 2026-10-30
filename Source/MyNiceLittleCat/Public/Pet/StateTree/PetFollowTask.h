@@ -57,6 +57,15 @@ struct MYNICELITTLECAT_API FPetFollowTaskInstanceData
 
     bool bWaitingToRetry = false;
     bool bMoveRequestFailed = false;
+
+    UPROPERTY(EditAnywhere, Category = "Parameter", meta = (ClampMin = "1.0", Units = "s"))
+    float StuckDetectionTime = 4.f;
+
+    UPROPERTY(EditAnywhere, Category = "Parameter", meta = (ClampMin = "1.0", Units = "cm"))
+    float ProgressDistance = 30.f;
+
+    FVector ProgressAnchor = FVector::ZeroVector;
+    float NoProgressTime = 0.f;
 };
 
 // 추종 Task (StateTree에서 실행하는 Task)

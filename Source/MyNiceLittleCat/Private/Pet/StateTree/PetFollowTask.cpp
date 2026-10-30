@@ -34,6 +34,9 @@ EStateTreeRunStatus FPetFollowTask::EnterState(FStateTreeExecutionContext& Conte
     if (false == IsValid(Target))
         return EStateTreeRunStatus::Failed;
 
+    Data.ProgressAnchor = Data.Pet->GetActorLocation();
+    Data.NoProgressTime = 0.f;
+
     Data.Controller = Controller;
 
     UCharacterMovementComponent* Movement = Data.Pet->GetCharacterMovement();
@@ -92,6 +95,10 @@ EStateTreeRunStatus FPetFollowTask::Tick(FStateTreeExecutionContext& Context, co
     if (true == Data.Pet->IsNavigationRecoveryPending())
         return EStateTreeRunStatus::Running;
 
+    // StateTree가 다음 행동으로 전환하기 전까지 이전 추종 Task가 이동을 다시 요청하지 않도록 함
+    if (Data.Pet->GetRequestedBehavior() != EPetBehavior::Follow)
+        return EStateTreeRunStatus::Running;
+
     AActor* Target = Data.Pet->GetPartnerPlayer();
     if (false == IsValid(Target))
     {
@@ -126,6 +133,62 @@ EStateTreeRunStatus FPetFollowTask::Tick(FStateTreeExecutionContext& Context, co
     // 기본 이동 속도보다는 낮아지지 않도록 해요
     const float SpeedLimit = FMath::Max(Data.OriginalMaxWalkSpeed, Data.MaxFollowSpeed);
     Movement->MaxWalkSpeed = FMath::Clamp(DesiredSpeed, Data.OriginalMaxWalkSpeed, SpeedLimit);
+
+    UPathFollowingComponent* RecoveryPathFollowing = Controller->GetPathFollowingComponent();
+
+    if (false == IsValid(RecoveryPathFollowing)) return EStateTreeRunStatus::Failed;
+
+    const FVector CurrentLocation = Data.Pet->GetActorLocation();
+    const EPathFollowingStatus::Type MoveStatus = Controller->GetMoveStatus();
+
+    const bool bNormallyArrived = MoveStatus == EPathFollowingStatus::Idle && false == Data.bMoveRequestFailed && RecoveryPathFollowing->DidMoveReachGoal();
+    const bool bShouldWatchMovement = MoveStatus == EPathFollowingStatus::Moving || (MoveStatus == EPathFollowingStatus::Idle && false == bNormallyArrived);
+
+    if (false == bShouldWatchMovement)
+    {
+        // 정상 도착, 일시 정지, 경로 대기 중에는 누적하지 않음
+        Data.ProgressAnchor = CurrentLocation;
+        Data.NoProgressTime = 0.f;
+    }
+    else if (FVector::DistSquared2D(CurrentLocation, Data.ProgressAnchor) >= FMath::Square(Data.ProgressDistance))
+    {
+        // 충분히 움직였다면 막힘 기록과 재시도 횟수 초기화
+        Data.ProgressAnchor = CurrentLocation;
+        Data.NoProgressTime = 0.f;
+        Data.MoveRetryCount = 0;
+    }
+    else
+    {
+        Data.NoProgressTime += DeltaTime;
+
+        if (Data.NoProgressTime >= Data.StuckDetectionTime)
+        {
+            if (Data.MoveRetryCount >= Data.MaxMoveRetries)
+            {
+                FVector SafeLandingLocation;
+
+                // 착지할 곳이 있을 때만 비행 복귀 요청
+                if (Data.Pet->TryFindSafeRecoveryLocation(CurrentLocation, SafeLandingLocation))
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("[PetFollow] Stuck: requesting flight recovery."));
+                    Data.Pet->RequestBehavior(EPetBehavior::RecoverFollow);
+                    return EStateTreeRunStatus::Running;
+                }
+
+                // 안전한 곳이 없으면 잠시 후 다시 판단
+                Data.NoProgressTime = 0.f;
+            }
+            else if (MoveStatus == EPathFollowingStatus::Moving)
+            {
+                // 엔진이 아직 Moving이라고 판단하더라도,
+                // 실제로 움직이지 못하면 기존 재시도 흐름으로 보냄
+                Controller->StopMovement();
+
+                Data.bMoveRequestFailed = true;
+                Data.NoProgressTime = 0.f;
+            }
+        }
+    }
 
     //! 이동 재요청
     Data.TimeUntilNextCheck -= DeltaTime;
