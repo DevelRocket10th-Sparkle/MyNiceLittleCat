@@ -53,6 +53,8 @@ void UEnemyOverheadHealthBarWidget::InitializeOverheadHealthBar(AActor* InActor)
 	{
 		if (UEnemyAttributeSet* Stat = Character->GetAttributeSet())	// Stat Attribute Set 사용하는지 확인용
 		{
+			ObservedStats = Stat;
+
 			Stat->OnHealthChange.AddUObject(HealthBar, &UResourceBarWidget::UpdateResourceBar);
 			//Stat->OnMaxHealthChange.AddUObject(HealthBar, &UResourceBarWidget::UpdateResourceBar);
 

@@ -42,6 +42,8 @@ void UEnemyOverheadHealthBarComponent::BeginPlay()
 	AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner());
 	if (!IsValid(Enemy))
 		return;
+
+	OwnerEnemy = Enemy;
 	
 	// 소유자의 사망 델리게이트 구독
 	DeathStartedHandle = Enemy->OnDeathStarted.AddUObject(this, &UEnemyOverheadHealthBarComponent::HandleOwnerDeathStarted);

@@ -92,6 +92,10 @@ struct FEnemyPatternDefinition
 	UPROPERTY(EditDefaultsOnly, Instanced, BlueprintReadOnly, Category = "Execution")
 	TObjectPtr<UEnemyPatternExecutionSettings> ExecutionSettings;
 
+	// 패턴의 1회 타격 피해량 = AttackPower × DamageMultiplier
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage", meta = (ClampMin = "0.0"))
+	float DamageMultiplier = 1.f;
+
 	// 타깃과의 수평 최소 거리
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.0"))
 	float MinRange = 0.f;

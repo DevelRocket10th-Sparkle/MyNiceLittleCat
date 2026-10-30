@@ -50,6 +50,7 @@ bool UEnemyPatternComponent::InitializePatterns(UAbilitySystemComponent* InASC, 
 			|| !FMath::IsFinite(Pattern.MaxHeightDifference) || Pattern.MaxHeightDifference < 0.f
 			|| !FMath::IsFinite(Pattern.Weight) || Pattern.Weight < 0.f						// 확률 가중치가 유효하지 않거나
 			|| !FMath::IsFinite(Pattern.RecoverySeconds) || Pattern.RecoverySeconds < 0.f
+			|| !FMath::IsFinite(Pattern.DamageMultiplier) || Pattern.DamageMultiplier < 0.f
 			|| !Pattern.Movement.IsValid()
 			|| !FMath::IsFinite(Pattern.MaxExecutionSeconds)
 			|| Pattern.MaxExecutionSeconds <= 0.f)		// 공격 종료 누락 감지 제한 시간이 유효하지 않으면

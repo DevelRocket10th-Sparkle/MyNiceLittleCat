@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Enemy/Datas/EnemyPatternExecutionSettings.h"
@@ -49,9 +49,6 @@ public:
 	// NotifyState 구간 동안 각 소켓의 이전 위치에서 현재 위치까지 Sphere Sweep
 	UPROPERTY(EditAnywhere, Instanced, NoClear, BlueprintReadOnly, Category = "Melee", meta = (DisplayName = "Melee Traces"))
 	TArray<TObjectPtr<UEnemyMeleeTraceSettings>> MeleeTraceSettings;
-	// 플레이어에게 전달할 공격력 배율
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee", meta = (ClampMin = "0.0"))
-	float DamageMultiplier = 1.f;
 	// 배열 추가 시 판정 설정 객체를 생성
 #if WITH_EDITOR
 	virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
