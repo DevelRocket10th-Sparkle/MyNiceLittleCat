@@ -39,7 +39,7 @@ struct FEnemyPatternMovementSettings
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	EEnemyPatternMovementPolicy Policy = EEnemyPatternMovementPolicy::Stop;
+	EEnemyPatternMovementPolicy Policy = EEnemyPatternMovementPolicy::UsePhaseDefault;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0", Units="cm", EditCondition="Policy == EEnemyPatternMovementPolicy::ChaseTarget"))
 	float AcceptanceRadius = 150.f;

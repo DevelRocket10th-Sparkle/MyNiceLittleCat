@@ -188,6 +188,10 @@ void ABossCharacter::FinishPhaseTransition()
 
 	GetPatternComponent()->SetRequestsBlocked(bLogOnly);
 	RefreshBossBlackboard();
+
+	// BP Test용
+	// 새 페이즈가 활성화된 뒤 레벨 BP에 알림
+	OnPhaseStarted.Broadcast(this, PhaseComponent->GetCurrentPhaseId());
 }
 
 // 체력 변경 시 사망 판정을 먼저 수행한 뒤 추가 상태 처리

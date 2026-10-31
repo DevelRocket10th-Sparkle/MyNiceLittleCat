@@ -17,6 +17,9 @@
 class UEnemyPhaseComponent;
 class ABossCharacter;
 
+// BP Test용
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBossPhaseEndedSignal, ABossCharacter*, Boss, FName, EndedPhaseId);
+
 /**
  * 
  */
@@ -59,12 +62,6 @@ public :
 	bool NotifyPhaseGimmickCompleted(UActorComponent* SourceComponent, FName PhaseId, int64 PhaseExecutionId);
 	// 매니저가 FinishSpawning 전에 레벨 기믹 참조 저장: 기믹 컴포넌트 연결 시 전달
 	void SetLevelGimmickReferences(const TMap<FName, TObjectPtr<AActor>>& PhaseActors, AActor* AreaCenter);
-	// 보스방 관리자가 보스 사망을 받아 클리어 처리하는 이벤트
-	UPROPERTY(BlueprintAssignable, Category = "Boss")
-	FBossEncounterSignal OnDefeated;
-	// 전환 실패 등의 사유로 보스방 초기화를 요청하는 이벤트
-	UPROPERTY(BlueprintAssignable, Category = "Boss")
-	FBossEncounterSignal OnEncounterFailed;
 
 	// Encounter가 전달한 이동 경로를 PhaseComponent에 전달
 	void SetLevelMovementRoutes(const TMap<FName, FBossMovementRoute>& InRoutes);
@@ -88,6 +85,28 @@ protected :
 	// 페이즈별 공격 목록 및 배리어와 코인 기믹 적용
 	bool HandlePhaseEntered(const FBossPhaseDefinition& Phase);
 
+private:
+	// 보스에 부착된 기믹 계약 구현 컴포넌트 하나를 찾아 연결; 실제 기믹 클래스는 별도 담당
+	bool InitializeGimmickConnection();
+	// 연결한 기믹의 실행 중지 호출: 기믹 구현 내부에서 액터·타이머·구독 정리
+	void StopPhaseGimmicks();
+
+public :
+
+	// BP Test용
+	// 현재 페이즈 종료 후, 다음 페이즈 전환 연출 전에 호출
+	UPROPERTY(BlueprintAssignable, Category = "Test")
+	FBossPhaseEndedSignal OnPhaseStarted;
+
+	// 보스방 관리자가 보스 사망을 받아 클리어 처리하는 이벤트
+	UPROPERTY(BlueprintAssignable, Category = "Boss")
+	FBossEncounterSignal OnDefeated;
+	// 전환 실패 등의 사유로 보스방 초기화를 요청하는 이벤트
+	UPROPERTY(BlueprintAssignable, Category = "Boss")
+	FBossEncounterSignal OnEncounterFailed;
+
+protected :
+
 	// 보스 페이즈의 체력 하한 및 전환 상태 관리
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss")
 	TObjectPtr<UEnemyPhaseComponent> PhaseComponent;
@@ -95,12 +114,8 @@ protected :
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss")
 	TObjectPtr<UEnemyPhaseConfigData> PhaseConfig;
 
-
 private :
-	// 보스에 부착된 기믹 계약 구현 컴포넌트 하나를 찾아 연결; 실제 기믹 클래스는 별도 담당
-	bool InitializeGimmickConnection();
-	// 연결한 기믹의 실행 중지 호출: 기믹 구현 내부에서 액터·타이머·구독 정리
-	void StopPhaseGimmicks();
+
 	// 같은 보스에 붙은 계약 구현 컴포넌트; 매니저의 레벨 참조 전달은 별도 작업
 	UPROPERTY(Transient)
 	TObjectPtr<UActorComponent> PhaseGimmickComponent;
