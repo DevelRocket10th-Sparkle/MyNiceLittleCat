@@ -2,7 +2,7 @@
 
 
 #include "Frameworks/GameMode/TitleGameMode.h"
-#include "WIdgets/Title/TitleScreenWidget.h"
+#include "Widgets/Title/TitleScreenWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
 

@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "WIdgets/Enemy/BossHealthBarWidget.h"
+#include "Widgets/Enemy/BossHealthBarWidget.h"
 
 #include "Enemy/Boss/BossCharacter.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
