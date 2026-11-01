@@ -26,6 +26,7 @@ enum class ETutorialWait : uint8
     Seconds,        // N초 기다리기 (N초 뒤 다음 동작)
     PlayerEnter,    // 플레이어가 지정한 트리거에 들어오면 다음 동작
     PetArrive,      // 펫이 특정 지점에 도착하면 다음 동작
+    Condition,      // 조건이 true가 될 때 까지 0.1초마다 확인
 };
 
 // 구간 안에서 순서대로 실행되는 동작 하나
@@ -35,7 +36,8 @@ struct FTutorialAction
     ETutorialWait Wait = ETutorialWait::None; // 다음 동작으로 넘어가기 전에 무엇을 기다릴지
 
     float Seconds = 0.f;                      // Wait == Seconds 일 때 기다릴 시간
-    TWeakObjectPtr<AActor> Target;           // Wait == PlayerEnter 일 때 기다릴 트리거, == PetArrive 일 때 펫 도착 지점
+    TWeakObjectPtr<AActor> Target;            // Wait == PlayerEnter 일 때 기다릴 트리거, == PetArrive 일 때 펫 도착 지점
+    TFunction<bool()> Condition;              // Wait == Condition 일 때 확인할 조건
 };
 
 UCLASS()
@@ -68,6 +70,7 @@ protected:
     void BuildActions(ETutorialStage Stage, TArray<FTutorialAction>& OutActions);
     void BuildMovementActions(TArray<FTutorialAction>& OutActions);
     void BuildDashActions(TArray<FTutorialAction>& OutActions);
+    void BuildLockOnActions(TArray<FTutorialAction>& OutActions);
 
     // 동작 실행기
     void RunNextAction();
@@ -78,6 +81,8 @@ protected:
     static FTutorialAction WaitSeconds(float _Seconds);
     static FTutorialAction WaitPlayerEnter(AActor* _Trigger);
     static FTutorialAction WaitPetArrive(AActor* _Point, float _Timeout = 8.f);
+    static FTutorialAction WaitUntil(TFunction<bool()> _Condition);
+
 
     // 태그가 붙은 레벨 액터 찾기.
     AActor* FindActorByTag(FName _Tag) const;
@@ -101,6 +106,9 @@ protected:
     void PetMoveTo(AActor* _Point, float _Speed = 0.f); // 지점까지 걸어가기. _Speed 0 = 원래 속도
     void PetSay(const FText& _Message);                 // 말풍선
     void PetFlyTo(AActor* _Point, float _Duration); // 펫 날리기: 지금 위치에서 지점까지 포물선으로 _Duration 초 동안 날아감
+    void PetFlyToLocation(const FVector& _Location, float _Duration); // 좌표로 날리기 (_Location = 바닥 위치)
+    void PetWalkToLocation(const FVector& _Location); // 좌표까지 걸어가기 (StateTree 거치지 않고 매니저가 직접. 도중에 다시 불러도 OK)
+    bool IsPetWalking() const;                        // 펫이 걷는 중인지 (도착하면 false)
     void StopPetFly(); // 비행 정리 (이동 모드/애니메이션 원래대로, Tick 끄기)
     void PetFacePlayer(); // 펫을 플레이어 쪽으로 한 번 돌려놓기 (실시간 추적 X)
 
@@ -109,14 +117,37 @@ protected:
     void CheckPetArrive(); // 0.1초마다 펫이 도착했는지 확인
     void StopWaitPetArrive(); // 펫 도착 대기 정리
 
+    // ETutorialWait == Condition
+    bool BeginWaitCondition(const TFunction<bool()>& _Condition); // 계속 기다려야 하면 true, 이미 참이면 false
+    void CheckCondition();     // 0.1초마다 조건 확인
+    void StopWaitCondition();  // 조건 대기 정리
+
     // 카메라 행동
     bool ApplyIntroCinematic(); // 시작 연출 적용. 플레이어가 아직 없으면 false
     void BeginCinematic(AActor* _Camera, float _BlendTime); // 입력 잠금 + 카메라 전환
     void EndCinematic(float _BlendTime); // 카메라 복귀 + 입력 해제
     void SetPlayerInputLocked(class APlayerController* _PC, bool _bLock); // 캐릭터 + 컨트롤러 입력 껐켜
 
+    // ===== 락온 구간 =====
+    class ULockOnComponent* GetPlayerLockOn() const;        // 플레이어의 락온 컴포넌트 (리스폰 대비 매번 찾음)
+    bool IsPlayerLockedOn() const;                    // 플레이어가 락온 중인지
+    static bool IsEnemyAlive(AActor* _Enemy);         // 락온 가능한 대상이 살아있는지
+    bool AreLockOnEnemiesDead() const;                // 락온 구간 적이 전부 죽었는지
+    AActor* FindLockOnHintTarget() const;             // 펫이 처음 가리킬 적 (휠 누르면 잡힐 적 우선)
+
+    FVector GetGroundLocation(const AActor* _Actor) const;     // 캐릭터면 발바닥 위치, 아니면 액터 위치
+    FVector GetPetPointNearPlayer() const;                     // 플레이어 앞 바닥 위치
+    FVector GetPetPointNearEnemy(const AActor* _Enemy) const;  // 적 옆 바닥 위치 (플레이어 시야를 가리지 않게)
+
+    void PetWalkToEnemy(AActor* _Enemy);   // 적 옆으로 짧게 날아가기
+    void StartPetFollowLockTarget();      // 락온 대상이 바뀌면 펫이 따라가기 시작
+    void UpdatePetFollowLockTarget();     // 0.1초마다 락온 대상 확인
+    void StopPetFollowLockTarget();       // 따라가기 끝
+    
     UFUNCTION()
     void HandlePlayerRespawned(AController* _Controller, APawn* _NewPawn); // 리스폰되면 연출 강제 종료
+
+    void ApplyTutorialCamera(APawn* _PlayerPawn); // 튜토리얼 전용 카메라 설정 (벽/천장 밖으로 카메라가 나가지 않게)
     // =========================================================
 protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tutorial")
@@ -134,6 +165,9 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Tutorial|Camera", meta = (ClampMin = "0.0"))
     float CameraReturnBlendTime = 1.f; // 연출 끝나고 플레이어 카메라로 돌아오는 시간(초)
 
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Camera", meta = (ClampMin = "0.0"))
+    float TutorialLockOnMaxExtraArm = 0.f; // 튜토리얼에서 락온 시 카메라가 추가로 멀어지는 최대 거리 (원래 700). 실내라 크게 빠지면 방 밖이 보임
+
     // ===== 대시 구간 연출 시간 (PIE 보면서 조절) =====
     UPROPERTY(EditAnywhere, Category = "Tutorial|Dash", meta = (ClampMin = "0.0"))
     float DashCameraBlendTime = 1.f; // 플레이어 카메라 -> 통로 전체 샷으로 넘어가는 시간
@@ -149,6 +183,25 @@ protected:
 
     UPROPERTY(EditAnywhere, Category = "Tutorial|Pet", meta = (ClampMin = "1.0"))
     float PetTurnSpeed = 540.f; // 플레이어 쪽으로 돌 때 초당 회전 각도 (180도 = 약 0.33초)
+
+    // ===== 락온 구간 연출 =====
+    UPROPERTY(EditAnywhere, Category = "Tutorial|LockOn", meta = (ClampMin = "0.0"))
+    float LockOnCameraBlendTime = 1.f;  // 플레이어 카메라 -> 아레나 전체 샷 전환 시간
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|LockOn", meta = (ClampMin = "0.0"))
+    float LockOnShowTime = 1.5f;        // 아레나 샷에서 적을 보여주는 시간
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|LockOn", meta = (ClampMin = "0.1"))
+    float LockOnPetFlyTime = 1.2f;      // 펫이 플레이어 앞으로 날아오는 시간
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|LockOn", meta = (ClampMin = "0.0"))
+    float PetFrontDistance = 200.f;     // 플레이어 앞 몇 cm 에 착지할지
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|LockOn", meta = (ClampMin = "0.0"))
+    float PetEnemyFrontOffset = 100.f;  // 적에서 플레이어 쪽으로 얼마나 나와 있을지
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|LockOn", meta = (ClampMin = "0.0"))
+    float PetEnemySideOffset = 150.f;   // 적 옆으로 얼마나 비켜설지 (적 캡슐과 겹치면 늘리기)
 
 private:
     bool bChangingStage = false; // 구간 전환 도중에 또 전환되는 것을 막는 불값
@@ -184,4 +237,13 @@ private:
     // 펫을 플레이어 방향으로 돌려놓기
     bool bPetTurning = false;
     float PetTurnTargetYaw = 0.f;
+
+    // Condition 대기
+    FTimerHandle ConditionTimerHandle;
+    TFunction<bool()> WaitingCondition; // 지금 기다리는 조건
+
+    // 락온 구간
+    TArray<TWeakObjectPtr<AActor>> LockOnEnemies; // 락온 구간 적 전부 (구간 시작 시 태그로 모음)
+    FTimerHandle PetFollowTimerHandle;            // 락온 대상 따라가기 확인 타이머
+    TWeakObjectPtr<AActor> PetFollowedTarget;     // 펫이 지금 옆에 가 있는 적
 };

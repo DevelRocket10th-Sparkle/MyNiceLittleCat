@@ -7,8 +7,12 @@
 #include "Pet/SpeechBubbleComponent.h"
 #include "AIController.h"                 // 비행 전 길찾기 이동 멈추기
 #include "Components/CapsuleComponent.h"  // 착지 높이 계산
+//#include "GameFramework/Character.h"                       // 발바닥 높이 계산 (캡슐 절반)
+#include "Characters/PlayerComponents/LockOnComponent.h"   // 플레이어 락온 상태 읽기
+#include "Interfaces/TargetableInterface.h"                // 적 생존 확인 (락온 시스템과 같은 기준)
+#include "Navigation/PathFollowingComponent.h" // 펫이 걷는 중인지 확인 (EPathFollowingStatus)
+#include "UObject/UnrealType.h" // FFloatProperty (락온 컴포넌트의 protected 값을 이 레벨에서만 바꾸기)
 
-// 튜토리얼에서 찾는 레벨 액터의 태그 이름 (레벨 액터의 Actor Tags에 똑같이 적어야 함)
 namespace TutorialTag
 {
 	//! 이동 구간
@@ -30,6 +34,13 @@ namespace TutorialTag
 	const FName DecalShift(TEXT("Tutorial.Decal.Shift"));                      // Shift 데칼
 	const FName TriggerDoor02(TEXT("Tutorial.Trigger.Door02"));                // 통로 끝 문 앞
 	const FName Gate02(TEXT("Tutorial.Gate.02"));                              // 대시 -> 락온 사이 문
+
+	//! 락온 구간
+	const FName TriggerLockOnEnter(TEXT("Tutorial.Trigger.LockOnEnter"));      // 아레나 입구 (Gate02 보다 안쪽)
+	const FName CameraLockOnArena(TEXT("Tutorial.Camera.LockOnArena"));        // 아레나 전체 샷
+	const FName EnemyLockOn(TEXT("Tutorial.Enemy.LockOn"));                    // 락온 구간 적 (여러 마리에 같은 태그 OK)
+	const FName Gate03(TEXT("Tutorial.Gate.03"));                              // 락온 -> 전투 사이 문
+	const FName PetPointAfterDoor03(TEXT("Tutorial.PetPoint.AfterDoor03"));    // 다음 문 너머
 }
 
 ATutorialManager::ATutorialManager()
@@ -108,6 +119,8 @@ void ATutorialManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	StopPetFly();
 	bPetTurning = false;
 	StopWaitPetArrive();
+	StopWaitCondition();
+	StopPetFollowLockTarget();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -119,6 +132,9 @@ void ATutorialManager::TryStartTutorial()
 	{
 		if (false == ApplyIntroCinematic()) return; // 플레이어가 아직 없는 상태 -> 다음 확인 때 다시
 		bIntroApplied = true;
+
+		// 플레이어가 생긴 시점에 한 번 (리스폰된 캐릭터는 HandlePlayerRespawned 에서 다시 적용)
+		ApplyTutorialCamera(UGameplayStatics::GetPlayerPawn(this, 0));
 	}
 
 	AMainGameMode* GameMode = GetWorld()->GetAuthGameMode<AMainGameMode>();
@@ -175,6 +191,9 @@ void ATutorialManager::StageEnd(ETutorialStage Stage)
 	EndCinematic(0.f);   // 구간이 바뀌면 연출은 무조건 끝 (잠금이 다음 구간으로 새지 않게)
 	StopPetFly(); // 비행 도중 구간이 바뀌어도 펫이 공중에 남지 않게
 	bPetTurning = false;
+	StopWaitCondition();
+	StopPetFollowLockTarget();
+	LockOnEnemies.Reset();
 	Actions.Reset();
 	ActionIndex = INDEX_NONE;
 }
@@ -185,6 +204,7 @@ void ATutorialManager::BuildActions(ETutorialStage Stage, TArray<FTutorialAction
 	{
 	case ETutorialStage::Movement: BuildMovementActions(OutActions); break;
 	case ETutorialStage::Dash: BuildDashActions(OutActions); break;
+	case ETutorialStage::LockOn: BuildLockOnActions(OutActions); break;
 	default: break;
 	}
 }
@@ -270,6 +290,75 @@ void ATutorialManager::BuildDashActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(Do([this, PetAfterDoor02] { PetMoveTo(PetAfterDoor02.Get()); }));
 }
 
+void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
+{
+	AActor* TriggerLockOnEnter = FindActorByTag(TutorialTag::TriggerLockOnEnter);
+
+	TWeakObjectPtr<AActor> CamArena = FindActorByTag(TutorialTag::CameraLockOnArena);
+	TWeakObjectPtr<AActor> Gate02 = FindActorByTag(TutorialTag::Gate02);
+	TWeakObjectPtr<AActor> Gate03 = FindActorByTag(TutorialTag::Gate03);
+	TWeakObjectPtr<AActor> PetAfterDoor03 = FindActorByTag(TutorialTag::PetPointAfterDoor03);
+
+	// 적은 여러 마리라 FindActorByTag(하나만 찾음) 대신 같은 태그를 전부 모아둠
+	LockOnEnemies.Reset();
+	TArray<AActor*> FoundEnemies;
+	UGameplayStatics::GetAllActorsWithTag(this, TutorialTag::EnemyLockOn, FoundEnemies);
+	for (AActor* Enemy : FoundEnemies)
+		LockOnEnemies.Add(Enemy);
+
+	UE_LOG(LogTemp, Log, TEXT("[Tutorial] 락온 구간 적 %d 마리"), LockOnEnemies.Num());
+
+	// 1) 플레이어가 구간에 들어오면 시작
+	OutActions.Add(WaitPlayerEnter(TriggerLockOnEnter));
+
+	// 2) 뒤쪽(입장한) 문 닫고 아레나 전체 샷으로 적 보여주기
+	OutActions.Add(Do([this, Gate02] { SetActivated(Gate02.Get(), false); }));
+	OutActions.Add(Do([this, CamArena] { BeginCinematic(CamArena.Get(), LockOnCameraBlendTime); }));
+	OutActions.Add(WaitSeconds(LockOnCameraBlendTime + LockOnShowTime));
+
+	// 2-1) 잠금은 유지한 채 카메라만 플레이어로 돌림
+	// (BeginCinematic 은 연출 중이면 카메라만 바꾸니까, 플레이어 폰을 "카메라"로 넘기면 됨)
+	// -> 펫이 날아오는 동안 플레이어가 움직이지 않아서 펫이 정확히 앞에 착지함
+	OutActions.Add(Do([this] { BeginCinematic(UGameplayStatics::GetPlayerPawn(this, 0), CameraReturnBlendTime); }));
+	OutActions.Add(WaitSeconds(CameraReturnBlendTime));
+	// 펫이 플레이어 앞까지 걸어옴 (플레이어는 잠겨 있어서 목적지가 그대로 유지됨)
+	OutActions.Add(Do([this] { PetWalkToLocation(GetPetPointNearPlayer()); }));
+	OutActions.Add(WaitUntil([this] { return false == IsPetWalking(); })); // 거리마다 걸리는 시간이 달라서 "도착"을 기다림
+	OutActions.Add(Do([this] { PetFacePlayer(); }));
+	OutActions.Add(WaitSeconds(0.3f)); // 돌고 나서 말하기
+	OutActions.Add(Do([this] { PetSay(INVTEXT("Attack Enemy!")); }));
+	OutActions.Add(WaitSeconds(1.5f));
+
+	// 3) 펫이 "휠 누르면 잡힐 적" 옆으로 걸어가서, 도착하면 휠 클릭 안내
+	// (아직 잠금 유지 -> 펫이 적을 가리키는 걸 다 보여준 뒤에 조작 시작)
+	OutActions.Add(Do([this] { PetWalkToEnemy(FindLockOnHintTarget()); }));
+	OutActions.Add(WaitUntil([this] { return false == IsPetWalking(); })); // 거리마다 걸리는 시간이 달라서 "도착"을 기다림
+	OutActions.Add(Do([this] { PetSay(INVTEXT("Wheel Click!")); }));
+
+	// 3-1) 휠 클릭 안내와 동시에 조작 시작 (카메라는 이미 플레이어 -> 사실상 잠금만 풂)
+	OutActions.Add(Do([this] { EndCinematic(0.f); }));
+
+	// 4) 락온하면 공격 안내 + 이때부터 펫이 락온 대상을 따라다님
+	// (한 마리 잡으면 락온이 자동으로 다음 적으로 넘어가고 -> 펫도 그 적 옆으로)
+	OutActions.Add(WaitUntil([this] { return IsPlayerLockedOn(); }));
+	OutActions.Add(Do([this] { PetSay(INVTEXT("Attack!")); StartPetFollowLockTarget(); }));
+
+	// 5) 전부 처치하면 펫이 플레이어에게 돌아와 칭찬
+	OutActions.Add(WaitUntil([this] { return AreLockOnEnemiesDead(); }));
+	// 펫이 플레이어 앞으로 걸어서 돌아옴 (이때는 잠금이 없어서 "출발할 때" 플레이어 앞자리로 감)
+	OutActions.Add(Do([this] { StopPetFollowLockTarget(); PetWalkToLocation(GetPetPointNearPlayer()); }));
+	OutActions.Add(WaitUntil([this] { return false == IsPetWalking(); }));
+	OutActions.Add(Do([this] { PetFacePlayer(); }));
+	OutActions.Add(WaitSeconds(0.3f));
+	OutActions.Add(Do([this] { PetSay(INVTEXT("Good!")); }));
+	OutActions.Add(WaitSeconds(1.5f));
+
+	// 6) 문 열고 펫이 먼저 통과
+	OutActions.Add(Do([this, Gate03] { SetActivated(Gate03.Get(), true); }));
+	OutActions.Add(WaitSeconds(0.6f)); // 문짝에 펫이 부딪히지 않게
+	OutActions.Add(Do([this, PetAfterDoor03] { PetMoveTo(PetAfterDoor03.Get()); }));
+}
+
 void ATutorialManager::RunNextAction()
 {
 	while (true)
@@ -302,6 +391,10 @@ void ATutorialManager::RunNextAction()
 		case ETutorialWait::PetArrive: // 펫이 지점에 도착할 떄 까지 멈춤 -> 도착하면 다음 동작
 			if (true == BeginWaitPetArrive(Action.Target.Get(), Action.Seconds)) return;
 			continue; // 펫이나 지점이 없거나 이미 도착해있으면 바로 다음 동작
+		
+		case ETutorialWait::Condition: // 조건이 참이 될 때까지 멈춤 -> 참이 되면 다음 동작
+			if (true == BeginWaitCondition(Action.Condition)) return;
+			continue; // 조건이 비었거나 이미 참이면 바로 다음 동작
 		}
 	}
 }
@@ -344,6 +437,14 @@ FTutorialAction ATutorialManager::WaitPetArrive(AActor* _Point, float _Timeout)
 	Action.Wait = ETutorialWait::PetArrive;
 	Action.Target = _Point;
 	Action.Seconds = _Timeout;
+	return Action;
+}
+
+FTutorialAction ATutorialManager::WaitUntil(TFunction<bool()> _Condition)
+{
+	FTutorialAction Action;
+	Action.Wait = ETutorialWait::Condition;
+	Action.Condition = MoveTemp(_Condition);
 	return Action;
 }
 
@@ -465,10 +566,22 @@ void ATutorialManager::PetSay(const FText& _Message)
 
 void ATutorialManager::PetFlyTo(AActor* _Point, float _Duration)
 {
-	APetCharacter* PetPtr = Pet.Get();
-	if(nullptr == PetPtr || nullptr == _Point)
+	if (nullptr == _Point)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] PetFlyTo: 펫 또는 지점이 없음"));
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] PetFlyTo: 지점이 없음"));
+		return;
+	}
+
+	// 지점 액터 -> 좌표로 바꿔서 실제 비행은 PetFlyToLocation 이 처리
+	PetFlyToLocation(_Point->GetActorLocation(), _Duration);
+}
+
+void ATutorialManager::PetFlyToLocation(const FVector& _Location, float _Duration)
+{
+	APetCharacter* PetPtr = Pet.Get();
+	if (nullptr == PetPtr)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] PetFlyToLocation: 펫이 없음"));
 		return;
 	}
 
@@ -487,7 +600,7 @@ void ATutorialManager::PetFlyTo(AActor* _Point, float _Duration)
 
 	// 비행 경로: 지점은 바닥 위치라, 캡슐 절반 높이만큼 올려야 바닥에 묻히지 않음
 	FlyStart = PetPtr->GetActorLocation();
-	FlyEnd = _Point->GetActorLocation();
+	FlyEnd = _Location;
 	FlyEnd.Z += PetPtr->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 	FlyDuration = FMath::Max(_Duration, 0.1f);
 	FlyElapsed = 0.f;
@@ -498,6 +611,42 @@ void ATutorialManager::PetFlyTo(AActor* _Point, float _Duration)
 
 	bPetFlying = true;
 	SetActorTickEnabled(true); // 비행 중에만 Tick
+}
+
+void ATutorialManager::PetWalkToLocation(const FVector& _Location)
+{
+	APetCharacter* PetPtr = Pet.Get();
+	AAIController* AIC = (nullptr != PetPtr) ? Cast<AAIController>(PetPtr->GetController()) : nullptr;
+	if (nullptr == AIC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] PetWalkToLocation: 펫 또는 AI 컨트롤러가 없음"));
+		return;
+	}
+
+	StopPetFly(); // 날던 중이었다면 걷기 모드 + 기본 애니메이션으로
+
+	// StateTree 를 Idle 로 비켜 세움 (Idle Task 는 아무것도 안 함)
+	// -> StateTree 의 MoveTo 와 섞이지 않고, 매니저가 직접 이동을 관리
+	// (StateTree MoveTo 는 이미 MoveTo 상태면 목적지가 바뀌어도 다시 출발하지 않을 수 있음)
+	PetPtr->RequestBehavior(EPetBehavior::Idle);
+	PetPtr->GetCharacterMovement()->MaxWalkSpeed = PetDefaultSpeed; // 느린 안내 속도가 남아있지 않게
+
+	// 걷는 도중에 다시 불러도 이전 이동은 자동으로 취소되고 새 목적지로 감
+	// 마지막 인자 true = 목적지를 NavMesh 위로 맞춰줌 (계산한 좌표가 살짝 벗어나도 실패하지 않게)
+	const EPathFollowingRequestResult::Type Result = AIC->MoveToLocation(_Location, 30.f, true, true, true);
+	if (EPathFollowingRequestResult::Failed == Result)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] PetWalkToLocation: 길을 못 찾음 (NavMesh 확인)"));
+	}
+}
+
+bool ATutorialManager::IsPetWalking() const
+{
+	APetCharacter* PetPtr = Pet.Get();
+	AAIController* AIC = (nullptr != PetPtr) ? Cast<AAIController>(PetPtr->GetController()) : nullptr;
+
+	// 길찾기 이동이 진행 중이면 true. 도착/실패/취소면 false -> 대기가 영원히 걸리지 않음
+	return nullptr != AIC && EPathFollowingStatus::Moving == AIC->GetMoveStatus();
 }
 
 void ATutorialManager::StopPetFly()
@@ -586,6 +735,34 @@ void ATutorialManager::StopWaitPetArrive()
 	WaitingPetPoint.Reset();
 }
 
+bool ATutorialManager::BeginWaitCondition(const TFunction<bool()>& _Condition)
+{
+	// 조건이 비었거나 이미 참이면 기다릴 필요 없음
+	if (!_Condition || true == _Condition())
+		return false;
+
+	WaitingCondition = _Condition;
+
+	// 락온/사망은 알려주는 이벤트가 없어서..(아직은) 0.1초마다 직접 확인
+	GetWorldTimerManager().SetTimer(ConditionTimerHandle, this, &ATutorialManager::CheckCondition, 0.1f, true);
+	return true;
+}
+
+void ATutorialManager::CheckCondition()
+{
+	if (WaitingCondition && false == WaitingCondition())
+		return; // 아직 -> 다음 확인
+
+	StopWaitCondition(); // 한 번만 반응하도록 먼저 정리
+	RunNextAction();
+}
+
+void ATutorialManager::StopWaitCondition()
+{
+	GetWorldTimerManager().ClearTimer(ConditionTimerHandle);
+	WaitingCondition.Reset();
+}
+
 bool ATutorialManager::ApplyIntroCinematic()
 {
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
@@ -665,8 +842,173 @@ void ATutorialManager::SetPlayerInputLocked(APlayerController* _PC, bool _bLock)
 	}
 }
 
+ULockOnComponent* ATutorialManager::GetPlayerLockOn() const
+{
+	// 플레이어 클래스에 getter 가 없음...!!!
+	//? 일단 이렇게 하고 나중에 요청하기
+	// 리스폰되면 폰이 바뀌니까 저장하지 않고 매번 찾음
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	return (nullptr != PlayerPawn) ? PlayerPawn->FindComponentByClass<ULockOnComponent>() : nullptr;
+}
+
+bool ATutorialManager::IsPlayerLockedOn() const
+{
+	ULockOnComponent* LockOn = GetPlayerLockOn();
+	return nullptr != LockOn && true == LockOn->IsLockedOn();
+}
+
+bool ATutorialManager::IsEnemyAlive(AActor* _Enemy)
+{
+	// 락온 시스템이 쓰는 기준과 똑같이 판단 -> "락온이 안 잡히는데 살아있음" 같은 어긋남 방지
+	// 시체가 사라져서(삭제) 무효가 된 적도 죽은 걸로 봄
+	return IsValid(_Enemy)
+		&& _Enemy->Implements<UTargetableInterface>()
+		&& ITargetableInterface::Execute_IsTargetAlive(_Enemy);
+}
+
+bool ATutorialManager::AreLockOnEnemiesDead() const
+{
+	for (const TWeakObjectPtr<AActor>& Enemy : LockOnEnemies)
+	{
+		if (true == IsEnemyAlive(Enemy.Get())) 
+			return false; // 한 마리라도 살아있으면 아직
+	}
+	return true;
+}
+
+AActor* ATutorialManager::FindLockOnHintTarget() const
+{
+	// 1순위: 지금 휠을 누르면 잡힐 적 -> 펫이 가리킨 적 = 실제로 잠기는 적
+	if (ULockOnComponent* LockOn = GetPlayerLockOn())
+	{
+		AActor* Candidate = LockOn->GetCurrentCandidate();
+		if (true == IsEnemyAlive(Candidate)) return Candidate;
+	}
+
+	// 2순위: 적이 화면 밖이면 후보가 없음 -> 플레이어와 가장 가까운 살아있는 적
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	AActor* Nearest = nullptr;
+	float NearestDistSq = TNumericLimits<float>::Max();
+
+	for (const TWeakObjectPtr<AActor>& Enemy : LockOnEnemies)
+	{
+		AActor* EnemyPtr = Enemy.Get();
+		if (false == IsEnemyAlive(EnemyPtr)) continue;
+
+		const float DistSq = (nullptr != PlayerPawn) ? 
+			FVector::DistSquared(PlayerPawn->GetActorLocation(), EnemyPtr->GetActorLocation()) : 0.f;
+
+		if (DistSq < NearestDistSq)
+		{
+			NearestDistSq = DistSq;
+			Nearest = EnemyPtr;
+		}
+	}
+	return Nearest;
+}
+
+FVector ATutorialManager::GetGroundLocation(const AActor* _Actor) const
+{
+	FVector Location = _Actor->GetActorLocation();
+
+	// 캐릭터는 액터 위치 = 캡슐 중심 -> 캡슐 절반만큼 내려야 발바닥
+	// (PetFlyToLocation 이 바닥 기준으로 펫 캡슐 절반을 다시 올려줌)
+	if (const ACharacter* Character = Cast<ACharacter>(_Actor))
+		Location.Z -= Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+
+	return Location;
+}
+
+FVector ATutorialManager::GetPetPointNearPlayer() const
+{
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	if (nullptr == PlayerPawn)
+		return Pet.IsValid() ? GetGroundLocation(Pet.Get()) : GetActorLocation(); // 플레이어가 없으면 제자리
+
+	// 플레이어가 바라보는 방향(수평)으로 PetFrontDistance 만큼 앞
+	return GetGroundLocation(PlayerPawn) + PlayerPawn->GetActorForwardVector().GetSafeNormal2D() * PetFrontDistance;
+}
+
+FVector ATutorialManager::GetPetPointNearEnemy(const AActor* _Enemy) const
+{
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+
+	// 적 -> 플레이어 방향 (플레이어가 없으면 적의 정면)
+	const FVector ToPlayer = (nullptr != PlayerPawn)
+		? (PlayerPawn->GetActorLocation() - _Enemy->GetActorLocation()).GetSafeNormal2D()
+		: _Enemy->GetActorForwardVector().GetSafeNormal2D();
+
+	// 위쪽 축과 외적 -> 수평으로 90도 꺾인 "옆" 방향
+	const FVector Side = FVector::CrossProduct(FVector::UpVector, ToPlayer);
+
+	// 플레이어 쪽으로 조금 나오고 옆으로 비켜섬
+	// -> 플레이어 눈에 잘 보이면서, 플레이어와 적 사이를 막지 않음 (공격이 펫에 걸리지 않게)
+	return GetGroundLocation(_Enemy) + ToPlayer * PetEnemyFrontOffset + Side * PetEnemySideOffset;
+}
+
+void ATutorialManager::PetWalkToEnemy(AActor* _Enemy)
+{
+	if (nullptr == _Enemy)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] PetFlyToEnemy: 갈 적이 없음 (태그 확인)"));
+		return;
+	}
+
+	PetFollowedTarget = _Enemy; // "이미 이 적 옆에 있음" 판단용 -> 같은 적이면 다시 날지 않음
+	PetWalkToLocation(GetPetPointNearEnemy(_Enemy));
+}
+
+void ATutorialManager::StartPetFollowLockTarget()
+{
+	GetWorldTimerManager().SetTimer(PetFollowTimerHandle, this, &ATutorialManager::UpdatePetFollowLockTarget, 0.1f, true);
+	UpdatePetFollowLockTarget(); // 펫이 가리킨 적이 아닌 다른 적을 잠갔다면 바로 그쪽으로
+}
+
+void ATutorialManager::UpdatePetFollowLockTarget()
+{
+	ULockOnComponent* LockOn = GetPlayerLockOn();
+	AActor* Target = (nullptr != LockOn) ? LockOn->GetLockedTarget() : nullptr;
+
+	// 락온을 풀었거나, 이미 그 적 옆에 있으면 그대로 둠
+	// (잡은 적이 죽으면 락온 컴포넌트가 다음 적으로 바꿔줌 -> 여기서 대상이 달라진 걸 보고 이동)
+	if (nullptr == Target || Target == PetFollowedTarget.Get()) return;
+	PetWalkToEnemy(Target);
+}
+
+void ATutorialManager::StopPetFollowLockTarget()
+{
+	GetWorldTimerManager().ClearTimer(PetFollowTimerHandle);
+	PetFollowedTarget.Reset();
+}
+
 void ATutorialManager::HandlePlayerRespawned(AController* _Controller, APawn* _NewPawn)
 {
 	// 컨트롤러는 리스폰돼도 그대로라, 꺼둔 입력이 남으면 새 캐릭터도 조작 불가 -> 강제 해제
 	EndCinematic(0.f);
+
+	ApplyTutorialCamera(_NewPawn); // 새 캐릭터는 락온 줌아웃 값이 기본값(700)이라 다시 줄여줌
+}
+
+void ATutorialManager::ApplyTutorialCamera(APawn* _PlayerPawn)
+{
+	if (nullptr == _PlayerPawn) return;
+
+	ULockOnComponent* LockOn = _PlayerPawn->FindComponentByClass<ULockOnComponent>();
+	if (nullptr == LockOn) return;
+
+	// 튜토리얼 맵은 천장이 낮은 실내
+	// -> 락온하면 카메라가 최대 +700cm 뒤로 빠지면서 방 밖의 빈 공간(검은색)이 보임
+	// 카메라 붐 충돌은 천장에 계속 걸려서 화면이 들쭉날쭉 -> 대신 "얼마나 멀어질지" 최대치를 줄임
+	//
+	// MaxExtraArmLength 는 LockOnComponent(팀원 코드)의 protected 값이라 setter 가 없음
+	// -> 리플렉션으로 이 레벨의 플레이어 인스턴스 값만 바꿈 (BP 기본값, 다른 레벨은 그대로)
+	//? 나중에 LockOnComponent 에 setter 가 생기면 그걸로 교체
+	if (FFloatProperty* Prop = FindFProperty<FFloatProperty>(ULockOnComponent::StaticClass(), TEXT("MaxExtraArmLength")))
+	{
+		Prop->SetPropertyValue_InContainer(LockOn, TutorialLockOnMaxExtraArm);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] LockOnComponent 에 MaxExtraArmLength 가 없음 (이름 바뀜?)"));
+	}
 }
