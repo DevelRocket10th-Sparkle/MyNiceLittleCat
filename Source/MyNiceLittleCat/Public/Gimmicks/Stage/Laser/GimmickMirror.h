@@ -17,6 +17,7 @@
 #include "CoreMinimal.h"
 #include "Gimmicks/InteractableBase.h"
 #include "Interfaces/ReflectiveSurfaceInterface.h"
+#include "Interfaces/GimmickResettableInterface.h"
 #include "GimmickMirror.generated.h"
 
 class UBoxComponent;
@@ -34,7 +35,7 @@ enum class EGimmickMirrorRotateMode : uint8
 };
 
 UCLASS()
-class MYNICELITTLECAT_API AGimmickMirror : public AInteractableBase, public IReflectiveSurfaceInterface
+class MYNICELITTLECAT_API AGimmickMirror : public AInteractableBase, public IReflectiveSurfaceInterface, public IGimmickResettableInterface
 {
 	GENERATED_BODY()
 
@@ -49,6 +50,9 @@ public:
 
 	// IReflectiveSurfaceInterface
 	virtual bool TryGetReflection_Implementation(const FVector& IncomingDirection, const FHitResult& Hit, FVector& OutDirection) const override;
+
+	// IGimmickResettableInterface (도는 중이면 멈추고 시작 각도로)
+	virtual void ResetGimmick_Implementation(AActor* ResetInstigator) override;
 
 	// RotateStep만큼 회전 시작 (도는 중이면 무시)
 	UFUNCTION(BlueprintCallable, Category = "Gimmick|Mirror")
@@ -107,4 +111,7 @@ private:
 	float RotateStartYaw = 0.f;
 
 	float RotateTargetYaw = 0.f;
+
+	// 레벨 시작 때 거울판 각도 (되돌리기용)
+	float InitialPivotYaw = 0.f;
 };

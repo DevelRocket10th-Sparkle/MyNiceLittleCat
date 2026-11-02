@@ -45,6 +45,23 @@ void AGimmickMirror::BeginPlay()
 {
 	ApplyRotateMode();
 	Super::BeginPlay();
+
+	if (MirrorPivot)
+	{
+		InitialPivotYaw = MirrorPivot->GetRelativeRotation().Yaw;
+	}
+}
+
+void AGimmickMirror::ResetGimmick_Implementation(AActor* ResetInstigator)
+{
+	if (!MirrorPivot)
+	{
+		return;
+	}
+
+	bRotating = false;
+	SetActorTickEnabled(false);
+	MirrorPivot->SetRelativeRotation(FRotator(0.f, InitialPivotYaw, 0.f));
 }
 
 void AGimmickMirror::ApplyRotateMode()
