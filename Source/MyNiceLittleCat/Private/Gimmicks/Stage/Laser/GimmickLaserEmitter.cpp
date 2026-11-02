@@ -108,8 +108,10 @@ void AGimmickLaserEmitter::ApplyEmitterSettings()
 	{
 		bStartActivated = true;
 	}
-	else if (EmitMode == EGimmickLaserEmitMode::Pulse)
+	else
 	{
+		// Pulse는 타이머가, Signal은 받은 신호가 켜고 끔 (Always 기본값 true가 남아 있으면 신호 없이 켜진 채 시작함)
+		// Signal로 처음부터 켜 두려면 bInvertSignal 사용
 		bStartActivated = false;
 	}
 }
