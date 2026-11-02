@@ -20,6 +20,8 @@
 /// 관통 모드 bPierceNonTargets: 반사판(반사형·파괴형일 때)만 빔을 막고 나머지 액터는 통과하며,
 /// 빔 경로 전체에서 DamageTargetClasses에 맞는 첫 액터에 피해를 줌. 보스 격자 레이저용 (보스·펫·코인에 막히지 않고 플레이어만 맞힘)
 /// 맞은 면 법선(GetHitNormal)·트레이스 결과(GetHitResult)·구간 목록(GetBeamSegments)을 제공합니다.
+/// 빔 끝(마지막 구간이 막힌 액터)이 ILaserReceiverInterface 구현체면 닿아 있는 동안 매 틱 ReceiveLaserHit,
+/// 떠나거나 꺼지면 EndLaserHit를 호출합니다 (피해와 별개, 스테이지 수신기·빛에 타는 물체용).
 /// 피해 타입은 인스턴스마다 바꿀 수 있습니다 (보스 기본 UDamageType_BossLaser, 함정은 필요하면 별도 타입 지정)
 /// TODO(합의): 보스 GA에서 호출하는 방식(예고·추적 등)은 보스 담당과 확정 필요
 /// TODO(합의): 플레이어가 TakeDamage → ApplyPlayerHit를 처리하게 되면 플레이어도 ApplyDamage로 통일 (지금은 직접 호출)
@@ -190,6 +192,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Damage")
 	void SetDamageTargetClasses(const TArray<TSubclassOf<AActor>>& NewClasses) { DamageTargetClasses = NewClasses; }
 
+	// 반사형으로 바꿈 (스테이지 발사기 등 레이저를 가진 액터가 기본값을 정할 때)
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Reflection")
+	void SetEnableReflection(bool bEnable) { bEnableReflection = bEnable; }
+
+	// 발사 중 매 틱 컴포넌트 정면을 발사 방향으로 쓸지 (회전하는 발사기 등)
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam")
+	void SetFollowComponentRotation(bool bFollow) { bFollowComponentRotation = bFollow; }
+
+	// 빔을 막는 오브젝트 타입 교체 (퍼즐용 빛이 Pawn을 무시하게 할 때 등)
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Trace")
+	void SetTraceObjectTypes(const TArray<TEnumAsByte<EObjectTypeQuery>>& NewObjectTypes) { TraceObjectTypes = NewObjectTypes; }
+
+	UFUNCTION(BlueprintPure, Category = "LaserBeam|Trace")
+	const TArray<TEnumAsByte<EObjectTypeQuery>>& GetTraceObjectTypes() const { return TraceObjectTypes; }
+
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
 	bool IsLaserActive() const { return bLaserActive; }
 
@@ -245,6 +262,12 @@ protected:
 
 	// 빔에 막힌 액터에 피해 (관통 모드면 빔 경로 위의 피해 대상)
 	void ApplyLaserDamage();
+
+	// 빔 끝의 수신기(ILaserReceiverInterface)에 닿음 통지, 바뀌었으면 이전 수신기에 끝 통지
+	void UpdateLaserReceiver();
+
+	// 지금 닿아 있는 수신기에 끝 통지 (StopLaser·EndPlay)
+	void EndLaserReceiver();
 
 	// 관통 모드: 빔 구간들을 훑어 DamageTargetClasses에 맞는 첫 액터와 그 구간을 찾음
 	AActor* FindPierceDamageTarget(FLaserBeamSegment& OutSegment) const;
@@ -371,6 +394,9 @@ private:
 	TWeakObjectPtr<AActor> LastDamagedActor;
 
 	float LastDamageTime = -1.f;
+
+	// 빔 끝에 닿아 있는 수신기 (ILaserReceiverInterface 구현체)
+	TWeakObjectPtr<AActor> CurrentReceiver;
 
 	// 레이저 모음 배열
 	UPROPERTY(Transient)

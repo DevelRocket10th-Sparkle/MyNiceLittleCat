@@ -11,6 +11,7 @@
 #include "Engine/World.h"
 #include "DrawDebugHelpers.h"
 #include "Interfaces/ReflectiveSurfaceInterface.h"
+#include "Interfaces/LaserReceiverInterface.h"
 #include "Gimmicks/Boss/DamageTypes/DamageType_ReflectedLaser.h"
 #include "Gimmicks/Reflection/ReflectionMath.h"
 #include "NiagaraComponent.h"
@@ -88,6 +89,7 @@ void ULaserBeamComponent::StopLaser()
 	}
 
 	bLaserActive = false;
+	EndLaserReceiver();
 	HitActor.Reset();
 	LastHit = FHitResult();
 	BeamSegments.Reset();
@@ -179,7 +181,48 @@ void ULaserBeamComponent::UpdateBeam()
 	if (bLaserActive)
 	{
 		UpdateBeamEffects();
+		UpdateLaserReceiver();
 	}
+}
+
+void ULaserBeamComponent::UpdateLaserReceiver()
+{
+	// 빔 끝 = 마지막 구간이 막힌 실제 액터 (설치 예정 반사판 미리보기는 제외)
+	AActor* NewReceiver = nullptr;
+	const FLaserBeamSegment* LastSegment = BeamSegments.IsEmpty() ? nullptr : &BeamSegments.Last();
+	if (LastSegment && LastSegment->Hit.bBlockingHit && false == LastSegment->bHitVirtualSurface)
+	{
+		AActor* BlockingActor = LastSegment->Hit.GetActor();
+		if (IsValid(BlockingActor) && BlockingActor->Implements<ULaserReceiverInterface>())
+		{
+			NewReceiver = BlockingActor;
+		}
+	}
+
+	if (CurrentReceiver.IsValid() && CurrentReceiver.Get() != NewReceiver)
+	{
+		AActor* OldReceiver = CurrentReceiver.Get();
+		CurrentReceiver.Reset();
+		ILaserReceiverInterface::Execute_EndLaserHit(OldReceiver, this);
+	}
+
+	CurrentReceiver = NewReceiver;
+	if (NewReceiver)
+	{
+		// 콜백에서 경로가 바뀌어도 안전하도록 복사해서 전달
+		const FHitResult Hit = LastSegment->Hit;
+		ILaserReceiverInterface::Execute_ReceiveLaserHit(NewReceiver, this, Hit, LastSegment->ReflectionCount);
+	}
+}
+
+void ULaserBeamComponent::EndLaserReceiver()
+{
+	if (AActor* OldReceiver = CurrentReceiver.Get())
+	{
+		CurrentReceiver.Reset();
+		ILaserReceiverInterface::Execute_EndLaserHit(OldReceiver, this);
+	}
+	CurrentReceiver.Reset();
 }
 
 void ULaserBeamComponent::SetVisualSettings(const FLaserBeamVisualSettings& NewSettings)
