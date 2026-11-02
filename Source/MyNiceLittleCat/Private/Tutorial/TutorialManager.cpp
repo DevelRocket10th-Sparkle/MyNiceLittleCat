@@ -40,7 +40,11 @@ namespace TutorialTag
 	const FName CameraLockOnArena(TEXT("Tutorial.Camera.LockOnArena"));        // 아레나 전체 샷
 	const FName EnemyLockOn(TEXT("Tutorial.Enemy.LockOn"));                    // 락온 구간 적 (여러 마리에 같은 태그 OK)
 	const FName Gate03(TEXT("Tutorial.Gate.03"));                              // 락온 -> 전투 사이 문
-	const FName PetPointAfterDoor03(TEXT("Tutorial.PetPoint.AfterDoor03"));    // 다음 문 너머
+
+	//! 락온 -> 전투 사이 통로
+	const FName TriggerCombatEnter(TEXT("Tutorial.Trigger.CombatEnter"));      // 두 문 사이 통로 (Gate03 보다 안쪽)
+	const FName Gate04(TEXT("Tutorial.Gate.04"));                              // 통로 -> 전투 구간 문
+	const FName PetPointAfterDoor04(TEXT("Tutorial.PetPoint.AfterDoor04"));    // 전투 구간 문 너머
 }
 
 ATutorialManager::ATutorialManager()
@@ -205,6 +209,7 @@ void ATutorialManager::BuildActions(ETutorialStage Stage, TArray<FTutorialAction
 	case ETutorialStage::Movement: BuildMovementActions(OutActions); break;
 	case ETutorialStage::Dash: BuildDashActions(OutActions); break;
 	case ETutorialStage::LockOn: BuildLockOnActions(OutActions); break;
+	case ETutorialStage::Combat: BuildCombatActions(OutActions); break;
 	default: break;
 	}
 }
@@ -297,7 +302,8 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 	TWeakObjectPtr<AActor> CamArena = FindActorByTag(TutorialTag::CameraLockOnArena);
 	TWeakObjectPtr<AActor> Gate02 = FindActorByTag(TutorialTag::Gate02);
 	TWeakObjectPtr<AActor> Gate03 = FindActorByTag(TutorialTag::Gate03);
-	TWeakObjectPtr<AActor> PetAfterDoor03 = FindActorByTag(TutorialTag::PetPointAfterDoor03);
+	TWeakObjectPtr<AActor> Gate04 = FindActorByTag(TutorialTag::Gate04); // 전투 구간 문도 여기서 같이 염
+	TWeakObjectPtr<AActor> PetAfterDoor04 = FindActorByTag(TutorialTag::PetPointAfterDoor04); // 펫이 통로를 지나 바로 전투 입구까지 감
 
 	// 적은 여러 마리라 FindActorByTag(하나만 찾음) 대신 같은 태그를 전부 모아둠
 	LockOnEnemies.Reset();
@@ -343,20 +349,38 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(WaitUntil([this] { return IsPlayerLockedOn(); }));
 	OutActions.Add(Do([this] { PetSay(INVTEXT("Attack!")); StartPetFollowLockTarget(); }));
 
-	// 5) 전부 처치하면 펫이 플레이어에게 돌아와 칭찬
+	// 5) 전부 처치하면 펫이 그 자리에서 플레이어를 돌아보고 칭찬
 	OutActions.Add(WaitUntil([this] { return AreLockOnEnemiesDead(); }));
-	// 펫이 플레이어 앞으로 걸어서 돌아옴 (이때는 잠금이 없어서 "출발할 때" 플레이어 앞자리로 감)
-	OutActions.Add(Do([this] { StopPetFollowLockTarget(); PetWalkToLocation(GetPetPointNearPlayer()); }));
-	OutActions.Add(WaitUntil([this] { return false == IsPetWalking(); }));
-	OutActions.Add(Do([this] { PetFacePlayer(); }));
-	OutActions.Add(WaitSeconds(0.3f));
+	OutActions.Add(Do([this] { StopPetFollowLockTarget(); PetFacePlayer(); }));
+	OutActions.Add(WaitSeconds(0.2f));
 	OutActions.Add(Do([this] { PetSay(INVTEXT("Good!")); }));
-	OutActions.Add(WaitSeconds(1.5f));
+	OutActions.Add(WaitSeconds(0.8f));
 
 	// 6) 문 열고 펫이 먼저 통과
 	OutActions.Add(Do([this, Gate03] { SetActivated(Gate03.Get(), true); }));
-	OutActions.Add(WaitSeconds(0.6f)); // 문짝에 펫이 부딪히지 않게
-	OutActions.Add(Do([this, PetAfterDoor03] { PetMoveTo(PetAfterDoor03.Get()); }));
+	OutActions.Add(WaitSeconds(0.8f)); // 두 문이 열리는 시간 차
+	OutActions.Add(Do([this, Gate04] { SetActivated(Gate04.Get(), true); }));
+	OutActions.Add(WaitSeconds(0.6f)); // Gate04 문짝에 펫이 부딪히지 않게
+	OutActions.Add(Do([this, PetAfterDoor04]
+		{
+			if (true == PetAfterDoor04.IsValid())
+				PetWalkToLocation(PetAfterDoor04->GetActorLocation()); // 락온 구간처럼 걸어서 이동 (PetMoveTo 는 날 수 있음)
+		}));
+}
+
+void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
+{
+	AActor* TriggerCombatEnter = FindActorByTag(TutorialTag::TriggerCombatEnter);
+
+	TWeakObjectPtr<AActor> Gate03 = FindActorByTag(TutorialTag::Gate03);
+
+	// 1) 플레이어가 Gate03을 지나 충분히 들어오면 시작
+	OutActions.Add(WaitPlayerEnter(TriggerCombatEnter));
+
+	// 2) 들아온 문(Gate03)만 닫음 -> 락온 구간으로 못 돌아가요
+	OutActions.Add(Do([this, Gate03] {SetActivated(Gate03.Get(), false); }));
+
+	// 3) 여기부터 전투 구간 본 내용 (회복/전투 안내 등) 이어서 추가
 }
 
 void ATutorialManager::RunNextAction()

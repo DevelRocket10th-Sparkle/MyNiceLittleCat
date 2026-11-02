@@ -71,6 +71,7 @@ protected:
     void BuildMovementActions(TArray<FTutorialAction>& OutActions);
     void BuildDashActions(TArray<FTutorialAction>& OutActions);
     void BuildLockOnActions(TArray<FTutorialAction>& OutActions);
+    void BuildCombatActions(TArray<FTutorialAction>& OutActions);
 
     // 동작 실행기
     void RunNextAction();
