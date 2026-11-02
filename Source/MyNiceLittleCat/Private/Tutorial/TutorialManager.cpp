@@ -12,6 +12,11 @@
 #include "Interfaces/TargetableInterface.h"                // 적 생존 확인 (락온 시스템과 같은 기준)
 #include "Navigation/PathFollowingComponent.h" // 펫이 걷는 중인지 확인 (EPathFollowingStatus)
 #include "UObject/UnrealType.h" // FFloatProperty (락온 컴포넌트의 protected 값을 이 레벨에서만 바꾸기)
+#include "Enemy/EnemyCharacter.h"              // 보스 스폰 / 생존 확인
+#include "AbilitySystemBlueprintLibrary.h"     // 플레이어 ASC 찾기
+#include "AbilitySystemComponent.h"
+#include "Characters/GAS/PlayerAttributeSet.h" // 플레이어 체력(목숨) 채우기
+#include "Enemy/AI/EnemyAIController.h"    // 보스 타깃을 플레이어로 바로 지정
 
 namespace TutorialTag
 {
@@ -45,6 +50,13 @@ namespace TutorialTag
 	const FName TriggerCombatEnter(TEXT("Tutorial.Trigger.CombatEnter"));      // 두 문 사이 통로 (Gate03 보다 안쪽)
 	const FName Gate04(TEXT("Tutorial.Gate.04"));                              // 통로 -> 전투 구간 문
 	const FName PetPointAfterDoor04(TEXT("Tutorial.PetPoint.AfterDoor04"));    // 전투 구간 문 너머
+
+	//! 전투 구간
+	const FName TriggerBossRoomEnter(TEXT("Tutorial.Trigger.BossRoomEnter"));	// 전투 방 안쪽 (Gate04 를 지난 곳)
+	const FName PointBossSpawn(TEXT("Tutorial.Point.BossSpawn"));				// 펫이 걸어가서 보스로 변하는 자리 (바닥)
+	const FName CameraBossArena(TEXT("Tutorial.Camera.BossArena"));				// 보스 아레나 전체 샷
+	const FName CheckpointCombat(TEXT("Tutorial.Checkpoint.Combat"));			// 보스 잡으면 나타나는 체크포인트
+	const FName PetPointCheckpoint(TEXT("Tutorial.PetPoint.Checkpoint"));		// 체크포인트 옆 펫 자리
 }
 
 ATutorialManager::ATutorialManager()
@@ -111,8 +123,19 @@ void ATutorialManager::Tick(float DeltaSeconds)
 		}
 	}
 
+	//! ---- 펫 메시 크기 변화 (보스 변신) ----
+	if (true == bPetScaling)
+	{
+		PetScaleElapsed += DeltaSeconds;
+		const float Alpha = FMath::Clamp(PetScaleElapsed / PetScaleDuration, 0.f, 1.f);
+		const float Eased = FMath::InterpEaseInOut(0.f, 1.f, Alpha, 2.f); // 천천히 시작해서 천천히 멈춤
+		SetPetMeshScale(FMath::Lerp(PetScaleFrom, PetScaleTo, Eased));
+
+		if (Alpha >= 1.f) bPetScaling = false;
+	}
+
 	// 할 일이 다 끝나면 Tick 끄기 -> 평소엔 비용 없음
-	if (false == bPetFlying && false == bPetTurning)
+	if (false == bPetFlying && false == bPetTurning && false == bPetScaling)
 		SetActorTickEnabled(false);
 }
 
@@ -125,6 +148,7 @@ void ATutorialManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	StopWaitPetArrive();
 	StopWaitCondition();
 	StopPetFollowLockTarget();
+	RestorePetForm(); // 변신 도중에 구간이 끝나도 펫이 거대하거나 숨은 채로 남지 않게
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -197,6 +221,7 @@ void ATutorialManager::StageEnd(ETutorialStage Stage)
 	bPetTurning = false;
 	StopWaitCondition();
 	StopPetFollowLockTarget();
+	RestorePetForm(); // 변신 도중에 구간이 끝나도 펫이 거대하거나 숨은 채로 남지 않게
 	LockOnEnemies.Reset();
 	Actions.Reset();
 	ActionIndex = INDEX_NONE;
@@ -349,9 +374,15 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(WaitUntil([this] { return IsPlayerLockedOn(); }));
 	OutActions.Add(Do([this] { PetSay(INVTEXT("Attack!")); StartPetFollowLockTarget(); }));
 
-	// 5) 전부 처치하면 펫이 그 자리에서 플레이어를 돌아보고 칭찬
+	// 5) 전부 처치하면 입력을 잠그고, 펫이 그 자리에서 플레이어를 돌아보고 칭찬
 	OutActions.Add(WaitUntil([this] { return AreLockOnEnemiesDead(); }));
-	OutActions.Add(Do([this] { StopPetFollowLockTarget(); PetFacePlayer(); }));
+	OutActions.Add(Do([this]
+		{
+			// 카메라는 그대로(플레이어) 두고 입력만 잠금 -> 칭찬/문 열리는 연출 중에 플레이어가 먼저 뛰어가지 않게
+			BeginCinematic(UGameplayStatics::GetPlayerPawn(this, 0), 0.f);
+			StopPetFollowLockTarget();
+			PetFacePlayer();
+		}));
 	OutActions.Add(WaitSeconds(0.2f));
 	OutActions.Add(Do([this] { PetSay(INVTEXT("Good!")); }));
 	OutActions.Add(WaitSeconds(0.8f));
@@ -365,22 +396,94 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 		{
 			if (true == PetAfterDoor04.IsValid())
 				PetWalkToLocation(PetAfterDoor04->GetActorLocation()); // 락온 구간처럼 걸어서 이동 (PetMoveTo 는 날 수 있음)
+
+			// 펫이 출발하는 순간 입력 해제 -> "펫을 따라가라"는 흐름이 자연스럽게 이어짐
+			// (카메라는 이미 플레이어라 블렌드 0)
+			EndCinematic(0.f);
 		}));
 }
 
 void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 {
 	AActor* TriggerCombatEnter = FindActorByTag(TutorialTag::TriggerCombatEnter);
+	AActor* TriggerBossRoomEnter = FindActorByTag(TutorialTag::TriggerBossRoomEnter);
 
 	TWeakObjectPtr<AActor> Gate03 = FindActorByTag(TutorialTag::Gate03);
+	TWeakObjectPtr<AActor> Gate04 = FindActorByTag(TutorialTag::Gate04);
+	TWeakObjectPtr<AActor> BossSpawn = FindActorByTag(TutorialTag::PointBossSpawn);
+	TWeakObjectPtr<AActor> CamBossArena = FindActorByTag(TutorialTag::CameraBossArena);
+	TWeakObjectPtr<AActor> Checkpoint = FindActorByTag(TutorialTag::CheckpointCombat);
+	TWeakObjectPtr<AActor> PetCheckpoint = FindActorByTag(TutorialTag::PetPointCheckpoint);
 
-	// 1) 플레이어가 Gate03을 지나 충분히 들어오면 시작
+	// 0) 체크포인트는 보스를 잡기 전까지 숨김
+	OutActions.Add(Do([this, Checkpoint] { SetActorShown(Checkpoint.Get(), false); }));
+
+	// 1) 통로에 들어오면 뒷문(Gate03)만 조용히 닫음 -> 락온 구간으로 못 돌아감 (연출 없음)
 	OutActions.Add(WaitPlayerEnter(TriggerCombatEnter));
+	OutActions.Add(Do([this, Gate03] { SetActivated(Gate03.Get(), false); }));
 
-	// 2) 들아온 문(Gate03)만 닫음 -> 락온 구간으로 못 돌아가요
-	OutActions.Add(Do([this, Gate03] {SetActivated(Gate03.Get(), false); }));
+	// 1-1) 전투 방 안까지 들어오면 들어온 문(Gate04) 닫힘 + 목숨 채움 -> 여기서부터 보스 연출 시작
+	// ("방에 갇혔다 -> 무언가 시작된다" 순서가 되게, 문이 닫히는 걸 잠깐 보여주고 카메라 전환)
+	OutActions.Add(WaitPlayerEnter(TriggerBossRoomEnter));
+	OutActions.Add(Do([this, Gate04] { SetActivated(Gate04.Get(), false); RefillPlayerHealth(); }));
+	OutActions.Add(WaitSeconds(0.5f));
 
-	// 3) 여기부터 전투 구간 본 내용 (회복/전투 안내 등) 이어서 추가
+	// 2) (잠금) 아레나 샷 -> 펫이 보스 자리로 걸어가서 돌아보고 "Final test!"
+	OutActions.Add(Do([this, CamBossArena] { BeginCinematic(CamBossArena.Get(), BossCameraBlendTime); }));
+	OutActions.Add(WaitSeconds(BossCameraBlendTime));
+	OutActions.Add(Do([this, BossSpawn]
+		{
+			if (true == BossSpawn.IsValid())
+				PetWalkToLocation(BossSpawn->GetActorLocation());
+		}));
+	OutActions.Add(WaitUntil([this] { return false == IsPetWalking(); }));
+	OutActions.Add(Do([this] { PetFacePlayer(); }));
+	OutActions.Add(WaitSeconds(0.3f)); // 돌고 나서 말하기
+	OutActions.Add(Do([this] { PetSay(INVTEXT("Final test!")); }));
+	OutActions.Add(WaitSeconds(1.2f));
+
+	// 3) "Fight me!" -> 펫이 보스 크기까지 커짐 -> 같은 자리에 보스로 교체
+	// (말풍선을 먼저: 커진 뒤에 말하면 말풍선이 거대한 몸에 파묻힘)
+	OutActions.Add(Do([this] { PetSay(INVTEXT("Fight me!")); }));
+	OutActions.Add(WaitSeconds(0.6f));
+	OutActions.Add(Do([this] { StartPetMeshScale(BossMeshScale, PetGrowTime); }));
+	OutActions.Add(WaitUntil([this] { return false == IsPetMeshScaling(); }));
+	OutActions.Add(Do([this] { SwapPetToBoss(); }));
+	OutActions.Add(WaitSeconds(BossShowTime)); // 보스를 잠깐 보여줌 (AI 는 아직 꺼져 있어서 공격 안 함)
+
+	// 3-1) (잠금 해제) 플레이어 카메라 복귀와 동시에 보스 AI 시작 -> 전투 시작
+	OutActions.Add(Do([this] { EndCinematic(CameraReturnBlendTime); StartBossAI(); }));
+
+	// 4) 보스가 쓰러질 때까지 전투
+	OutActions.Add(WaitUntil([this] { return IsBossDead(); }));
+
+	// 5) (잠금) 아레나 샷 -> 보스 스폰 자리에 거대한 펫 -> 원래 크기로 줄어듦 -> "Ouch! You win!"
+	OutActions.Add(Do([this, CamBossArena, BossSpawn]
+		{
+			SwapBossToPet(BossSpawn.Get()); // 보스가 래그돌로 늘어지는 게 보이기 전에 바로 교체
+			BeginCinematic(CamBossArena.Get(), BossCameraBlendTime);
+		}));
+	OutActions.Add(WaitSeconds(BossCameraBlendTime));
+	OutActions.Add(Do([this] { StartPetMeshScale(1.f, PetShrinkTime); }));
+	OutActions.Add(WaitUntil([this] { return false == IsPetMeshScaling(); }));
+	OutActions.Add(Do([this] { PetFacePlayer(); }));
+	OutActions.Add(WaitSeconds(0.3f));
+	OutActions.Add(Do([this] { PetSay(INVTEXT("Ouch! You win!")); }));
+	OutActions.Add(WaitSeconds(1.5f));
+
+	// 6) 체크포인트 등장 -> 펫이 옆으로 걸어감 -> (잠금 해제) "You passed! Let's go!"
+	OutActions.Add(Do([this, Checkpoint] { SetActorShown(Checkpoint.Get(), true); }));
+	OutActions.Add(WaitSeconds(0.5f)); // 체크포인트가 나타난 걸 먼저 보여줌
+	OutActions.Add(Do([this, PetCheckpoint]
+		{
+			if (true == PetCheckpoint.IsValid())
+				PetWalkToLocation(PetCheckpoint->GetActorLocation());
+		}));
+	OutActions.Add(WaitUntil([this] { return false == IsPetWalking(); }));
+	OutActions.Add(Do([this] { PetFacePlayer(); }));
+	OutActions.Add(WaitSeconds(0.3f));
+	// 말풍선과 동시에 조작을 돌려줌 -> "나가자" 를 듣자마자 움직일 수 있게
+	OutActions.Add(Do([this] { EndCinematic(CameraReturnBlendTime); PetSay(INVTEXT("You passed! Let's go!")); }));
 }
 
 void ATutorialManager::RunNextAction()
@@ -1035,4 +1138,183 @@ void ATutorialManager::ApplyTutorialCamera(APawn* _PlayerPawn)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] LockOnComponent 에 MaxExtraArmLength 가 없음 (이름 바뀜?)"));
 	}
+}
+
+void ATutorialManager::RefillPlayerHealth()
+{
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	UAbilitySystemComponent* ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(PlayerPawn);
+	if (nullptr == ASC || false == ASC->HasAttributeSetForAttribute(UPlayerAttributeSet::GetHealthAttribute()))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] RefillPlayerHealth: 플레이어 ASC/체력 없음"));
+		return;
+	}
+
+	// 최대 목숨 숫자를 직접 쓰지 않고 MaxHealth 를 읽음 -> 나중에 최대치가 바뀌어도 그대로 맞음
+	// 체력이 바뀌면 HUD(목숨 구슬)는 알아서 갱신됨 (MainWidget 이 체력 변화를 구독 중)
+	const float MaxHealth = ASC->GetNumericAttribute(UPlayerAttributeSet::GetMaxHealthAttribute());
+	ASC->SetNumericAttributeBase(UPlayerAttributeSet::GetHealthAttribute(), MaxHealth);
+}
+
+void ATutorialManager::SetActorShown(AActor* _Actor, bool _bShow)
+{
+	if (nullptr == _Actor)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] SetActorShown: 액터 없음 (태그 확인)"));
+		return;
+	}
+
+	// 숨길 때 충돌도 같이 꺼야 안 보이는 체크포인트에 상호작용되지 않음
+	_Actor->SetActorHiddenInGame(false == _bShow);
+	_Actor->SetActorEnableCollision(_bShow);
+}
+
+void ATutorialManager::SetPetHidden(bool _bHidden)
+{
+	APetCharacter* PetPtr = Pet.Get();
+	if (nullptr == PetPtr) return;
+
+	bPetHidden = _bHidden;
+	PetPtr->SetActorHiddenInGame(_bHidden); // 말풍선 컴포넌트도 같이 숨겨짐
+	PetPtr->SetActorEnableCollision(false == _bHidden);
+
+	if (true == _bHidden)
+	{
+		// 충돌이 꺼진 채 걷기 모드면 바닥을 뚫고 떨어짐 -> 이동 자체를 멈춤
+		if (AAIController* AIC = Cast<AAIController>(PetPtr->GetController()))
+			AIC->StopMovement();
+		PetPtr->GetCharacterMovement()->DisableMovement();
+	}
+	else
+		PetPtr->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+}
+
+void ATutorialManager::SetPetMeshScale(float _Scale)
+{
+	APetCharacter* PetPtr = Pet.Get();
+	if (nullptr == PetPtr) return;
+
+	USkeletalMeshComponent* Mesh = PetPtr->GetMesh();
+
+	// 처음 한 번 원래 크기를 기억 (배율은 이 크기 기준)
+	if (false == bPetMeshBaseSaved)
+	{
+		PetMeshBaseScale = Mesh->GetRelativeScale3D();
+		bPetMeshBaseSaved = true;
+	}
+
+	// 캡슐은 그대로 두고 "메시만" 키움
+	// -> 캡슐까지 키우면 벽/천장에 끼거나 밀려나서 자리가 틀어짐. 어차피 곧 보스로 바뀌니 겉모습만 커지면 충분
+	Mesh->SetRelativeScale3D(PetMeshBaseScale * _Scale);
+}
+
+void ATutorialManager::StartPetMeshScale(float _TargetScale, float _Duration)
+{
+	APetCharacter* PetPtr = Pet.Get();
+	if (nullptr == PetPtr) return;
+
+	SetPetMeshScale(PetScaleFrom = (true == bPetMeshBaseSaved)
+		? PetPtr->GetMesh()->GetRelativeScale3D().X / PetMeshBaseScale.X // 지금 배율에서 시작
+		: 1.f);
+
+	PetScaleTo = _TargetScale;
+	PetScaleDuration = FMath::Max(_Duration, KINDA_SMALL_NUMBER);
+	PetScaleElapsed = 0.f;
+	bPetScaling = true;
+	SetActorTickEnabled(true); // 진행은 Tick 에서 (끝나면 Tick 이 알아서 꺼짐)
+}
+
+void ATutorialManager::RestorePetForm()
+{
+	bPetScaling = false;
+	if (true == bPetMeshBaseSaved) SetPetMeshScale(1.f);
+	if (true == bPetHidden) SetPetHidden(false);
+}
+
+void ATutorialManager::SwapPetToBoss()
+{
+	APetCharacter* PetPtr = Pet.Get();
+	if (nullptr == PetPtr || nullptr == BossClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] SwapPetToBoss: 펫 또는 BossClass 없음 (매니저에 BossClass 지정했는지 확인)"));
+		return;
+	}
+
+	// 펫이 서 있던 바닥 + 펫이 보던 방향 그대로 보스를 세움 -> 커진 펫과 보스가 같은 자리/방향이라 바뀐 티가 안 남
+	const FVector Ground = GetGroundLocation(PetPtr);
+	const FRotator Rotation(0.f, PetPtr->GetActorRotation().Yaw, 0.f);
+
+	// 보스 캡슐 중심 = 바닥 + 캡슐 반높이 (BP 기본값에서 읽음 -> 보스 크기를 바꿔도 코드 수정 없음)
+	const AEnemyCharacter* BossCDO = BossClass->GetDefaultObject<AEnemyCharacter>();
+	const float HalfHeight = BossCDO->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	// 보스 BP 의 Auto Possess AI 가 "Placed In World" 라서 스폰만으로는 AI 가 안 붙음
+	// -> 등장 연출 동안 가만히 서 있고, StartBossAI() 에서 AI 를 붙여 전투 시작
+	Boss = GetWorld()->SpawnActor<AEnemyCharacter>(BossClass, Ground + FVector(0.f, 0.f, HalfHeight), Rotation, Params);
+	if (false == Boss.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] SwapPetToBoss: 보스 스폰 실패"));
+		return;
+	}
+
+	SetPetHidden(true);
+}
+
+void ATutorialManager::StartBossAI()
+{
+	AEnemyCharacter* BossPtr = Boss.Get();
+	if (nullptr == BossPtr) return;
+
+	// AI 컨트롤러가 붙는 순간 비헤이비어 트리가 돌기 시작함
+	if (nullptr == BossPtr->GetController()) BossPtr->SpawnDefaultController();
+
+	// 보스는 시야 이벤트로만 타깃을 잡는데, 플레이어가 가만히 서 있으면 이벤트가 안 와서 타깃이 빈 채로 멈출 수 있음
+	// -> 튜토리얼 보스는 상대가 정해져 있으니 플레이어를 바로 타깃으로 넣어 줌
+	// (SpawnDefaultController -> OnPossess 에서 블랙보드가 이미 준비돼 있어서 바로 넣어도 됨)
+	if (AEnemyAIController* AIC = Cast<AEnemyAIController>(BossPtr->GetController()))
+		AIC->SetCombatTarget(UGameplayStatics::GetPlayerPawn(this, 0));
+}
+
+void ATutorialManager::SwapBossToPet(AActor* _AppearPoint)
+{
+	APetCharacter* PetPtr = Pet.Get();
+	AEnemyCharacter* BossPtr = Boss.Get();
+
+	if (nullptr != PetPtr)
+	{
+		// 펫 캡슐 중심 = 바닥 + 펫 캡슐 반높이
+		const float PetHalfHeight = PetPtr->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+
+		// 보스가 어디서 죽든 처음 등장했던 자리에 세움 -> 고정된 아레나 카메라에 항상 잡힘
+		bool bPlaced = false;
+		if (nullptr != _AppearPoint)
+		{
+			bPlaced = PetPtr->TeleportTo(GetGroundLocation(_AppearPoint) + FVector(0.f, 0.f, PetHalfHeight),
+				FRotator(0.f, _AppearPoint->GetActorRotation().Yaw, 0.f));
+		}
+
+		// 지점이 없거나, 플레이어가 그 자리에 서 있어서 순간이동이 막히면 -> 보스가 쓰러진 자리에
+		if (false == bPlaced && nullptr != BossPtr)
+		{
+			PetPtr->TeleportTo(GetGroundLocation(BossPtr) + FVector(0.f, 0.f, PetHalfHeight),
+				FRotator(0.f, BossPtr->GetActorRotation().Yaw, 0.f));
+		}
+	}
+
+	// 보스와 같은 크기로 나타났다가 -> 이후 StartPetMeshScale 로 줄어듦
+	SetPetMeshScale(BossMeshScale);
+	SetPetHidden(false);
+
+	// 보스는 바로 제거 (래그돌로 쓰러지는 모습이 보이지 않게)
+	if (nullptr != BossPtr) BossPtr->Destroy();
+	Boss.Reset();
+}
+
+bool ATutorialManager::IsBossDead() const
+{
+	// 락온 구간과 같은 기준 (체력 0 이 되는 순간 Dying 으로 바뀌어 false)
+	return false == IsEnemyAlive(Boss.Get());
 }

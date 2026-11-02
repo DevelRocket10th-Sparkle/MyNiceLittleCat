@@ -149,6 +149,19 @@ protected:
     void HandlePlayerRespawned(AController* _Controller, APawn* _NewPawn); // 리스폰되면 연출 강제 종료
 
     void ApplyTutorialCamera(APawn* _PlayerPawn); // 튜토리얼 전용 카메라 설정 (벽/천장 밖으로 카메라가 나가지 않게)
+
+    // ===== 전투 구간 =====
+    void RefillPlayerHealth();                           // 플레이어 목숨을 최대치로 채움 (보스전 시작 공정하게)
+    void SetActorShown(AActor* _Actor, bool _bShow);     // 액터 보이기/숨기기 + 충돌 켜기/끄기 (체크포인트 등장용)
+    void SetPetHidden(bool _bHidden);                    // 펫 숨기기 (보스로 변한 동안)
+    void SetPetMeshScale(float _Scale);                  // 펫 "메시만" 크기 바로 바꾸기 (원래 크기 기준 배율)
+    void StartPetMeshScale(float _TargetScale, float _Duration); // 펫 메시를 _Duration 초 동안 _TargetScale 배로 (Tick 에서 진행)
+    bool IsPetMeshScaling() const { return bPetScaling; }
+    void RestorePetForm();                               // 펫 크기/보이기 원래대로 (구간이 끊겨도 펫이 거대하거나 숨은 채로 남지 않게)
+    void SwapPetToBoss();                                // 거대해진 펫 자리에 보스 스폰 + 펫 숨김
+    void StartBossAI();                                  // 보스 AI 시작 (연출이 끝나고 조작이 돌아올 때)
+    void SwapBossToPet(AActor* _AppearPoint);            // 보스 제거 -> 거대한 펫을 지정 지점(보스 스폰 자리)에 세움
+    bool IsBossDead() const;                             // 보스가 죽었는지
     // =========================================================
 protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tutorial")
@@ -204,6 +217,25 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Tutorial|LockOn", meta = (ClampMin = "0.0"))
     float PetEnemySideOffset = 150.f;   // 적 옆으로 얼마나 비켜설지 (적 캡슐과 겹치면 늘리기)
 
+    // ===== 전투 구간 =====
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Combat")
+    TSubclassOf<class AEnemyCharacter> BossClass;  // 등장시킬 보스 (BP_Tutorial_Boss)
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Combat", meta = (ClampMin = "1.0"))
+    float BossMeshScale = 10.f;        // 보스 BP 메시 크기와 같게! (펫 메시를 여기까지 키운 뒤 보스로 바꿔서 이어 보이게)
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Combat", meta = (ClampMin = "0.0"))
+    float BossCameraBlendTime = 0.8f;   // 플레이어 카메라 -> 보스 아레나 샷 전환 시간
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Combat", meta = (ClampMin = "0.1"))
+    float PetGrowTime = 1.5f;          // 펫이 보스 크기까지 커지는 시간
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Combat", meta = (ClampMin = "0.1"))
+    float PetShrinkTime = 1.f;         // 보스를 잡은 뒤 펫이 원래 크기로 줄어드는 시간
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Combat", meta = (ClampMin = "0.0"))
+    float BossShowTime = 1.5f;         // 보스 등장 후 조작을 돌려주기 전까지 보여주는 시간
+
 private:
     bool bChangingStage = false; // 구간 전환 도중에 또 전환되는 것을 막는 불값
     
@@ -247,4 +279,15 @@ private:
     TArray<TWeakObjectPtr<AActor>> LockOnEnemies; // 락온 구간 적 전부 (구간 시작 시 태그로 모음)
     FTimerHandle PetFollowTimerHandle;            // 락온 대상 따라가기 확인 타이머
     TWeakObjectPtr<AActor> PetFollowedTarget;     // 펫이 지금 옆에 가 있는 적
+
+    // 전투 구간
+    TWeakObjectPtr<class AEnemyCharacter> Boss; // 스폰한 보스
+    bool bPetHidden = false;           // 펫을 숨겨둔 상태인지
+    bool bPetScaling = false;          // 펫 메시 크기 변하는 중인지 (Tick)
+    bool bPetMeshBaseSaved = false;    // 펫 메시 원래 크기를 저장했는지
+    FVector PetMeshBaseScale = FVector::OneVector; // 펫 메시 원래 크기
+    float PetScaleFrom = 1.f;
+    float PetScaleTo = 1.f;
+    float PetScaleDuration = 0.f;
+    float PetScaleElapsed = 0.f;
 };
