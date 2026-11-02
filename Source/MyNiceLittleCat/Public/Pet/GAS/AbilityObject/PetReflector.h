@@ -38,5 +38,5 @@ protected:
 	TObjectPtr<UStaticMeshComponent> ReflectorMesh;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reflector", meta = (ClampMin = "0.1", Units = "s"))
-	float ReflectorLifeSpan = 10.f;
+	float ReflectorLifeSpan = 6.f;
 };

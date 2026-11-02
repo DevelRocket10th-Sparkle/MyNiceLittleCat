@@ -16,6 +16,7 @@ bool UEnemyPhaseConfigData::ValidateConfiguration(FString& OutError) const
 		OutError = TEXT("The first phase must be an implemented combat phase.");
 		return false;
 	}
+
 	for (int32 Index = 0; Index < Phases.Num(); ++Index)
 	{
 		// 현재 검사할 페이즈 설정
@@ -25,7 +26,55 @@ bool UEnemyPhaseConfigData::ValidateConfiguration(FString& OutError) const
 			OutError = TEXT("Invalid or duplicate phase ID.");
 			return false;
 		}
-		Ids.Add(Phase.PhaseId);
+		Ids.Add(Phase.PhaseId);	// 유효한 PhaseID 추가
+
+		// 이동 설정 검사
+		if (!IsLogOnlyPhase(Index))
+		{
+			// 잘못된 이동 정책으로 등록된 경우 유효하지 않음 처리
+			if (static_cast<uint8>(Phase.MovementMode) > static_cast<uint8>(EBossPhaseMovementMode::Waypoints))
+			{
+				OutError = FString::Printf(
+					TEXT("Phase '%s': Invalid movement mode."),
+					*Phase.PhaseId.ToString()
+				);
+				return false;
+			}
+
+			// 접근 허용 범위 유효성 검사
+			if (!FMath::IsFinite(Phase.MovementAcceptanceRadius)
+				|| Phase.MovementAcceptanceRadius < 0.f)
+			{
+				OutError = FString::Printf(
+					TEXT("Phase '%s': Invalid movement acceptance radius."),
+					*Phase.PhaseId.ToString()
+				);
+				return false;
+			}
+
+			// Waypoints 모드에서 사용할 경로 ID가 지정되지 않은 경우
+			if (Phase.MovementMode == EBossPhaseMovementMode::Waypoints
+				&& Phase.MovementRouteId.IsNone())
+			{
+				OutError = FString::Printf(
+					TEXT("Phase '%s': MovementRouteId is None"),
+					*Phase.PhaseId.ToString()
+				);
+				return false;
+			}
+
+			// 등록된 페이즈 회전 모드인지 검사
+			if (static_cast<uint8>(Phase.RotationMode) > static_cast<uint8>(EBossPhaseRotationMode::Hold))
+			{
+				OutError = FString::Printf(
+					TEXT("Phase '%s': Invalid rotation mode"),
+					*Phase.PhaseId.ToString()
+				);
+				return false;
+			}
+		}
+
+		// 체력 하한 검사
 		if (!IsLogOnlyPhase(Index) && Phase.Kind == EBossPhaseKind::Combat)
 		{
 			if (!FMath::IsFinite(Phase.HealthFloorRatio) || Phase.HealthFloorRatio < 0.f
@@ -38,6 +87,7 @@ bool UEnemyPhaseConfigData::ValidateConfiguration(FString& OutError) const
 			PreviousFloor = Phase.HealthFloorRatio;
 		}
 	}
+
 	if (!IsLogOnlyPhase(Phases.Num() - 1)
 		&& (Phases.Last().Kind != EBossPhaseKind::Combat || PreviousFloor != 0.f))
 	{

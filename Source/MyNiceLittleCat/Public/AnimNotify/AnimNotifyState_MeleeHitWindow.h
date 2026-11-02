@@ -76,6 +76,12 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Melee Hit|Hit Stop", meta = (ClampMin = "0.0"))
     float KillHitStopDuration = 0.2f;
 
+    UPROPERTY(EditAnywhere, Category = "Deflect")
+    FName DeflectTag = TEXT("Deflect");
+
+    UPROPERTY(EditAnywhere, Category = "Deflect")
+    TObjectPtr<USoundBase> DeflectSound;
+
 private:
     TMap<TWeakObjectPtr<USkeletalMeshComponent>, TSet<TWeakObjectPtr<AActor>>> HitActorsByMesh;
     TMap<TWeakObjectPtr<USkeletalMeshComponent>, FTimerHandle> HitStopTimers;

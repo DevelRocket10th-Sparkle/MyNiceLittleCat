@@ -144,7 +144,7 @@ void UGA_Enemy_MeleeAttack::HandlePlayerHit(const FHitResult& Hit)
 
 float UGA_Enemy_MeleeAttack::GetDamageMultiplier() const
 {
-	return MeleeSettings ? MeleeSettings->DamageMultiplier : 0.f;
+	return ExecutionPattern.DamageMultiplier;
 }
 
 void UGA_Enemy_MeleeAttack::HandleMontageCompleted()

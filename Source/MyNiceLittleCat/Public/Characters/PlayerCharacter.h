@@ -42,9 +42,12 @@ public:
 	bool GetbIsDead() const { return bIsDead; }
 	void SetDodgeInvincible(bool bNewDodgeInvincible) { bIsDodgeInvincible = bNewDodgeInvincible; }
 	bool GetbIsRunning() const { return bIsRunning; }
+	bool GetbIsDeflected() const { return bIsDeflected; }
 
 	UStaticMeshComponent* GetWeaponMesh() const{ return WeaponMesh; }
 	UStaticMeshComponent* GetPotionMesh() const { return PotionMesh; }
+
+	void PlayDeflect();
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -110,6 +113,9 @@ private:
 	void ToggleHitFlash();
 	void EndInvincibility();
 	void DropWeapon();
+
+	UFUNCTION()
+	void OnDeflectBlendingOut(UAnimMontage* Montage, bool bInterrupted);
 
 
 public:
@@ -217,6 +223,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Character|Death")
 	TObjectPtr<UAnimMontage> DeathMontage;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Deflect")
+	TObjectPtr<UAnimMontage> DeflectMontage;
+
 	UPROPERTY(VisibleAnywhere, Category = "Weapon")
 	TObjectPtr<UStaticMeshComponent> WeaponMesh;
 
@@ -250,6 +259,6 @@ private:
 	bool bMeshWasVisible = true;
 	bool bHitFlashVisible = true;
 	bool bIsDead = false;
-
+	bool bIsDeflected = false;
 
 };

@@ -27,6 +27,17 @@ struct MYNICELITTLECAT_API FPetMoveToTaskInstanceData
 
     UPROPERTY()
     FGuid AbilityMoveRequestId;
+
+    // 0이면 기존 속도를 그대로 사용
+    UPROPERTY(EditAnywhere, Category = "Parameter",
+        meta = (ClampMin = "0.0", Units = "cm/s"))
+    float MoveSpeedOverride = 0.f;
+
+    UPROPERTY()
+    TWeakObjectPtr<class UCharacterMovementComponent> Movement;
+
+    float OriginalMaxWalkSpeed = 0.f;
+    bool bHasSavedMoveSpeed = false;
 };
 
 // MoveTo Task

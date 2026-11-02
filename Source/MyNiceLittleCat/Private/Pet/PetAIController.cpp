@@ -1,6 +1,7 @@
 #include "Pet/PetAIController.h"
 #include "Components/StateTreeAIComponent.h"
 #include "Pet/PetCharacter.h"
+#include "Navigation/PathFollowingComponent.h"
 
 APetAIController::APetAIController()
 {
@@ -9,6 +10,10 @@ APetAIController::APetAIController()
 
 	StateTreeComponent->SetStartLogicAutomatically(false); // StateTree 자동 실행 해제
 	bStartAILogicOnPossess = false;
+
+	// 원인 확인용: 도착 높이 허용치를 캡슐 절반 높이의 2배로
+	if (UPathFollowingComponent* PathFollowing = GetPathFollowingComponent())
+		PathFollowing->SetPreciseReachThreshold(1.1f, 2.f);
 }
 
 void APetAIController::BeginPlay()

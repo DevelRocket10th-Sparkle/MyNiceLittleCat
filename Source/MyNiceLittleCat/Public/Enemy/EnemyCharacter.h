@@ -23,9 +23,9 @@ class UEnemyConfigData;
 class UEnemyPatternComponent;
 class UEnemyMeleeTraceComponent;
 
-// Test용
 class UAnimMontage;
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnEnemyDeathStarted, AEnemyCharacter*);
 UCLASS()
 class MYNICELITTLECAT_API AEnemyCharacter : public ACharacter, public IAbilitySystemInterface, public ITargetableInterface
 {
@@ -138,10 +138,10 @@ protected:
 	// 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-	/* 밀려나기 */
-	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float PlayerPushMultiplier = 1.f;	// 보스는 0으로 설정하기
+public :
 
+	// FOnEnemyDeathStarted 델리게이트: 사망 상태로 전환된 직후 방송
+	FOnEnemyDeathStarted OnDeathStarted;
 
 protected :
 
@@ -182,5 +182,9 @@ protected :
 	int32 AttackMovementLockCount = 0;
 	// 현재 회전 제한을 획득한 공격 실행 수
 	int32 RotationLockCount = 0;
+
+	/* 밀려나기 */
+	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float PlayerPushMultiplier = 1.f;	// 보스는 0으로 설정하기
 
 };

@@ -4,6 +4,22 @@
 #include "Characters/PlayerCharacter.h"
 #include "GameFramework/PlayerController.h"
 
+void AMainHUD::ShowBossHealthBar(ABossCharacter* Boss)
+{
+	if (IsValid(MainWidget))
+	{
+		MainWidget->ShowBossHealthBar(Boss);
+	}
+}
+
+void AMainHUD::HideBossHealthBar()
+{
+	if (IsValid(MainWidget))
+	{
+		MainWidget->HideBossHealthBar();
+	}
+}
+
 void AMainHUD::BeginPlay()
 {
 	Super::BeginPlay();

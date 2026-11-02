@@ -12,7 +12,7 @@
 #include "Gimmicks/Laser/LaserBeamComponent.h"
 #include "Gimmicks/Reflection/ReflectionMath.h"
 //#include "UObject/UObjectIterator.h"
-//#include "DrawDebugHelpers.h"
+#include "DrawDebugHelpers.h"
 
 UGameplayAbility_PetReflect::UGameplayAbility_PetReflect()
 {
@@ -337,6 +337,30 @@ bool UGameplayAbility_PetReflect::BeginPlacementMove()
 
     if (false == bFoundNavPoint) return false;
 
+    constexpr float DebugDuration = 15.f;
+
+    //// 초록 구: 반사판을 설치할 바닥 위치
+    //DrawDebugSphere(
+    //    GetWorld(), GroundLocation + FVector(0.f, 0.f, 10.f),
+    //    15.f, 12, FColor::Green, false, DebugDuration, 0, 2.f);
+
+    //// 빨간 구: NavMesh 보정 후 펫이 실제로 도착해야 하는 위치
+    //DrawDebugSphere(
+    //    GetWorld(), NavLocation.Location + FVector(0.f, 0.f, 10.f),
+    //    15.f, 12, FColor::Red, false, DebugDuration, 0, 2.f);
+
+    //// 노란 선: 요청 당시 펫 위치 → 실제 목적지
+    //DrawDebugLine(
+    //    GetWorld(), Pet->GetActorLocation(),
+    //    NavLocation.Location + FVector(0.f, 0.f, 10.f),
+    //    FColor::Yellow, false, DebugDuration, 0, 2.f);
+
+    //UE_LOG(LogTemp, Warning,
+    //    TEXT("[ReflectApproach] Ground=%s, Approach=%s, NavGoal=%s"),
+    //    *GroundLocation.ToString(),
+    //    *ApproachPoint.ToString(),
+    //    *NavLocation.Location.ToString());
+
     PlacementMoveRequestId = Pet->RequestAbilityMoveTo(NavLocation.Location);
     if (false == PlacementMoveRequestId.IsValid()) return false;
 
@@ -397,7 +421,7 @@ bool UGameplayAbility_PetReflect::CanPlaceReflectorAtTransform(const FTransform&
     FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PetReflectPlacement));
 
     if (APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo()))
-        QueryParams.AddIgnoredComponent(Pet->GetMesh());
+        QueryParams.AddIgnoredActor(Pet);
 
     // 클릭 당시의 바닥 정보만 믿지 않고 현재 바닥 확인
     FHitResult GroundHit;

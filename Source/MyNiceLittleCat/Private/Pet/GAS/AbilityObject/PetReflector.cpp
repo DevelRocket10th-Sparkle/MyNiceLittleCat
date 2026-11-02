@@ -2,6 +2,7 @@
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Gimmicks/Reflection/ReflectionMath.h"
+#include "NavAreas/NavArea_Null.h"
 
 APetReflector::APetReflector()
 {
@@ -31,6 +32,14 @@ void APetReflector::BeginPlay()
 
     // 실제 설치된 반사판은 이동을 막음
     CollisionBox->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+
+    // 기존 내비게이션 등록을 해제하고, 동적 장애물 설정을 적용한 뒤 다시 등록
+    CollisionBox->SetCanEverAffectNavigation(false);
+
+    CollisionBox->bDynamicObstacle = true;
+    CollisionBox->SetAreaClassOverride(UNavArea_Null::StaticClass());
+
+    CollisionBox->SetCanEverAffectNavigation(true);
 
     // 설치된 시점부터 수명 시작
     SetLifeSpan(ReflectorLifeSpan);
