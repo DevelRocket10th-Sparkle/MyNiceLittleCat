@@ -40,9 +40,11 @@ public:
 	bool GetbIsAbleToAttack() const { return bIsAbleToAttack; }
 	void SetbIsAbleToMove(bool bNewIsAbleToMove) { bIsAbleToMove = bNewIsAbleToMove; }
 	bool GetbIsDead() const { return bIsDead; }
-	void SetDodgeInvincible(bool bNewDodgeInvincible) { bIsDodgeInvincible = bNewDodgeInvincible; }
+	void SetDodgeInvincible(bool bNewDodgeInvincible);
+	bool GetbIsDodgeInvincible() const { return bIsDodgeInvincible; }
 	bool GetbIsRunning() const { return bIsRunning; }
 	bool GetbIsDeflected() const { return bIsDeflected; }
+	bool GetbIsHealing() const { return bIsHealing; }
 
 	UStaticMeshComponent* GetWeaponMesh() const{ return WeaponMesh; }
 	UStaticMeshComponent* GetPotionMesh() const { return PotionMesh; }
@@ -105,6 +107,12 @@ protected:
 	UFUNCTION()
 	void OnDeathMontageNotify(FName NotifyName, const FBranchingPointNotifyPayload& Payload);
 
+	void StartHeal();
+
+	UFUNCTION()
+	void OnHealMontageNotify(FName NotifyName, const FBranchingPointNotifyPayload& Payload);
+
+	void OnHealMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 	// 근접한 Enemy 밀어내기
 	void PushNearbyEnemies(const FVector& WorldMoveInput);
 
@@ -260,5 +268,8 @@ private:
 	bool bHitFlashVisible = true;
 	bool bIsDead = false;
 	bool bIsDeflected = false;
+
+	TEnumAsByte<ECollisionResponse> SavedCapsuleProjectileResponse = ECR_Block;
+	TEnumAsByte<ECollisionResponse> SavedMeshProjectileResponse = ECR_Block;
 
 };

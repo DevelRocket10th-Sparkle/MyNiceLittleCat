@@ -94,6 +94,25 @@ UAbilitySystemComponent* APlayerCharacter::GetAbilitySystemComponent() const
     return AbilitySystemComponent;
 }
 
+void APlayerCharacter::SetDodgeInvincible(bool bNewDodgeInvincible)
+{
+    if (bIsDodgeInvincible == bNewDodgeInvincible) return;
+    bIsDodgeInvincible = bNewDodgeInvincible;
+
+    UCapsuleComponent* Capsule = GetCapsuleComponent();
+    USkeletalMeshComponent* CharMesh = GetMesh();
+
+    if (bNewDodgeInvincible)
+    {
+        SavedCapsuleProjectileResponse = Capsule->GetCollisionResponseToChannel(ECC_GameTraceChannel1);
+        Capsule->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Ignore);
+    }
+    else
+    {
+        Capsule->SetCollisionResponseToChannel(ECC_GameTraceChannel1, SavedCapsuleProjectileResponse);
+    }
+}
+
 void APlayerCharacter::PlayDeflect()
 {
     UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
