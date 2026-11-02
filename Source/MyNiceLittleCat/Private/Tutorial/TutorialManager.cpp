@@ -325,7 +325,6 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 	AActor* TriggerLockOnEnter = FindActorByTag(TutorialTag::TriggerLockOnEnter);
 
 	TWeakObjectPtr<AActor> CamArena = FindActorByTag(TutorialTag::CameraLockOnArena);
-	TWeakObjectPtr<AActor> Gate02 = FindActorByTag(TutorialTag::Gate02);
 	TWeakObjectPtr<AActor> Gate03 = FindActorByTag(TutorialTag::Gate03);
 	TWeakObjectPtr<AActor> Gate04 = FindActorByTag(TutorialTag::Gate04); // 전투 구간 문도 여기서 같이 염
 	TWeakObjectPtr<AActor> PetAfterDoor04 = FindActorByTag(TutorialTag::PetPointAfterDoor04); // 펫이 통로를 지나 바로 전투 입구까지 감
@@ -342,8 +341,7 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 	// 1) 플레이어가 구간에 들어오면 시작
 	OutActions.Add(WaitPlayerEnter(TriggerLockOnEnter));
 
-	// 2) 뒤쪽(입장한) 문 닫고 아레나 전체 샷으로 적 보여주기
-	OutActions.Add(Do([this, Gate02] { SetActivated(Gate02.Get(), false); }));
+	// 2) 아레나 전체 샷으로 적 보여주기 (들어온 문은 열어 둠 -> 언제든 되돌아갈 수 있음)
 	OutActions.Add(Do([this, CamArena] { BeginCinematic(CamArena.Get(), LockOnCameraBlendTime); }));
 	OutActions.Add(WaitSeconds(LockOnCameraBlendTime + LockOnShowTime));
 
@@ -405,11 +403,8 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 
 void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 {
-	AActor* TriggerCombatEnter = FindActorByTag(TutorialTag::TriggerCombatEnter);
 	AActor* TriggerBossRoomEnter = FindActorByTag(TutorialTag::TriggerBossRoomEnter);
 
-	TWeakObjectPtr<AActor> Gate03 = FindActorByTag(TutorialTag::Gate03);
-	TWeakObjectPtr<AActor> Gate04 = FindActorByTag(TutorialTag::Gate04);
 	TWeakObjectPtr<AActor> BossSpawn = FindActorByTag(TutorialTag::PointBossSpawn);
 	TWeakObjectPtr<AActor> CamBossArena = FindActorByTag(TutorialTag::CameraBossArena);
 	TWeakObjectPtr<AActor> Checkpoint = FindActorByTag(TutorialTag::CheckpointCombat);
@@ -418,14 +413,10 @@ void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 	// 0) 체크포인트는 보스를 잡기 전까지 숨김
 	OutActions.Add(Do([this, Checkpoint] { SetActorShown(Checkpoint.Get(), false); }));
 
-	// 1) 통로에 들어오면 뒷문(Gate03)만 조용히 닫음 -> 락온 구간으로 못 돌아감 (연출 없음)
-	OutActions.Add(WaitPlayerEnter(TriggerCombatEnter));
-	OutActions.Add(Do([this, Gate03] { SetActivated(Gate03.Get(), false); }));
-
-	// 1-1) 전투 방 안까지 들어오면 들어온 문(Gate04) 닫힘 + 목숨 채움 -> 여기서부터 보스 연출 시작
-	// ("방에 갇혔다 -> 무언가 시작된다" 순서가 되게, 문이 닫히는 걸 잠깐 보여주고 카메라 전환)
+	// 1) 전투 방 안까지 들어오면 목숨 채움 -> 여기서부터 보스 연출 시작
+	// (문은 열어 둠. 0.5초는 방에 들어선 걸 느낄 틈을 주고 카메라 전환)
 	OutActions.Add(WaitPlayerEnter(TriggerBossRoomEnter));
-	OutActions.Add(Do([this, Gate04] { SetActivated(Gate04.Get(), false); RefillPlayerHealth(); }));
+	OutActions.Add(Do([this] { RefillPlayerHealth(); }));
 	OutActions.Add(WaitSeconds(0.5f));
 
 	// 2) (잠금) 아레나 샷 -> 펫이 보스 자리로 걸어가서 돌아보고 "Final test!"
@@ -460,7 +451,7 @@ void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 	// 5) (잠금) 아레나 샷 -> 보스 스폰 자리에 거대한 펫 -> 원래 크기로 줄어듦 -> "Ouch! You win!"
 	OutActions.Add(Do([this, CamBossArena, BossSpawn]
 		{
-			SwapBossToPet(BossSpawn.Get()); // 보스가 래그돌로 늘어지는 게 보이기 전에 바로 교체
+			SwapBossToPet(BossSpawn.Get(), CamBossArena.Get()); // 보스가 래그돌로 늘어지는 게 보이기 전에 바로 교체 (카메라 쪽을 보며 등장)
 			BeginCinematic(CamBossArena.Get(), BossCameraBlendTime);
 		}));
 	OutActions.Add(WaitSeconds(BossCameraBlendTime));
@@ -1278,7 +1269,7 @@ void ATutorialManager::StartBossAI()
 		AIC->SetCombatTarget(UGameplayStatics::GetPlayerPawn(this, 0));
 }
 
-void ATutorialManager::SwapBossToPet(AActor* _AppearPoint)
+void ATutorialManager::SwapBossToPet(AActor* _AppearPoint, AActor* _FaceTarget)
 {
 	APetCharacter* PetPtr = Pet.Get();
 	AEnemyCharacter* BossPtr = Boss.Get();
@@ -1286,21 +1277,30 @@ void ATutorialManager::SwapBossToPet(AActor* _AppearPoint)
 	if (nullptr != PetPtr)
 	{
 		// 펫 캡슐 중심 = 바닥 + 펫 캡슐 반높이
-		const float PetHalfHeight = PetPtr->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		const FVector HalfUp(0.f, 0.f, PetPtr->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+
+		// 세울 위치에서 _FaceTarget(카메라) 쪽을 보는 방향 (높이 차이는 무시하고 수평만)
+		// -> 거대한 펫이 줄어드는 모습이 카메라에 정면으로 잡힘. 대상이 없으면 기본 방향 사용
+		auto GetFaceYaw = [_FaceTarget](const FVector& _From, float _DefaultYaw) -> float // 반환 타입 명시 (UE5 Yaw 는 double 이라 float 와 섞이면 추론 실패)
+			{
+				if (nullptr == _FaceTarget) return _DefaultYaw;
+				const FVector ToTarget = (_FaceTarget->GetActorLocation() - _From).GetSafeNormal2D();
+				return ToTarget.IsNearlyZero() ? _DefaultYaw : static_cast<float>(ToTarget.Rotation().Yaw);
+			};
 
 		// 보스가 어디서 죽든 처음 등장했던 자리에 세움 -> 고정된 아레나 카메라에 항상 잡힘
 		bool bPlaced = false;
 		if (nullptr != _AppearPoint)
 		{
-			bPlaced = PetPtr->TeleportTo(GetGroundLocation(_AppearPoint) + FVector(0.f, 0.f, PetHalfHeight),
-				FRotator(0.f, _AppearPoint->GetActorRotation().Yaw, 0.f));
+			const FVector Location = GetGroundLocation(_AppearPoint) + HalfUp;
+			bPlaced = PetPtr->TeleportTo(Location, FRotator(0.f, GetFaceYaw(Location, _AppearPoint->GetActorRotation().Yaw), 0.f));
 		}
 
 		// 지점이 없거나, 플레이어가 그 자리에 서 있어서 순간이동이 막히면 -> 보스가 쓰러진 자리에
 		if (false == bPlaced && nullptr != BossPtr)
 		{
-			PetPtr->TeleportTo(GetGroundLocation(BossPtr) + FVector(0.f, 0.f, PetHalfHeight),
-				FRotator(0.f, BossPtr->GetActorRotation().Yaw, 0.f));
+			const FVector Location = GetGroundLocation(BossPtr) + HalfUp;
+			PetPtr->TeleportTo(Location, FRotator(0.f, GetFaceYaw(Location, BossPtr->GetActorRotation().Yaw), 0.f));
 		}
 	}
 

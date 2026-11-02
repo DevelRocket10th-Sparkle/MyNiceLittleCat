@@ -160,7 +160,7 @@ protected:
     void RestorePetForm();                               // 펫 크기/보이기 원래대로 (구간이 끊겨도 펫이 거대하거나 숨은 채로 남지 않게)
     void SwapPetToBoss();                                // 거대해진 펫 자리에 보스 스폰 + 펫 숨김
     void StartBossAI();                                  // 보스 AI 시작 (연출이 끝나고 조작이 돌아올 때)
-    void SwapBossToPet(AActor* _AppearPoint);            // 보스 제거 -> 거대한 펫을 지정 지점(보스 스폰 자리)에 세움
+    void SwapBossToPet(AActor* _AppearPoint, AActor* _FaceTarget); // 보스 제거 -> 지정 지점에 거대한 펫 등장 (_FaceTarget 쪽을 바라봄)
     bool IsBossDead() const;                             // 보스가 죽었는지
     // =========================================================
 protected:
