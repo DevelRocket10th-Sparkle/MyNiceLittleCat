@@ -40,7 +40,7 @@ void UGA_Enemy_MoneyGun::ActivateAbility(const FGameplayAbilitySpecHandle Handle
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
-	Damage = Enemy->GetAttributeSet()->GetAttackPower() * Settings->DamageMultiplier;
+	Damage = Enemy->GetAttributeSet()->GetAttackPower() * Definition.DamageMultiplier;
 	if (!FMath::IsFinite(Damage) || !SpawnGun(FindAnchor(Settings->LeftAnchorName))
 		|| !SpawnGun(FindAnchor(Settings->RightAnchorName)))
 	{

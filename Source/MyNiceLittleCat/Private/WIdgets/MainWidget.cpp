@@ -13,12 +13,34 @@
 #include "Characters/GAS/PlayerAttributeSet.h"
 #include "Characters/PlayerComponents/LockOnComponent.h"
 
+#include "Enemy/Boss/BossCharacter.h"
+#include "Widgets/Enemy/BossHealthBarWidget.h"
+
 void UMainWidget::InitForPlayer(APlayerCharacter* InPlayer)
 {
 	UnbindFromPlayer();
 	Player = InPlayer;
 	BindToPlayer();
 	RefreshOrbs();
+}
+
+void UMainWidget::ShowBossHealthBar(ABossCharacter* Boss)
+{
+	if (!BossHealthBar || !IsValid(Boss))
+		return;
+	
+	BossHealthBar->InitializeBossHealthBar(Boss);	// 보스 구독 및 체력 바 현재 보스전에 맞게 갱신
+	BossHealthBar->SetVisibility(ESlateVisibility::HitTestInvisible);
+}
+
+void UMainWidget::HideBossHealthBar()
+{
+	// 보스 체력 바를 숨기는 시점에는 보스가 이미 죽고 없을 수도 있음
+	if (!BossHealthBar)
+		return;
+
+	BossHealthBar->UnbindBoss();	// 보스 체력 변경 델리게이트 구독 해제
+	BossHealthBar->SetVisibility(ESlateVisibility::Collapsed);
 }
 
 void UMainWidget::BindToPlayer()
@@ -95,6 +117,17 @@ void UMainWidget::RefreshOrbs()
 	for (int32 i = 0; i < Orbs.Num(); ++i)
 	{
 		Orbs[i]->SetColorAndOpacity(i < Lives ? FLinearColor::White : EmptyOrbColor);
+	}
+}
+
+void UMainWidget::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+
+	if (BossHealthBar)
+	{
+		BossHealthBar->SetShowHealthText(false);
+		BossHealthBar->SetVisibility(ESlateVisibility::Collapsed);
 	}
 }
 

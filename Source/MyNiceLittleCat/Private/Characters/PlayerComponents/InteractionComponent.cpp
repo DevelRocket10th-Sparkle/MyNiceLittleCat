@@ -10,6 +10,11 @@
 #include "Components/InputComponent.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "Gimmicks/InteractionVolumeComponent.h"
+#include "WIdgets/Interaction/InteractionPromptWidget.h"
+#include "Components/WidgetComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
+#include "Engine/LocalPlayer.h"
 #include "NavigationSystem.h"
 #include "NavigationPath.h"
 #include "Engine/World.h"
@@ -27,6 +32,8 @@ UInteractionComponent::UInteractionComponent()
 void UInteractionComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	CreatePrompt();
 
 	GetWorld()->GetTimerManager().SetTimer(ScanTimerHandle, this, &UInteractionComponent::RefreshFocus, ScanInterval, true);
 
@@ -47,6 +54,12 @@ void UInteractionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	FinishAlign(false);
 	SetFocusedActor(nullptr);
 	PopKeyInput();
+
+	if (PromptComponent)
+	{
+		PromptComponent->DestroyComponent();
+		PromptComponent = nullptr;
+	}
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -104,6 +117,11 @@ bool UInteractionComponent::TryInteract()
 	if (!IsValid(Target))
 	{
 		return false;
+	}
+
+	if (UInteractionPromptWidget* PromptWidget = GetPromptWidget(); PromptWidget && PromptTarget.Get() == Target)
+	{
+		PromptWidget->NotifyPressed();
 	}
 
 	AActor* Owner = GetOwner();
@@ -289,6 +307,7 @@ void UInteractionComponent::RefreshFocus()
 	}
 
 	SetFocusedActor(FindBestCandidate());
+	RefreshPrompt();
 }
 
 AActor* UInteractionComponent::FindBestCandidate() const
@@ -460,6 +479,11 @@ void UInteractionComponent::BeginAlign(AActor* Target, const FInteractAlignment&
 		SetMoveInputLocked(true);
 	}
 
+	if (bHidePromptWhileAligning)
+	{
+		HidePrompt();
+	}
+
 	SetComponentTickEnabled(true);
 }
 
@@ -476,6 +500,8 @@ void UInteractionComponent::FinishAlign(bool bExecute)
 	{
 		ExecuteInteract(Target);
 	}
+
+	RefreshPrompt();
 }
 
 void UInteractionComponent::ExecuteInteract(AActor* Target)
@@ -490,6 +516,143 @@ void UInteractionComponent::ExecuteInteract(AActor* Target)
 
 	IInteractableInterface::Execute_Interact(Target, Owner);
 	OnInteractExecuted.Broadcast(Target);
+
+	// 상태가 바뀌어 동작 텍스트·가능 여부가 달라졌을 수 있으므로 바로 반영 (안내 UI 포함)
+	RefreshFocus();
+}
+
+void UInteractionComponent::CreatePrompt()
+{
+	AActor* Owner = GetOwner();
+	if (!PromptWidgetClass || !IsValid(Owner) || PromptComponent)
+	{
+		return;
+	}
+
+	PromptComponent = NewObject<UWidgetComponent>(Owner, TEXT("InteractPrompt"));
+	PromptComponent->SetWidgetSpace(EWidgetSpace::Screen);
+	PromptComponent->SetWidgetClass(PromptWidgetClass);
+	PromptComponent->SetPivot(PromptPivot);
+	PromptComponent->SetDrawAtDesiredSize(PromptDrawSize.IsNearlyZero());
+	if (!PromptDrawSize.IsNearlyZero())
+	{
+		PromptComponent->SetDrawSize(PromptDrawSize);
+	}
+	PromptComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	PromptComponent->SetGenerateOverlapEvents(false);
+	PromptComponent->SetCastShadow(false);
+	PromptComponent->SetVisibility(false);
+	PromptComponent->SetupAttachment(Owner->GetRootComponent());
+	PromptComponent->RegisterComponent();
+}
+
+UInteractionPromptWidget* UInteractionComponent::GetPromptWidget() const
+{
+	return PromptComponent ? Cast<UInteractionPromptWidget>(PromptComponent->GetUserWidgetObject()) : nullptr;
+}
+
+void UInteractionComponent::RefreshPrompt()
+{
+	if (!PromptComponent)
+	{
+		return;
+	}
+
+	AActor* Target = IsAligning() ? AlignTarget.Get() : FocusedActor.Get();
+	if (!IsValid(Target) || (IsAligning() && bHidePromptWhileAligning))
+	{
+		HidePrompt();
+		return;
+	}
+
+	const FInteractPromptInfo Info = IInteractableInterface::Execute_GetInteractPrompt(Target, GetOwner());
+	if (!Info.bShowPrompt)
+	{
+		HidePrompt();
+		return;
+	}
+
+	// 대상 루트에 붙여 대상이 움직여도 따라가게 함
+	USceneComponent* TargetRoot = Target->GetRootComponent();
+	if (TargetRoot && PromptComponent->GetAttachParent() != TargetRoot)
+	{
+		PromptComponent->AttachToComponent(TargetRoot, FAttachmentTransformRules::KeepWorldTransform);
+	}
+	PromptComponent->SetWorldLocation(Info.WorldLocation);
+
+	UInteractionPromptWidget* PromptWidget = GetPromptWidget();
+	if (PromptWidget)
+	{
+		const FText KeyText = GetInteractKeyText();
+		if (!PromptWidget->GetKeyDisplayText().EqualTo(KeyText) || !PromptWidget->GetActionDisplayText().EqualTo(Info.ActionText))
+		{
+			PromptWidget->SetPrompt(KeyText, Info.ActionText);
+		}
+	}
+
+	// 처음 표시하거나 대상이 바뀌면 표시 이벤트
+	if (PromptTarget.Get() != Target)
+	{
+		PromptTarget = Target;
+		PromptComponent->SetVisibility(true);
+		if (PromptWidget)
+		{
+			PromptWidget->NotifyShown();
+		}
+	}
+}
+
+void UInteractionComponent::HidePrompt()
+{
+	// 대상이 파괴돼 PromptTarget이 무효여도 표시 중이면 숨김
+	PromptTarget.Reset();
+	if (!PromptComponent || !PromptComponent->IsVisible())
+	{
+		return;
+	}
+
+	if (UInteractionPromptWidget* PromptWidget = GetPromptWidget())
+	{
+		PromptWidget->NotifyHidden();
+	}
+	PromptComponent->SetVisibility(false);
+
+	// 대상 액터에서 떼어 다시 소유 액터에 붙임 (대상이 사라져도 함께 정리되지 않게)
+	if (AActor* Owner = GetOwner(); Owner && Owner->GetRootComponent())
+	{
+		PromptComponent->AttachToComponent(Owner->GetRootComponent(), FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	}
+}
+
+FText UInteractionComponent::GetInteractKeyText() const
+{
+	// 입력 액션에 매핑된 키 (키보드 키 우선)
+	if (InteractAction)
+	{
+		const APawn* Pawn = Cast<APawn>(GetOwner());
+		const APlayerController* PlayerController = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
+		const ULocalPlayer* LocalPlayer = PlayerController ? PlayerController->GetLocalPlayer() : nullptr;
+		if (const UEnhancedInputLocalPlayerSubsystem* InputSubsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer))
+		{
+			const TArray<FKey> Keys = InputSubsystem->QueryKeysMappedToAction(InteractAction);
+			const FKey* Key = Keys.FindByPredicate([](const FKey& Candidate) { return !Candidate.IsGamepadKey(); });
+			if (!Key && Keys.Num() > 0)
+			{
+				Key = &Keys[0];
+			}
+			if (Key)
+			{
+				return Key->GetDisplayName(false);
+			}
+		}
+	}
+
+	if (bBindInteractKey && InteractKey.IsValid())
+	{
+		return InteractKey.GetDisplayName(false);
+	}
+
+	return FallbackKeyText;
 }
 
 void UInteractionComponent::SetMoveInputLocked(bool bLocked)

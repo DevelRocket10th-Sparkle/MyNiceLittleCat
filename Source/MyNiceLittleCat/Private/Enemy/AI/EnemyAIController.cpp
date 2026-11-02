@@ -60,18 +60,57 @@ AEnemyAIController::AEnemyAIController()
 	EnemyPerception->OnTargetPerceptionUpdated.AddDynamic(this, &AEnemyAIController::HandleTargetPerceptionUpdated);
 }
 
+// Blackboard 타깃과 전투 Focus 해제
+void AEnemyAIController::ClearCombatTarget()
+{
+	if (UBlackboardComponent* BlackboardComp = GetBlackboardComponent())
+	{
+		BlackboardComp->ClearValue(EnemyBlackboardKeys::TargetActor);
+	}
+
+	ClearFocus(EAIFocusPriority::Gameplay);
+}
+
+void AEnemyAIController::SetPhaseHoldYaw(float Yaw)
+{
+	PhaseHoldDirection = FRotator(0.f, Yaw, 0.f).Vector();
+	bPhaseHoldActive = true;
+
+	// 다음 Tick을 기다리지 않고 즉시 Focus 설정
+	if (APawn* ControlledPawn = GetPawn())
+	{
+		SetFocalPoint(ControlledPawn->GetPawnViewLocation() + PhaseHoldDirection * 1000.f, EnemyFocusPriority::PhaseHold);
+	}
+}
+
+void AEnemyAIController::ClearPhaseHold()
+{
+	bPhaseHoldActive = false;
+	ClearFocus(EnemyFocusPriority::PhaseHold);
+}
+
 // 활성 상태의 매 프레임 처리
 void AEnemyAIController::Tick(float DeltaSeconds)
 {
+	AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetPawn());
+
+	// 부모 Tick에서 회전을 계산하기 전에 Focus 위치 갱신
+	// 보스가 이동해도 같은 월드 방향을 바라보도록 설정
+	if (IsValid(Enemy) && bPhaseHoldActive)
+	{
+		// 고정된 장소가 아니라 방향을 유지하기 위해 현재 시선 위치 앞에 가상 목표점을 만듦
+		// 1000.f는 시선 목표점까지의 거리이며, 이동 거리나 도착 반경이 아님
+		SetFocalPoint(Enemy->GetPawnViewLocation() + PhaseHoldDirection * 1000.f, EnemyFocusPriority::PhaseHold);
+	}
+
 	Super::Tick(DeltaSeconds);
 	
-	AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetPawn());
 	if (!IsValid(Enemy))
 		return;
 
-	const UPathFollowingComponent* PathFollowing = GetPathFollowingComponent();
+	const UPathFollowingComponent* PathFollowingComp = GetPathFollowingComponent();
 
-	const bool bWantsToMove = Enemy->IsAlive() && IsValid(PathFollowing) && PathFollowing->GetStatus() == EPathFollowingStatus::Moving;
+	const bool bWantsToMove = Enemy->IsAlive() && IsValid(PathFollowingComp) && PathFollowingComp->GetStatus() == EPathFollowingStatus::Moving;
 
 	Enemy->SetWantsToMove(bWantsToMove);
 }
@@ -95,6 +134,9 @@ void AEnemyAIController::OnUnPossess()
 
 	StopMovement();			// 움직임 멈추기
 	ClearCombatTarget();	// 전투 종료
+
+	ClearPhaseHold();
+	ClearFocus(EnemyFocusPriority::AttackFacing);
 
 	if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetPawn()))
 	{
@@ -251,15 +293,4 @@ void AEnemyAIController::SetCombatTarget(AActor * NewTarget)
 			EnemyBlackboardKeys::TargetActor)));
 
 	SetFocus(NewTarget, EAIFocusPriority::Gameplay);	// 컨트롤러가 플레이어 방향 계산하여 캐릭터가 설정된 속도로 천천히 따름
-}
-
-// Blackboard 타깃과 전투 Focus 해제
-void AEnemyAIController::ClearCombatTarget()
-{
-	if (UBlackboardComponent* BlackboardComp = GetBlackboardComponent())
-	{
-		BlackboardComp->ClearValue(EnemyBlackboardKeys::TargetActor);
-	}
-
-	ClearFocus(EAIFocusPriority::Gameplay);
 }

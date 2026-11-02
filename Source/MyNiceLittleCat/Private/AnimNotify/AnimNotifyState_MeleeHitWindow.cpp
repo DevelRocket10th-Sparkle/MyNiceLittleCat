@@ -48,6 +48,8 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
     AActor* Attacker = MeshComp->GetOwner();
     UWorld* World = MeshComp->GetWorld();
 
+    if (const APlayerCharacter* P = Cast<APlayerCharacter>(Attacker); P && P->GetbIsDeflected()) return;
+
     if (!Attacker || !World) return;
 
     UStaticMeshComponent* WeaponMesh = nullptr;
@@ -85,15 +87,12 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
 
     const FCollisionShape Shape = FCollisionShape::MakeSphere(HitRadius);
 
-    const bool bHit = World->SweepMultiByChannel(
-        Hits,
-        Start,
-        End,
-        FQuat::Identity,
-        ECC_Pawn,
-        Shape,
-        Params
-    );
+    FCollisionObjectQueryParams ObjParams;
+    ObjParams.AddObjectTypesToQuery(ECC_Pawn);
+    ObjParams.AddObjectTypesToQuery(ECC_WorldStatic);
+
+    const bool bHit = World->SweepMultiByObjectType(
+        Hits, Start, End, FQuat::Identity, ObjParams, Shape, Params);
 
     if (bDrawDebug)
     {
@@ -113,6 +112,24 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
 
     if (!bHit) return;
 
+    if (APlayerCharacter* Player = Cast<APlayerCharacter>(Attacker); Player)
+    {
+        for (const FHitResult& Hit : Hits)
+        {
+            const bool bHard = (Hit.GetActor() && Hit.GetActor()->ActorHasTag(DeflectTag))
+                || (Hit.GetComponent() && Hit.GetComponent()->ComponentHasTag(DeflectTag));
+            if (!bHard) continue;
+
+            if (DeflectSound) UGameplayStatics::PlaySoundAtLocation(World, DeflectSound, Hit.ImpactPoint);
+            if (APlayerController* PC = Cast<APlayerController>(Player->GetController()))
+            {
+                PC->ClientStartCameraShake(HitCameraShakeClass, 1.0f);
+            }
+            Player->PlayDeflect();
+            return;
+        }
+    }
+
     TSet<TWeakObjectPtr<AActor>>& HitActors = HitActorsByMesh.FindOrAdd(MeshComp);
 
     ACharacter* AttackingCharacter = Cast<ACharacter>(Attacker);
@@ -126,10 +143,9 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
     {
         AActor* Target = Hit.GetActor();
 
-        if (!Target || Target->IsA<APetCharacter>() || HitActors.Contains(Target)) continue;
+        if (!Target || Target->IsA<APetCharacter>() || Target->ActorHasTag(DeflectTag) || HitActors.Contains(Target)) continue;
 
         HitActors.Add(Target);
-
 
         UAbilitySystemComponent* TargetASC =
             UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Target);
@@ -219,18 +235,21 @@ void UAnimNotifyState_MeleeHitWindow::ApplyMontageHitStop(AActor* Actor, float D
 {
     if (!IsValid(Actor) || Duration <= 0.f) return;
 
+
     USkeletalMeshComponent* Mesh = Actor->FindComponentByClass<USkeletalMeshComponent>();
     if (!Mesh) return;
+
+    if (const APlayerCharacter * P = Cast<APlayerCharacter>(Actor); P && P->GetbIsDeflected()) return;
 
     FTimerManager& TimerManager = Actor->GetWorldTimerManager();
     FTimerHandle& Handle = HitStopTimers.FindOrAdd(Mesh);
 
-    // Already frozen long enough: don't stack another stop
+    // 이미 활성화 상태인 경우 리턴
     if (TimerManager.IsTimerActive(Handle) && TimerManager.GetTimerRemaining(Handle) >= Duration) return;
 
     Mesh->GlobalAnimRateScale = 0.f;
 
-    // Reuse the same handle so a new hit restarts the timer instead of adding one
+    // 같은 타이머 핸들 재활용
     TWeakObjectPtr<USkeletalMeshComponent> WeakMesh = Mesh;
     TimerManager.SetTimer(Handle, [WeakMesh]()
     {

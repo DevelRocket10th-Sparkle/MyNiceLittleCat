@@ -49,9 +49,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaserGrid|Damage")
 	bool bUseBossAttackPower = true;
 
-	// 보스 AttackPower에 곱할 배율
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaserGrid|Damage", meta = (ClampMin = "0.0", EditCondition = "bUseBossAttackPower"))
-	float DamageMultiplier = 1.f;
 
 	// true면 패턴 동안 보스가 이동하지 않음
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaserGrid")
