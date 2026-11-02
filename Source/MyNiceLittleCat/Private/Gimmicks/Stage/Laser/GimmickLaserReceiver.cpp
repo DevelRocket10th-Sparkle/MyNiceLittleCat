@@ -60,7 +60,7 @@ void AGimmickLaserReceiver::ReceiveLaserHit_Implementation(ULaserBeamComponent* 
 	}
 
 	// 같은 레이저라도 거울이 돌면 맞는 면이 바뀌므로 매 틱 다시 판단
-	if (AcceptsBeam(Hit, ReflectionCount))
+	if (AcceptsBeam(Laser, Hit, ReflectionCount))
 	{
 		ReceivingLasers.Add(Laser);
 	}
@@ -78,9 +78,24 @@ void AGimmickLaserReceiver::EndLaserHit_Implementation(ULaserBeamComponent* Lase
 	UpdateTickEnabled();
 }
 
-bool AGimmickLaserReceiver::AcceptsBeam(const FHitResult& Hit, int32 ReflectionCount) const
+void AGimmickLaserReceiver::ResetGimmick_Implementation(AActor* ResetInstigator)
+{
+	// 빔은 다음 틱 ReceiveLaserHit로 다시 들어옴
+	ReceivingLasers.Reset();
+	bWasReceiving = false;
+	SetActivated(false, ResetInstigator);
+	SetCharge(0.f);
+	UpdateTickEnabled();
+}
+
+bool AGimmickLaserReceiver::AcceptsBeam(const ULaserBeamComponent* Laser, const FHitResult& Hit, int32 ReflectionCount) const
 {
 	if (ReflectionCount < MinReflections)
+	{
+		return false;
+	}
+
+	if (!AcceptedColors.IsEmpty() && (!Laser || !AcceptedColors.Contains(Laser->GetBeamColorType())))
 	{
 		return false;
 	}

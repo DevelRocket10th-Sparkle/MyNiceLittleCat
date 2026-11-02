@@ -13,6 +13,7 @@
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
 #include "Engine/HitResult.h"
+#include "Gimmicks/Laser/LaserBeamColor.h"
 #include "LaserReceiverInterface.generated.h"
 
 class ULaserBeamComponent;
@@ -35,4 +36,12 @@ public:
 	// 빔이 다른 곳으로 가거나 꺼졌을 때 한 번 호출
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "LaserReceiver")
 	void EndLaserHit(ULaserBeamComponent* Laser);
+
+	// (C++ 전용) 펫 반사판 설치 프리뷰용: 이 빛(색·맞은 면·반사 횟수)을 받으면 켤 출력 레이저와 내보낼 색.
+	// 빛을 받아 새 빛을 내보내는 장치(중계·분광기·필터)만 구현, 받지 않거나 출력이 없으면 false
+	virtual bool GetPreviewOutputLasers(ELaserBeamColor InputColor, const FHitResult& Hit, int32 ReflectionCount,
+		TArray<ULaserBeamComponent*>& OutLasers, ELaserBeamColor& OutColor) const
+	{
+		return false;
+	}
 };

@@ -17,6 +17,8 @@
 #include "CoreMinimal.h"
 #include "Gimmicks/GimmickActorBase.h"
 #include "Interfaces/LaserReceiverInterface.h"
+#include "Interfaces/GimmickResettableInterface.h"
+#include "Gimmicks/Laser/LaserBeamColor.h"
 #include "GimmickLaserReceiver.generated.h"
 
 class UStaticMeshComponent;
@@ -33,7 +35,7 @@ enum class EGimmickLaserReceiveMode : uint8
 };
 
 UCLASS()
-class MYNICELITTLECAT_API AGimmickLaserReceiver : public AGimmickActorBase, public ILaserReceiverInterface
+class MYNICELITTLECAT_API AGimmickLaserReceiver : public AGimmickActorBase, public ILaserReceiverInterface, public IGimmickResettableInterface
 {
 	GENERATED_BODY()
 
@@ -45,6 +47,9 @@ public:
 	// ILaserReceiverInterface
 	virtual void ReceiveLaserHit_Implementation(ULaserBeamComponent* Laser, const FHitResult& Hit, int32 ReflectionCount) override;
 	virtual void EndLaserHit_Implementation(ULaserBeamComponent* Laser) override;
+
+	// IGimmickResettableInterface (꺼지고 충전 0, 빔이 그대로 닿아 있으면 다시 충전)
+	virtual void ResetGimmick_Implementation(AActor* ResetInstigator) override;
 
 	// 충전 정도 (0~1)
 	UFUNCTION(BlueprintPure, Category = "Gimmick|LaserReceiver")
@@ -62,8 +67,8 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void HandleActivationChanged(bool bNewActivated, AActor* ChangeInstigator) override;
 
-	// 이 빔을 받을지 (반사 횟수·들어온 방향)
-	bool AcceptsBeam(const FHitResult& Hit, int32 ReflectionCount) const;
+	// 이 빔을 받을지 (반사 횟수·색·들어온 방향)
+	bool AcceptsBeam(const ULaserBeamComponent* Laser, const FHitResult& Hit, int32 ReflectionCount) const;
 
 	void SetCharge(float NewCharge);
 
@@ -113,6 +118,10 @@ protected:
 	// 정면 기준 허용 각도 (들어온 빛과 ReceiveDirection 반대 방향 사이)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver", meta = (ClampMin = "0.0", ClampMax = "90.0", Units = "deg", EditCondition = "!bAcceptAnySide"))
 	float ReceiveHalfAngle = 60.f;
+
+	// 받을 빛 색 (비어 있으면 모든 색). 예: Red만 넣으면 빨간 필터를 지난 빛만 인정
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver")
+	TArray<ELaserBeamColor> AcceptedColors;
 
 	// 충전 정도를 넣을 메시 머티리얼 스칼라 파라미터 이름 (없으면 무시)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Visual")

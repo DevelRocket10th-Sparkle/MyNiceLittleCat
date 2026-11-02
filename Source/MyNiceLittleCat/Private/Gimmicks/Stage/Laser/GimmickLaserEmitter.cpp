@@ -49,6 +49,12 @@ void AGimmickLaserEmitter::BeginPlay()
 	{
 		Laser->SetEnableReflection(true);
 		Laser->SetFollowComponentRotation(true);
+		Laser->SetBeamColorType(BeamColor);
+		Laser->SetChainDepth(0);
+
+		// 퍼즐용 빛은 색 종류(흰빛·빨강·파랑·초록)로, 플레이어에게 피해를 주는 빛은 위험 표시(주황, 굵게 깜빡임)로 구분
+		Laser->SetUseColorTypeDisplay(true);
+		Laser->SetHazardDisplay(bDamagePlayer);
 
 		if (bDamagePlayer)
 		{

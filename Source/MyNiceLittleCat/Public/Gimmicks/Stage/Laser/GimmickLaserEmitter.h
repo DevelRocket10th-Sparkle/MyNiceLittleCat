@@ -16,6 +16,7 @@
 
 #include "CoreMinimal.h"
 #include "Gimmicks/GimmickActorBase.h"
+#include "Gimmicks/Laser/LaserBeamColor.h"
 #include "GimmickLaserEmitter.generated.h"
 
 class UStaticMeshComponent;
@@ -112,6 +113,10 @@ protected:
 	// 제자리 회전 속도 (도/초, 0이면 고정, 음수면 반대 방향)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserEmitter", meta = (Units = "deg"))
 	float RotationSpeed = 0.f;
+
+	// 빛 색 (White = 색 없는 기본 빛, 색 필터를 지나면 필터 색이 됨)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserEmitter")
+	ELaserBeamColor BeamColor = ELaserBeamColor::White;
 
 private:
 	FTimerHandle PulseTimer;

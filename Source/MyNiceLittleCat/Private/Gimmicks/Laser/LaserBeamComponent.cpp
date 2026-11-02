@@ -225,6 +225,20 @@ void ULaserBeamComponent::EndLaserReceiver()
 	CurrentReceiver.Reset();
 }
 
+FLinearColor ULaserBeamComponent::GetSegmentDisplayColor(const FLaserBeamSegment& Segment) const
+{
+	// 위험 빛이 가장 우선, 색 빛(또는 색 종류 표시)은 반사 여부와 상관없이 그 색, 색 없는 빛은 VisualSettings의 원본/반사 색
+	if (bHazardDisplay)
+	{
+		return HazardColor;
+	}
+	if (bUseColorTypeDisplay || BeamColorType != ELaserBeamColor::White)
+	{
+		return GetLaserBeamDisplayColor(BeamColorType);
+	}
+	return (0 == Segment.ReflectionCount) ? VisualSettings.BeamColor : VisualSettings.ReflectedBeamColor;
+}
+
 void ULaserBeamComponent::SetVisualSettings(const FLaserBeamVisualSettings& NewSettings)
 {
 	// 이펙트 에셋이 바뀔 수 있으므로 기존 컴포넌트는 버리고 다시 만듦
@@ -250,9 +264,23 @@ UNiagaraComponent* ULaserBeamComponent::CreateEffectComponent(UNiagaraSystem* Sy
 		/*bAutoDestroy*/ false, /*bAutoActivate*/ false, ENCPoolMethod::None, /*bPreCullCheck*/ false);
 }
 
+float ULaserBeamComponent::GetHazardPulse() const
+{
+	const UWorld* World = GetWorld();
+	if (!bHazardDisplay || !World || HazardPulseRate <= 0.f)
+	{
+		return 1.f;
+	}
+
+	const float Wave = 0.5f + 0.5f * FMath::Sin(World->GetTimeSeconds() * HazardPulseRate * UE_TWO_PI);
+	return FMath::Lerp(HazardMinBrightness, 1.f, Wave);
+}
+
 void ULaserBeamComponent::UpdateBeamEffects()
 {
-	const float BeamWidth = FMath::Max(BeamRadius * 2.f * VisualSettings.BeamWidthScale, VisualSettings.MinBeamWidth);
+	const float WidthScale = bHazardDisplay ? HazardWidthScale : 1.f;
+	const float BeamWidth = FMath::Max(BeamRadius * 2.f * VisualSettings.BeamWidthScale * WidthScale, VisualSettings.MinBeamWidth);
+	const float Pulse = GetHazardPulse();
 
 	int32 UsedCount = 0;
 	if (VisualSettings.BeamEffect)
@@ -275,7 +303,10 @@ void ULaserBeamComponent::UpdateBeamEffects()
 				BeamEffectComponents[UsedCount] = Effect;
 			}
 
-			const FLinearColor& Color = (0 == Segment.ReflectionCount) ? VisualSettings.BeamColor : VisualSettings.ReflectedBeamColor;
+			FLinearColor Color = GetSegmentDisplayColor(Segment);
+			Color.R *= Pulse;
+			Color.G *= Pulse;
+			Color.B *= Pulse;
 
 			// 이펙트를 구간 시작점으로 옮김: 시작점 파라미터 없이 시스템 위치를 빔 시작으로 쓰는 이펙트(NS_Laser_Basic 등)도
 			// 반사 구간이 반사 지점에서 시작하도록 (붙인 채로 두면 모든 구간이 발사 위치에서 시작해 보임)
@@ -295,13 +326,13 @@ void ULaserBeamComponent::UpdateBeamEffects()
 		}
 	}
 
-	// 반사가 줄어 남는 구간 이펙트는 끔
+	// 반사가 줄어 남는 구간 이펙트는 끔 (입자가 계속 사는 빔 이펙트도 바로 사라지게 즉시 끔)
 	for (int32 Index = UsedCount; Index < BeamEffectComponents.Num(); ++Index)
 	{
 		UNiagaraComponent* Effect = BeamEffectComponents[Index];
 		if (IsValid(Effect) && Effect->IsActive())
 		{
-			Effect->Deactivate();
+			Effect->DeactivateImmediate();
 		}
 	}
 
@@ -331,7 +362,10 @@ void ULaserBeamComponent::UpdateBeamEffects()
 		? (-LastSegment->Direction).Rotation() : ImpactNormal.Rotation();
 	ImpactEffectComponent->SetWorldLocationAndRotation(FVector(LastSegment->Hit.ImpactPoint), ImpactRotation);
 
-	const FLinearColor& ImpactColor = (0 == LastSegment->ReflectionCount) ? VisualSettings.BeamColor : VisualSettings.ReflectedBeamColor;
+	FLinearColor ImpactColor = GetSegmentDisplayColor(*LastSegment);
+	ImpactColor.R *= Pulse;
+	ImpactColor.G *= Pulse;
+	ImpactColor.B *= Pulse;
 	ImpactEffectComponent->SetVariableLinearColor(VisualSettings.BeamColorParam, ImpactColor);
 
 	if (!ImpactEffectComponent->IsActive())
@@ -346,7 +380,7 @@ void ULaserBeamComponent::DeactivateBeamEffects()
 	{
 		if (IsValid(Effect))
 		{
-			Effect->Deactivate();
+			Effect->DeactivateImmediate();
 		}
 	}
 
@@ -375,6 +409,57 @@ void ULaserBeamComponent::DestroyBeamEffects()
 }
 
 void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegments, const FVirtualReflectiveSurface* VirtualSurface) const
+{
+	TraceBeamSegments(OutSegments, VirtualSurface);
+
+	// [추가: 최요환 2026-11-02] 반사판 설치 프리뷰가 빛 장치(필터 등)에서 끊기지 않게 장치 출력 경로를 이어 붙임
+	if (nullptr != VirtualSurface)
+	{
+		AppendDevicePreviewSegments(OutSegments, VirtualSurface, BeamColorType, 0);
+	}
+}
+
+void ULaserBeamComponent::AppendDevicePreviewSegments(TArray<FLaserBeamSegment>& OutSegments, const FVirtualReflectiveSurface* VirtualSurface,
+	ELaserBeamColor InColor, int32 Depth) const
+{
+	if (OutSegments.IsEmpty() || Depth >= MaxPreviewDeviceDepth)
+	{
+		return;
+	}
+
+	// 배열에 이어 붙이면 참조가 무효가 될 수 있어 복사
+	const FHitResult EndHit = OutSegments.Last().Hit;
+	const int32 LastReflectionCount = OutSegments.Last().ReflectionCount;
+
+	// 빛 장치는 C++ 구현체라 Cast로 확인 (BP 수신기는 프리뷰 출력이 없음)
+	const ILaserReceiverInterface* Receiver = Cast<ILaserReceiverInterface>(EndHit.GetActor());
+	if (!EndHit.bBlockingHit || !Receiver)
+	{
+		return;
+	}
+
+	TArray<ULaserBeamComponent*> Outputs;
+	ELaserBeamColor OutColor = InColor;
+	if (!Receiver->GetPreviewOutputLasers(InColor, EndHit, LastReflectionCount, Outputs, OutColor))
+	{
+		return;
+	}
+
+	for (const ULaserBeamComponent* Output : Outputs)
+	{
+		if (!IsValid(Output) || Output == this)
+		{
+			continue;
+		}
+
+		TArray<FLaserBeamSegment> OutputSegments;
+		Output->TraceBeamSegments(OutputSegments, VirtualSurface);
+		Output->AppendDevicePreviewSegments(OutputSegments, VirtualSurface, OutColor, Depth + 1);
+		OutSegments.Append(OutputSegments);
+	}
+}
+
+void ULaserBeamComponent::TraceBeamSegments(TArray<FLaserBeamSegment>& OutSegments, const FVirtualReflectiveSurface* VirtualSurface) const
 {
 	OutSegments.Reset();
 
