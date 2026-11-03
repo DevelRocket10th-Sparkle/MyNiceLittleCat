@@ -135,6 +135,7 @@ protected:
     static bool IsEnemyAlive(AActor* _Enemy);         // 락온 가능한 대상이 살아있는지
     bool AreLockOnEnemiesDead() const;                // 락온 구간 적이 전부 죽었는지
     AActor* FindLockOnHintTarget() const;             // 펫이 처음 가리킬 적 (휠 누르면 잡힐 적 우선)
+    bool HasPlayerSwitchedLockTarget();               // 휠 스크롤로 락온 대상을 바꿨는지 (바꿀 대상이 없으면 통과)
 
     FVector GetGroundLocation(const AActor* _Actor) const;     // 캐릭터면 발바닥 위치, 아니면 액터 위치
     FVector GetPetPointNearPlayer() const;                     // 플레이어 앞 바닥 위치
@@ -279,6 +280,8 @@ private:
     TArray<TWeakObjectPtr<AActor>> LockOnEnemies; // 락온 구간 적 전부 (구간 시작 시 태그로 모음)
     FTimerHandle PetFollowTimerHandle;            // 락온 대상 따라가기 확인 타이머
     TWeakObjectPtr<AActor> PetFollowedTarget;     // 펫이 지금 옆에 가 있는 적
+    TWeakObjectPtr<AActor> SwitchBaseTarget;      // 대상 바꾸기 판정 기준 (이 적과 다른 적을 잡으면 "바꿈")
+    bool bLockReleasedDuringSwitch = false;       // 바꾸기 안내 중에 락온을 풀었는지 (다시 잡으면 안내 한 번 더)
 
     // 전투 구간
     TWeakObjectPtr<class AEnemyCharacter> Boss; // 스폰한 보스

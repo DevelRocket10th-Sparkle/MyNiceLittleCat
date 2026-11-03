@@ -17,6 +17,7 @@
 #include "AbilitySystemComponent.h"
 #include "Characters/GAS/PlayerAttributeSet.h" // 플레이어 체력(목숨) 채우기
 #include "Enemy/AI/EnemyAIController.h"    // 보스 타깃을 플레이어로 바로 지정
+#include "Characters/PlayerMainController.h" // 튜토리얼 동안 펫 입력 막기
 
 namespace TutorialTag
 {
@@ -149,6 +150,11 @@ void ATutorialManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	StopWaitCondition();
 	StopPetFollowLockTarget();
 	RestorePetForm(); // 변신 도중에 구간이 끝나도 펫이 거대하거나 숨은 채로 남지 않게
+
+	// 튜토리얼에서 막았던 펫 입력 복구 (다음 레벨에서 펫 조작이 안 되는 일 방지)
+	if (APlayerMainController* MainPC = Cast<APlayerMainController>(UGameplayStatics::GetPlayerController(this, 0)))
+		MainPC->SetPetInputEnabled(true);
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -163,6 +169,15 @@ void ATutorialManager::TryStartTutorial()
 
 		// 플레이어가 생긴 시점에 한 번 (리스폰된 캐릭터는 HandlePlayerRespawned 에서 다시 적용)
 		ApplyTutorialCamera(UGameplayStatics::GetPlayerPawn(this, 0));
+
+		// 튜토리얼 동안은 펫 모드 변경 등 펫 입력을 전부 막음 (매니저가 사라질 때 EndPlay 에서 되돌림)
+		// 한 틱 미룸: 이 함수는 매니저 BeginPlay 에서 바로 불릴 수 있는데, 그때 컨트롤러 BeginPlay 가 아직이면
+		// 여기서 뺀 IMC_Pet 을 컨트롤러 BeginPlay 가 다시 넣어버림 -> 모든 BeginPlay 가 끝난 다음 틱에 뺌
+		GetWorldTimerManager().SetTimerForNextTick([this]
+			{
+				if (APlayerMainController* MainPC = Cast<APlayerMainController>(UGameplayStatics::GetPlayerController(this, 0)))
+					MainPC->SetPetInputEnabled(false);
+			});
 	}
 
 	AMainGameMode* GameMode = GetWorld()->GetAuthGameMode<AMainGameMode>();
@@ -257,7 +272,7 @@ void ATutorialManager::BuildMovementActions(TArray<FTutorialAction>& OutActions)
 
 	// 1) 펫이 플레이어 근처에 나타나 인사
 	OutActions.Add(Do([this, PetStart] { PlacePet(PetStart.Get()); }));
-	OutActions.Add(Do([this] { PetSay(INVTEXT("Hi!")); }));
+	OutActions.Add(Do([this] { PetSay(INVTEXT("안녕!")); }));
 	OutActions.Add(WaitSeconds(1.5f));
 
 	// 2) 이동 키 안내
@@ -266,7 +281,7 @@ void ATutorialManager::BuildMovementActions(TArray<FTutorialAction>& OutActions)
 
 	// 3) 펫이 문쪽으로 천천히 걸어가며 따라오라고 함
 	OutActions.Add(Do([this, PetDoor01] {PetMoveTo(PetDoor01.Get(), SlowPetSpeed); }));
-	OutActions.Add(Do([this] { PetSay(INVTEXT("Follow Me!")); }));
+	OutActions.Add(Do([this] { PetSay(INVTEXT("따라와!")); }));
 	OutActions.Add(WaitPetArrive(PetDoor01.Get())); // 펫이 문 앞에 도착할 때까지 (최대 8초)
 	OutActions.Add(Do([this] { PetFacePlayer(); })); // 문 앞에 도착하면 플레이어 쪽으로 돌아봄
 	OutActions.Add(WaitSeconds(0.2f));                // 돌아보는 모습이 보이고 나서 카메라 복귀
@@ -306,7 +321,7 @@ void ATutorialManager::BuildDashActions(TArray<FTutorialAction>& OutActions)
 	// 3) 착지 직후 부르기 + Shift 데칼 ("날아가서 -> 저기서 부른다" 가 한 흐름으로 읽히게)
 	OutActions.Add(Do([this] { PetFacePlayer(); })); // 착지하면 플레이어 쪽으로 돌아봄
 	OutActions.Add(WaitSeconds(0.3f));                // 돌고 나서 "Dash!" (등 돌린 채 말하지 않게)
-	OutActions.Add(Do([this] { PetSay(INVTEXT("Follow Me!")); })); 
+	OutActions.Add(Do([this] { PetSay(INVTEXT("따라와!")); })); 
 	OutActions.Add(Do([this, DecalShift] { SetActivated(DecalShift.Get(), true); }));
 	OutActions.Add(WaitSeconds(DashShowTime));
 
@@ -355,22 +370,37 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(WaitUntil([this] { return false == IsPetWalking(); })); // 거리마다 걸리는 시간이 달라서 "도착"을 기다림
 	OutActions.Add(Do([this] { PetFacePlayer(); }));
 	OutActions.Add(WaitSeconds(0.3f)); // 돌고 나서 말하기
-	OutActions.Add(Do([this] { PetSay(INVTEXT("Attack Enemy!")); }));
+	OutActions.Add(Do([this] { PetSay(INVTEXT("적을 물리치자!")); }));
 	OutActions.Add(WaitSeconds(1.5f));
 
 	// 3) 펫이 "휠 누르면 잡힐 적" 옆으로 걸어가서, 도착하면 휠 클릭 안내
 	// (아직 잠금 유지 -> 펫이 적을 가리키는 걸 다 보여준 뒤에 조작 시작)
 	OutActions.Add(Do([this] { PetWalkToEnemy(FindLockOnHintTarget()); }));
 	OutActions.Add(WaitUntil([this] { return false == IsPetWalking(); })); // 거리마다 걸리는 시간이 달라서 "도착"을 기다림
-	OutActions.Add(Do([this] { PetSay(INVTEXT("Wheel Click!")); }));
+	OutActions.Add(Do([this] { PetSay(INVTEXT("휠 클릭으로 조준!")); }));
 
 	// 3-1) 휠 클릭 안내와 동시에 조작 시작 (카메라는 이미 플레이어 -> 사실상 잠금만 풂)
 	OutActions.Add(Do([this] { EndCinematic(0.f); }));
 
-	// 4) 락온하면 공격 안내 + 이때부터 펫이 락온 대상을 따라다님
-	// (한 마리 잡으면 락온이 자동으로 다음 적으로 넘어가고 -> 펫도 그 적 옆으로)
+	// 4) 락온하면 -> 바로 공격이 아니라 "대상 바꾸기"부터 한 번 해 보게 함
+	// 이때부터 펫이 락온 대상을 따라다님 -> 스크롤로 바꾸면 펫이 새 대상으로 가서 "바뀐 게" 눈에 보임
 	OutActions.Add(WaitUntil([this] { return IsPlayerLockedOn(); }));
-	OutActions.Add(Do([this] { PetSay(INVTEXT("Attack!")); StartPetFollowLockTarget(); }));
+	OutActions.Add(Do([this]
+		{
+			ULockOnComponent* LockOn = GetPlayerLockOn();
+			SwitchBaseTarget = (nullptr != LockOn) ? LockOn->GetLockedTarget() : nullptr; // 처음 잡은 적 = 판정 기준
+			bLockReleasedDuringSwitch = false;
+
+			StartPetFollowLockTarget();
+			PetSay(INVTEXT("휠을 굴리면 대상이 바껴!"));
+		}));
+
+	// 4-1) 다른 적으로 바꿀 때까지 기다림 (적이 1마리만 남으면 그냥 통과)
+	OutActions.Add(WaitUntil([this] { return HasPlayerSwitchedLockTarget(); }));
+	OutActions.Add(WaitSeconds(0.5f)); // 펫이 새 대상 쪽으로 움직이는 걸 볼 틈
+
+	// 4-2) 바꾸기 성공 -> 이제 공격 안내 (펫 따라가기는 이미 켜져 있음)
+	OutActions.Add(Do([this] { PetSay(INVTEXT("좋아, 이제 공격해!")); }));
 
 	// 5) 전부 처치하면 입력을 잠그고, 펫이 그 자리에서 플레이어를 돌아보고 칭찬
 	OutActions.Add(WaitUntil([this] { return AreLockOnEnemiesDead(); }));
@@ -382,7 +412,7 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 			PetFacePlayer();
 		}));
 	OutActions.Add(WaitSeconds(0.2f));
-	OutActions.Add(Do([this] { PetSay(INVTEXT("Good!")); }));
+	OutActions.Add(Do([this] { PetSay(INVTEXT("잘했어!")); }));
 	OutActions.Add(WaitSeconds(0.8f));
 
 	// 6) 문 열고 펫이 먼저 통과
@@ -419,7 +449,7 @@ void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(Do([this] { RefillPlayerHealth(); }));
 	OutActions.Add(WaitSeconds(0.5f));
 
-	// 2) (잠금) 아레나 샷 -> 펫이 보스 자리로 걸어가서 돌아보고 "Final test!"
+	// 2) (잠금) 아레나 샷 -> 펫이 보스 자리로 걸어가서 돌아보고 "마지막 시험이야!"
 	OutActions.Add(Do([this, CamBossArena] { BeginCinematic(CamBossArena.Get(), BossCameraBlendTime); }));
 	OutActions.Add(WaitSeconds(BossCameraBlendTime));
 	OutActions.Add(Do([this, BossSpawn]
@@ -430,12 +460,12 @@ void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(WaitUntil([this] { return false == IsPetWalking(); }));
 	OutActions.Add(Do([this] { PetFacePlayer(); }));
 	OutActions.Add(WaitSeconds(0.3f)); // 돌고 나서 말하기
-	OutActions.Add(Do([this] { PetSay(INVTEXT("Final test!")); }));
+	OutActions.Add(Do([this] { PetSay(INVTEXT("마지막 시험이야!")); }));
 	OutActions.Add(WaitSeconds(1.2f));
 
-	// 3) "Fight me!" -> 펫이 보스 크기까지 커짐 -> 같은 자리에 보스로 교체
+	// 3) "나를 이겨 봐!" -> 펫이 보스 크기까지 커짐 -> 같은 자리에 보스로 교체
 	// (말풍선을 먼저: 커진 뒤에 말하면 말풍선이 거대한 몸에 파묻힘)
-	OutActions.Add(Do([this] { PetSay(INVTEXT("Fight me!")); }));
+	OutActions.Add(Do([this] { PetSay(INVTEXT("나를 이겨 봐!")); }));
 	OutActions.Add(WaitSeconds(0.6f));
 	OutActions.Add(Do([this] { StartPetMeshScale(BossMeshScale, PetGrowTime); }));
 	OutActions.Add(WaitUntil([this] { return false == IsPetMeshScaling(); }));
@@ -448,7 +478,7 @@ void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 	// 4) 보스가 쓰러질 때까지 전투
 	OutActions.Add(WaitUntil([this] { return IsBossDead(); }));
 
-	// 5) (잠금) 아레나 샷 -> 보스 스폰 자리에 거대한 펫 -> 원래 크기로 줄어듦 -> "Ouch! You win!"
+	// 5) (잠금) 아레나 샷 -> 보스 스폰 자리에 거대한 펫 -> 원래 크기로 줄어듦 -> "아야! 네가 이겼어!"
 	OutActions.Add(Do([this, CamBossArena, BossSpawn]
 		{
 			SwapBossToPet(BossSpawn.Get(), CamBossArena.Get()); // 보스가 래그돌로 늘어지는 게 보이기 전에 바로 교체 (카메라 쪽을 보며 등장)
@@ -459,10 +489,10 @@ void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(WaitUntil([this] { return false == IsPetMeshScaling(); }));
 	OutActions.Add(Do([this] { PetFacePlayer(); }));
 	OutActions.Add(WaitSeconds(0.3f));
-	OutActions.Add(Do([this] { PetSay(INVTEXT("Ouch! You win!")); }));
+	OutActions.Add(Do([this] { PetSay(INVTEXT("아야! 네가 이겼어!")); }));
 	OutActions.Add(WaitSeconds(1.5f));
 
-	// 6) 체크포인트 등장 -> 펫이 옆으로 걸어감 -> (잠금 해제) "You passed! Let's go!"
+	// 6) 체크포인트 등장 -> 펫이 옆으로 걸어감 -> (잠금 해제) "합격! 이제 가자!"
 	OutActions.Add(Do([this, Checkpoint] { SetActorShown(Checkpoint.Get(), true); }));
 	OutActions.Add(WaitSeconds(0.5f)); // 체크포인트가 나타난 걸 먼저 보여줌
 	OutActions.Add(Do([this, PetCheckpoint]
@@ -474,7 +504,7 @@ void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(Do([this] { PetFacePlayer(); }));
 	OutActions.Add(WaitSeconds(0.3f));
 	// 말풍선과 동시에 조작을 돌려줌 -> "나가자" 를 듣자마자 움직일 수 있게
-	OutActions.Add(Do([this] { EndCinematic(CameraReturnBlendTime); PetSay(INVTEXT("You passed! Let's go!")); }));
+	OutActions.Add(Do([this] { EndCinematic(CameraReturnBlendTime); PetSay(INVTEXT("합격! 이제 가자!")); }));
 }
 
 void ATutorialManager::RunNextAction()
@@ -1023,6 +1053,53 @@ AActor* ATutorialManager::FindLockOnHintTarget() const
 		}
 	}
 	return Nearest;
+}
+
+bool ATutorialManager::HasPlayerSwitchedLockTarget()
+{
+	// 살아있는 적이 1마리 이하라면 바꿀 대상이 없음 -> 막히지 않게 통과
+	// (안내 중에 플레이어가 먼저 적을 잡아버린 경우에 대비한 거시예요)
+	int32 AliveCount = 0;
+	for (const TWeakObjectPtr<AActor>& Enemy : LockOnEnemies)
+	{
+		if (true == IsEnemyAlive(Enemy.Get())) ++AliveCount;
+	}
+	
+	if (AliveCount <= 1) return true;
+
+	ULockOnComponent* LockOn = GetPlayerLockOn();
+	AActor* Target = (nullptr != LockOn) ? LockOn->GetLockedTarget() : nullptr;
+
+	// 휠 클릭으로 락온을 풀었으면 기준을 비워 둠
+	// -> 다시 잡았을 때 그 적을 새 기준으로 삼음 ("풀고 다른 적 잡기"를 스크롤로 치지 않기 위해)
+	if (nullptr == Target)
+	{
+		SwitchBaseTarget.Reset();
+		bLockReleasedDuringSwitch = true;
+		return false;
+	}
+
+	// 풀었다가 다시 잡은 순간 -> 새 기준 + 안내를 한 번 더 보여줌
+	if (false == SwitchBaseTarget.IsValid())
+	{
+		SwitchBaseTarget = Target;
+		if (true == bLockReleasedDuringSwitch)
+		{
+			bLockReleasedDuringSwitch = false;
+			PetSay(INVTEXT("휠을 굴리면 대상이 바껴!"));
+		}
+		return false;
+	}
+
+	// 기준 적이 죽어서 락온이 자동으로 다음 적에 넘어간 건 스크롤이 아님 -> 기준만 갱신
+	if (false == IsEnemyAlive(SwitchBaseTarget.Get()))
+	{
+		SwitchBaseTarget = Target;
+		return false;
+	}
+
+	// 기준과 다른 적을 잡고 있음 = 휠 스크롤로 바꿈
+	return Target != SwitchBaseTarget.Get();
 }
 
 FVector ATutorialManager::GetGroundLocation(const AActor* _Actor) const
