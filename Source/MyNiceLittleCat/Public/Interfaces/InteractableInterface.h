@@ -8,6 +8,7 @@
 /// 플레이어 측 상호작용 컴포넌트가 정렬을 마친 뒤 Interact를 호출합니다.
 /// GetInteractFocusLocation은 감지 거리·정면 각도 판정 기준점입니다 (큰 액터용).
 /// 감지 영역을 제한하려면 액터에 InteractionVolume 컴포넌트를 추가합니다 (캐릭터가 닿아 있어야 감지).
+/// GetInteractPrompt는 포커스 중 띄울 안내 UI(키 + 동작 텍스트, 위치)를 알려줍니다. UI는 플레이어 측 컴포넌트가 하나만 관리합니다.
 /// BP 구현체도 호출되도록 반드시 Implements<UInteractableInterface>() 확인 후
 /// IInteractableInterface::Execute_XXX(Actor, ...) 형태로 호출해야 합니다.
 
@@ -42,6 +43,25 @@ struct FInteractAlignment
 	// 캐릭터가 바라볼 방향 (Yaw만 사용)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
 	FRotator TargetRotation = FRotator::ZeroRotator;
+};
+
+// 상호작용 대상이 플레이어 측에 알려주는 안내 UI(프롬프트) 정보
+USTRUCT(BlueprintType)
+struct FInteractPromptInfo
+{
+	GENERATED_BODY()
+
+	// false면 포커스돼도 프롬프트를 띄우지 않음
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
+	bool bShowPrompt = true;
+
+	// 동작 텍스트 (예: "열기", "당기기"). 비면 키만 표시
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
+	FText ActionText;
+
+	// 프롬프트를 띄울 월드 위치
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
+	FVector WorldLocation = FVector::ZeroVector;
 };
 
 UINTERFACE(MinimalAPI, Blueprintable)
@@ -81,4 +101,9 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Interaction")
 	FInteractAlignment GetInteractAlignment(AActor* InteractInstigator) const;
 	virtual FInteractAlignment GetInteractAlignment_Implementation(AActor* InteractInstigator) const { return FInteractAlignment(); }
+
+	// 포커스 중 띄울 안내 UI 정보 (기본: 동작 텍스트 없이 액터 바운드 윗면 중앙)
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Interaction")
+	FInteractPromptInfo GetInteractPrompt(AActor* InteractInstigator) const;
+	virtual FInteractPromptInfo GetInteractPrompt_Implementation(AActor* InteractInstigator) const;
 };
