@@ -95,6 +95,12 @@ bool AGimmickLaserReceiver::AcceptsBeam(const ULaserBeamComponent* Laser, const 
 		return false;
 	}
 
+	// 빛 받는 통 등 다른 부품에 맞은 빛은 인정하지 않음 (본체 메시에 닿은 빛만)
+	if (Mesh && Hit.GetComponent() != Mesh)
+	{
+		return false;
+	}
+
 	if (!AcceptedColors.IsEmpty() && (!Laser || !AcceptedColors.Contains(Laser->GetBeamColorType())))
 	{
 		return false;
