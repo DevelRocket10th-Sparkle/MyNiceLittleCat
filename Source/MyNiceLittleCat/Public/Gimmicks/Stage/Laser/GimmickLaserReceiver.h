@@ -10,6 +10,10 @@
 ///   Latch = 한 번 켜지면 계속 켜짐 (기본, 세이브 저장)
 ///   Hold  = 빔이 떠나고 ReleaseDelay가 지나면 꺼짐 (반사판 수명 안에 문을 통과하는 시간 압박 퍼즐)
 /// 충전 정도는 메시 머티리얼 스칼라 파라미터(ChargeParameterName)로 전달하고, GetCharge로도 조회할 수 있습니다.
+/// 색만 틀린 빛(정면·반사 조건은 맞음)이 들어오면 한 번 거부 알림(OnBeamRejected, On Beam Rejected)을 보내고
+/// 본체·색 표시 머티리얼의 RejectFlashParameterName을 RejectFlashDuration 동안 1→0으로 깜빡입니다.
+/// ColorIndicator = 받는 색 표시(통 입구 링 등). AcceptedColors 첫 색을 머티리얼 ColorParameterName에 넣고, 색 제한이 없으면 숨깁니다.
+/// 위치는 ColorIndicatorOffset(정면·오른쪽·위 방향 cm)으로 정해 인스턴스 스케일과 상관없이 통 입구에 붙습니다. 메시는 BP에서 지정합니다.
 /// Mesh(루트) = 수신기 본체(빔을 막는 콜리전 필요), 메시·머티리얼은 BP에서 지정합니다.
 
 #pragma once
@@ -24,6 +28,9 @@
 class UStaticMeshComponent;
 class UArrowComponent;
 class ULaserBeamComponent;
+class AGimmickLaserReceiver;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLaserReceiverBeamRejected, AGimmickLaserReceiver*, Receiver, ELaserBeamColor, BeamColor);
 
 UENUM(BlueprintType)
 enum class EGimmickLaserReceiveMode : uint8
@@ -62,13 +69,26 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Gimmick|LaserReceiver")
 	EGimmickLaserReceiveMode GetReceiveMode() const { return ReceiveMode; }
 
+public:
+	// 색만 틀린 빛이 들어오기 시작할 때 (같은 레이저는 떠났다 다시 올 때까지 한 번)
+	UPROPERTY(BlueprintAssignable, Category = "Gimmick|LaserReceiver")
+	FOnLaserReceiverBeamRejected OnBeamRejected;
+
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
 	virtual void HandleActivationChanged(bool bNewActivated, AActor* ChangeInstigator) override;
 
-	// 이 빔을 받을지 (반사 횟수·색·들어온 방향)
-	bool AcceptsBeam(const ULaserBeamComponent* Laser, const FHitResult& Hit, int32 ReflectionCount) const;
+	// 이 빔을 받을지 (반사 횟수·맞은 부품·들어온 방향·색). 색만 틀렸으면 bOutColorMismatch = true
+	bool AcceptsBeam(const ULaserBeamComponent* Laser, const FHitResult& Hit, int32 ReflectionCount, bool* bOutColorMismatch = nullptr) const;
+
+	// 색만 틀린 빛 처리 (새로 들어온 레이저면 알림·깜빡임)
+	void HandleColorRejected(ULaserBeamComponent* Laser);
+
+	void SetRejectFlash(float Alpha);
+
+	// 색 표시 위치·색·보이기 갱신
+	void UpdateColorIndicator();
 
 	void SetCharge(float NewCharge);
 
@@ -84,6 +104,10 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Gimmick|LaserReceiver", meta = (DisplayName = "On Beam Lost"))
 	void K2_OnBeamLost();
 
+	// 색만 틀린 빛이 들어옴 (거부 연출용)
+	UFUNCTION(BlueprintImplementableEvent, Category = "Gimmick|LaserReceiver", meta = (DisplayName = "On Beam Rejected"))
+	void K2_OnBeamRejected(ELaserBeamColor BeamColor);
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> Mesh;
@@ -91,6 +115,10 @@ protected:
 	// 빛을 받는 정면 방향 (bAcceptAnySide가 꺼져 있을 때)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UArrowComponent> ReceiveDirection;
+
+	// 받는 색 표시 (콜리전 없음, 절대 스케일). 메시는 BP에서 지정
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> ColorIndicator;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver")
 	EGimmickLaserReceiveMode ReceiveMode = EGimmickLaserReceiveMode::Latch;
@@ -127,6 +155,25 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Visual")
 	FName ChargeParameterName = TEXT("Charge");
 
+	// 거부 깜빡임 정도(1→0)를 넣을 스칼라 파라미터 이름 (본체·색 표시, 없으면 무시)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Visual")
+	FName RejectFlashParameterName = TEXT("RejectFlash");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Visual", meta = (ClampMin = "0.0", Units = "s"))
+	float RejectFlashDuration = 0.3f;
+
+	// 색 표시에 받는 색을 넣을 벡터 파라미터 이름 (엔진 기본 도형 머티리얼은 Color)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Visual")
+	FName ColorParameterName = TEXT("Color");
+
+	// 색 표시 위치 (정면 방향 X, 오른쪽 Y, 위 Z, cm). 기본 = 통 입구, 레이저 높이
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Visual")
+	FVector ColorIndicatorOffset = FVector(140.f, 0.f, 60.f);
+
+	// 정면 방향 기준 색 표시 회전 (기본 = 원기둥 축을 정면으로 눕힘)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Visual")
+	FRotator ColorIndicatorRotation = FRotator(90.f, 0.f, 0.f);
+
 private:
 	// 지금 조건에 맞는 빔을 비추고 있는 레이저
 	TSet<TWeakObjectPtr<ULaserBeamComponent>> ReceivingLasers;
@@ -137,4 +184,9 @@ private:
 	float TimeSinceBeamLost = 0.f;
 
 	bool bWasReceiving = false;
+
+	// 색만 틀린 빛을 비추고 있는 레이저 (같은 레이저 알림은 한 번)
+	TSet<TWeakObjectPtr<ULaserBeamComponent>> RejectedLasers;
+
+	float RejectFlashRemaining = 0.f;
 };

@@ -21,6 +21,15 @@ AGimmickLaserReceiver::AGimmickLaserReceiver()
 	ReceiveDirection->SetHiddenInGame(true);
 	ReceiveDirection->ArrowColor = FColor(80, 200, 255);
 
+	// 받는 색 표시: 본체 스케일과 상관없이 크기·위치를 cm로 정함, 빛을 막지 않음
+	ColorIndicator = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ColorIndicator"));
+	ColorIndicator->SetupAttachment(Mesh);
+	ColorIndicator->SetUsingAbsoluteScale(true);
+	ColorIndicator->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ColorIndicator->SetGenerateOverlapEvents(false);
+	ColorIndicator->SetCanEverAffectNavigation(false);
+	ColorIndicator->SetCastShadow(false);
+
 	// 빔으로만 켜짐 (다른 기믹 신호는 받지 않음), 한 번 켠 수신기는 세이브에 저장
 	bReceiveSignals = false;
 	bSaveState = true;
@@ -30,6 +39,7 @@ void AGimmickLaserReceiver::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	ApplyReceiveMode();
+	UpdateColorIndicator();
 }
 
 void AGimmickLaserReceiver::BeginPlay()
@@ -38,8 +48,43 @@ void AGimmickLaserReceiver::BeginPlay()
 
 	Super::BeginPlay();
 
+	UpdateColorIndicator();
+
 	// 세이브로 켜진 채 복원됐으면 충전도 가득
 	SetCharge(IsActivated() ? 1.f : 0.f);
+}
+
+void AGimmickLaserReceiver::UpdateColorIndicator()
+{
+	if (!ColorIndicator)
+	{
+		return;
+	}
+
+	// 색 제한이 없으면 표시할 것이 없음
+	const bool bShow = !AcceptedColors.IsEmpty();
+	ColorIndicator->SetVisibility(bShow);
+	if (!bShow)
+	{
+		return;
+	}
+
+	// 정면(수평) 기준으로 위치·회전 (본체 회전·스케일과 상관없이 통 입구에 맞춤)
+	FVector Front = ReceiveDirection ? ReceiveDirection->GetForwardVector().GetSafeNormal2D() : GetActorForwardVector().GetSafeNormal2D();
+	if (Front.IsNearlyZero())
+	{
+		Front = FVector::ForwardVector;
+	}
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Front);
+	const FVector Base = Mesh ? Mesh->GetComponentLocation() : GetActorLocation();
+	const FVector Location = Base + Front * ColorIndicatorOffset.X + Right * ColorIndicatorOffset.Y + FVector::UpVector * ColorIndicatorOffset.Z;
+	const FQuat Rotation = FQuat(Front.Rotation()) * FQuat(ColorIndicatorRotation);
+	ColorIndicator->SetWorldLocationAndRotation(Location, Rotation);
+
+	if (!ColorParameterName.IsNone())
+	{
+		ColorIndicator->SetVectorParameterValueOnMaterials(ColorParameterName, FVector(GetLaserBeamDisplayColor(AcceptedColors[0])));
+	}
 }
 
 void AGimmickLaserReceiver::ApplyReceiveMode()
@@ -60,13 +105,23 @@ void AGimmickLaserReceiver::ReceiveLaserHit_Implementation(ULaserBeamComponent* 
 	}
 
 	// 같은 레이저라도 거울이 돌면 맞는 면이 바뀌므로 매 틱 다시 판단
-	if (AcceptsBeam(Laser, Hit, ReflectionCount))
+	bool bColorMismatch = false;
+	if (AcceptsBeam(Laser, Hit, ReflectionCount, &bColorMismatch))
 	{
 		ReceivingLasers.Add(Laser);
+		RejectedLasers.Remove(Laser);
 	}
 	else
 	{
 		ReceivingLasers.Remove(Laser);
+		if (bColorMismatch)
+		{
+			HandleColorRejected(Laser);
+		}
+		else
+		{
+			RejectedLasers.Remove(Laser);
+		}
 	}
 
 	UpdateTickEnabled();
@@ -75,21 +130,65 @@ void AGimmickLaserReceiver::ReceiveLaserHit_Implementation(ULaserBeamComponent* 
 void AGimmickLaserReceiver::EndLaserHit_Implementation(ULaserBeamComponent* Laser)
 {
 	ReceivingLasers.Remove(Laser);
+	RejectedLasers.Remove(Laser);
 	UpdateTickEnabled();
+}
+
+void AGimmickLaserReceiver::HandleColorRejected(ULaserBeamComponent* Laser)
+{
+	// 같은 빛이 계속 닿는 동안은 한 번만 알림 (떠났다 다시 오면 다시 알림)
+	if (!Laser || RejectedLasers.Contains(Laser))
+	{
+		return;
+	}
+	RejectedLasers.Add(Laser);
+
+	if (RejectFlashDuration > 0.f)
+	{
+		RejectFlashRemaining = RejectFlashDuration;
+		SetRejectFlash(1.f);
+	}
+
+	const ELaserBeamColor BeamColor = Laser->GetBeamColorType();
+	OnBeamRejected.Broadcast(this, BeamColor);
+	K2_OnBeamRejected(BeamColor);
+}
+
+void AGimmickLaserReceiver::SetRejectFlash(float Alpha)
+{
+	if (RejectFlashParameterName.IsNone())
+	{
+		return;
+	}
+
+	if (Mesh)
+	{
+		Mesh->SetScalarParameterValueOnMaterials(RejectFlashParameterName, Alpha);
+	}
+	if (ColorIndicator)
+	{
+		ColorIndicator->SetScalarParameterValueOnMaterials(RejectFlashParameterName, Alpha);
+	}
 }
 
 void AGimmickLaserReceiver::ResetGimmick_Implementation(AActor* ResetInstigator)
 {
 	// 빔은 다음 틱 ReceiveLaserHit로 다시 들어옴
 	ReceivingLasers.Reset();
+	RejectedLasers.Reset();
 	bWasReceiving = false;
 	SetActivated(false, ResetInstigator);
 	SetCharge(0.f);
 	UpdateTickEnabled();
 }
 
-bool AGimmickLaserReceiver::AcceptsBeam(const ULaserBeamComponent* Laser, const FHitResult& Hit, int32 ReflectionCount) const
+bool AGimmickLaserReceiver::AcceptsBeam(const ULaserBeamComponent* Laser, const FHitResult& Hit, int32 ReflectionCount, bool* bOutColorMismatch) const
 {
+	if (bOutColorMismatch)
+	{
+		*bOutColorMismatch = false;
+	}
+
 	if (ReflectionCount < MinReflections)
 	{
 		return false;
@@ -101,25 +200,33 @@ bool AGimmickLaserReceiver::AcceptsBeam(const ULaserBeamComponent* Laser, const 
 		return false;
 	}
 
+	if (!bAcceptAnySide && ReceiveDirection)
+	{
+		// 들어온 방향의 반대가 정면 화살표와 허용 각도 안이어야 함 (수평 기준)
+		const FVector Incoming = (Hit.TraceEnd - Hit.TraceStart).GetSafeNormal2D();
+		const FVector Front = ReceiveDirection->GetForwardVector().GetSafeNormal2D();
+		if (Incoming.IsNearlyZero() || Front.IsNearlyZero())
+		{
+			return false;
+		}
+
+		if (FVector::DotProduct(-Incoming, Front) < FMath::Cos(FMath::DegreesToRadians(ReceiveHalfAngle)))
+		{
+			return false;
+		}
+	}
+
+	// 색은 마지막에 확인 (다른 조건은 맞고 색만 틀린 빛을 거부 연출로 알려 주기 위해)
 	if (!AcceptedColors.IsEmpty() && (!Laser || !AcceptedColors.Contains(Laser->GetBeamColorType())))
 	{
+		if (bOutColorMismatch)
+		{
+			*bOutColorMismatch = Laser != nullptr;
+		}
 		return false;
 	}
 
-	if (bAcceptAnySide || !ReceiveDirection)
-	{
-		return true;
-	}
-
-	// 들어온 방향의 반대가 정면 화살표와 허용 각도 안이어야 함 (수평 기준)
-	const FVector Incoming = (Hit.TraceEnd - Hit.TraceStart).GetSafeNormal2D();
-	const FVector Front = ReceiveDirection->GetForwardVector().GetSafeNormal2D();
-	if (Incoming.IsNearlyZero() || Front.IsNearlyZero())
-	{
-		return false;
-	}
-
-	return FVector::DotProduct(-Incoming, Front) >= FMath::Cos(FMath::DegreesToRadians(ReceiveHalfAngle));
+	return true;
 }
 
 bool AGimmickLaserReceiver::IsReceivingBeam() const
@@ -138,8 +245,22 @@ void AGimmickLaserReceiver::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// 거부 깜빡임 (1→0)
+	if (RejectFlashRemaining > 0.f)
+	{
+		RejectFlashRemaining = FMath::Max(0.f, RejectFlashRemaining - DeltaTime);
+		SetRejectFlash(RejectFlashDuration > 0.f ? RejectFlashRemaining / RejectFlashDuration : 0.f);
+	}
+
 	// 끝 통지 없이 사라진 레이저 정리 (발사기 파괴 등)
 	for (auto It = ReceivingLasers.CreateIterator(); It; ++It)
+	{
+		if (!It->IsValid() || !(*It)->IsLaserActive())
+		{
+			It.RemoveCurrent();
+		}
+	}
+	for (auto It = RejectedLasers.CreateIterator(); It; ++It)
 	{
 		if (!It->IsValid() || !(*It)->IsLaserActive())
 		{
@@ -227,7 +348,12 @@ void AGimmickLaserReceiver::SetCharge(float NewCharge)
 void AGimmickLaserReceiver::UpdateTickEnabled()
 {
 	bool bNeedTick = false;
-	if (ReceiveMode == EGimmickLaserReceiveMode::Latch && IsActivated())
+	if (RejectFlashRemaining > 0.f)
+	{
+		// 거부 깜빡임이 끝날 때까지
+		bNeedTick = true;
+	}
+	else if (ReceiveMode == EGimmickLaserReceiveMode::Latch && IsActivated())
 	{
 		bNeedTick = false;
 	}
