@@ -91,6 +91,9 @@ private:
 	// 연결한 기믹의 실행 중지 호출: 기믹 구현 내부에서 액터·타이머·구독 정리
 	void StopPhaseGimmicks();
 
+	// 페이즈 설정이 켜져 있으면 첫 Waypoint로 순간이동
+	void TeleportToFirstWaypoint(const FBossPhaseDefinition& Phase);
+
 public :
 
 	// BP Test용

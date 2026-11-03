@@ -77,6 +77,11 @@ struct FBossPhaseDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement", meta = (ClampMin = "0.0", Units = "cm"))
 	float MovementAcceptanceRadius = 100.f;
 
+	// 페이즈 시작 시 경로의 첫 Waypoint로 순간이동 (기본 Movement가 Waypoints일 때만)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement",
+		meta = (EditCondition = "MovementMode == EBossPhaseMovementMode::Waypoints", EditConditionHides))
+	bool bTeleportToFirstWaypoint = false;
+
 	// 기본 이동과 다르게 움직일 패턴만 추가 (목록에 없는 패턴은 MovementMode 사용)
 	// 적용 구간: 패턴 선택(방향 정렬) ~ 실행 ~ 후딜(후딜은 항상 정지)
 	// 단, 공격 실행 중 Stop/AbilityDriven이 우선되며, 후딜에는 이동 잠금으로 정지
