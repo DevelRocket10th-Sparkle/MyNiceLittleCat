@@ -15,6 +15,9 @@
 /// ColorIndicator = 받는 색 표시(통 입구 링 등). AcceptedColors 첫 색을 머티리얼 ColorParameterName에 넣고, 색 제한이 없으면 숨깁니다.
 /// 위치는 ColorIndicatorOffset(정면·오른쪽·위 방향 cm)으로 정해 인스턴스 스케일과 상관없이 통 입구에 붙습니다. 메시는 BP에서 지정합니다.
 /// Mesh(루트) = 수신기 본체(빔을 막는 콜리전 필요), 메시·머티리얼은 BP에서 지정합니다.
+/// LampMesh = 보이는 등(가로등 등). 켜지면 LitLampMesh, 꺼지면 UnlitLampMesh로 바꾸고 LampLight를 켜고 끕니다.
+/// CoreMesh = 통 안에서 빛을 받는 부분(수정 등). 충전·거부 깜빡임·받는 색을 본체와 같은 머티리얼 파라미터로 받습니다.
+/// LampMesh·CoreMesh는 콜리전 없음·절대 스케일이고, 위치는 ColorIndicator처럼 정면 기준 오프셋(cm)으로 정합니다.
 
 #pragma once
 
@@ -25,8 +28,10 @@
 #include "Gimmicks/Laser/LaserBeamColor.h"
 #include "GimmickLaserReceiver.generated.h"
 
+class UStaticMesh;
 class UStaticMeshComponent;
 class UArrowComponent;
+class UPointLightComponent;
 class ULaserBeamComponent;
 class AGimmickLaserReceiver;
 
@@ -90,6 +95,15 @@ protected:
 	// 색 표시 위치·색·보이기 갱신
 	void UpdateColorIndicator();
 
+	// 등·코어 위치와 코어 색 갱신
+	void UpdateVisualParts();
+
+	// 정면(수평) 기준 오프셋 위치에 부품 배치
+	void PlaceByFront(USceneComponent* Part, const FVector& Offset, const FRotator& Rotation) const;
+
+	// 등 메시·불빛을 켜짐/꺼짐에 맞춤
+	void ApplyLampState(bool bLit);
+
 	void SetCharge(float NewCharge);
 
 	// 충전·해제 대기가 필요할 때만 틱
@@ -119,6 +133,18 @@ protected:
 	// 받는 색 표시 (콜리전 없음, 절대 스케일). 메시는 BP에서 지정
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> ColorIndicator;
+
+	// 보이는 등 (콜리전 없음, 절대 스케일). 메시는 UnlitLampMesh/LitLampMesh로 정함
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> LampMesh;
+
+	// 켜졌을 때만 보이는 불빛 (LampMesh 기준 위치)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UPointLightComponent> LampLight;
+
+	// 통 안에서 빛을 받는 부분 (콜리전 없음, 절대 스케일). 충전·거부·색 파라미터를 받음
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> CoreMesh;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver")
 	EGimmickLaserReceiveMode ReceiveMode = EGimmickLaserReceiveMode::Latch;
@@ -173,6 +199,34 @@ protected:
 	// 정면 방향 기준 색 표시 회전 (기본 = 원기둥 축을 정면으로 눕힘)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Visual")
 	FRotator ColorIndicatorRotation = FRotator(90.f, 0.f, 0.f);
+
+	// 꺼졌을 때 등 메시 (비면 바꾸지 않음)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Lamp")
+	TObjectPtr<UStaticMesh> UnlitLampMesh;
+
+	// 켜졌을 때 등 메시 (비면 바꾸지 않음)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Lamp")
+	TObjectPtr<UStaticMesh> LitLampMesh;
+
+	// 등 위치 (정면 방향 X, 오른쪽 Y, 위 Z, cm)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Lamp")
+	FVector LampOffset = FVector::ZeroVector;
+
+	// 정면 방향 기준 등 회전
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Lamp")
+	FRotator LampRotation = FRotator::ZeroRotator;
+
+	// 코어 위치 (정면 방향 X, 오른쪽 Y, 위 Z, cm). 기본 = 통 안, 레이저 높이
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Visual")
+	FVector CoreOffset = FVector(0.f, 0.f, 60.f);
+
+	// 정면 방향 기준 코어 회전
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Visual")
+	FRotator CoreRotation = FRotator::ZeroRotator;
+
+	// 색 제한이 없을 때 코어 색
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Visual")
+	FLinearColor CoreDefaultColor = FLinearColor(1.f, 0.75f, 0.4f);
 
 private:
 	// 지금 조건에 맞는 빔을 비추고 있는 레이저

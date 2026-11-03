@@ -7,6 +7,7 @@
 #include "Gimmicks/Laser/LaserBeamComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/ArrowComponent.h"
+#include "Components/PointLightComponent.h"
 
 AGimmickLaserReceiver::AGimmickLaserReceiver()
 {
@@ -30,6 +31,30 @@ AGimmickLaserReceiver::AGimmickLaserReceiver()
 	ColorIndicator->SetCanEverAffectNavigation(false);
 	ColorIndicator->SetCastShadow(false);
 
+	// 보이는 등·코어: 본체 스케일과 상관없이 cm로 배치, 빛·이동을 막지 않음
+	LampMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LampMesh"));
+	LampMesh->SetupAttachment(Mesh);
+	LampMesh->SetUsingAbsoluteScale(true);
+	LampMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	LampMesh->SetGenerateOverlapEvents(false);
+	LampMesh->SetCanEverAffectNavigation(false);
+
+	LampLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("LampLight"));
+	LampLight->SetupAttachment(LampMesh);
+	LampLight->SetRelativeLocation(FVector(0.f, 0.f, 300.f));
+	LampLight->SetIntensity(3000.f);
+	LampLight->SetAttenuationRadius(600.f);
+	LampLight->SetLightColor(FLinearColor(1.f, 0.75f, 0.4f));
+	LampLight->SetVisibility(false);
+
+	CoreMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CoreMesh"));
+	CoreMesh->SetupAttachment(Mesh);
+	CoreMesh->SetUsingAbsoluteScale(true);
+	CoreMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CoreMesh->SetGenerateOverlapEvents(false);
+	CoreMesh->SetCanEverAffectNavigation(false);
+	CoreMesh->SetCastShadow(false);
+
 	// 빔으로만 켜짐 (다른 기믹 신호는 받지 않음), 한 번 켠 수신기는 세이브에 저장
 	bReceiveSignals = false;
 	bSaveState = true;
@@ -40,6 +65,8 @@ void AGimmickLaserReceiver::OnConstruction(const FTransform& Transform)
 	Super::OnConstruction(Transform);
 	ApplyReceiveMode();
 	UpdateColorIndicator();
+	UpdateVisualParts();
+	ApplyLampState(IsActivated());
 }
 
 void AGimmickLaserReceiver::BeginPlay()
@@ -49,9 +76,56 @@ void AGimmickLaserReceiver::BeginPlay()
 	Super::BeginPlay();
 
 	UpdateColorIndicator();
+	UpdateVisualParts();
 
 	// 세이브로 켜진 채 복원됐으면 충전도 가득
 	SetCharge(IsActivated() ? 1.f : 0.f);
+	ApplyLampState(IsActivated());
+}
+
+void AGimmickLaserReceiver::PlaceByFront(USceneComponent* Part, const FVector& Offset, const FRotator& Rotation) const
+{
+	if (!Part)
+	{
+		return;
+	}
+
+	FVector Front = ReceiveDirection ? ReceiveDirection->GetForwardVector().GetSafeNormal2D() : GetActorForwardVector().GetSafeNormal2D();
+	if (Front.IsNearlyZero())
+	{
+		Front = FVector::ForwardVector;
+	}
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Front);
+	const FVector Base = Mesh ? Mesh->GetComponentLocation() : GetActorLocation();
+	const FVector Location = Base + Front * Offset.X + Right * Offset.Y + FVector::UpVector * Offset.Z;
+	Part->SetWorldLocationAndRotation(Location, FQuat(Front.Rotation()) * FQuat(Rotation));
+}
+
+void AGimmickLaserReceiver::UpdateVisualParts()
+{
+	PlaceByFront(LampMesh, LampOffset, LampRotation);
+	PlaceByFront(CoreMesh, CoreOffset, CoreRotation);
+
+	if (CoreMesh && !ColorParameterName.IsNone())
+	{
+		const FLinearColor CoreColor = AcceptedColors.IsEmpty() ? CoreDefaultColor : GetLaserBeamDisplayColor(AcceptedColors[0]);
+		CoreMesh->SetVectorParameterValueOnMaterials(ColorParameterName, FVector(CoreColor));
+	}
+}
+
+void AGimmickLaserReceiver::ApplyLampState(bool bLit)
+{
+	if (LampMesh)
+	{
+		if (UStaticMesh* StateMesh = bLit ? LitLampMesh.Get() : UnlitLampMesh.Get())
+		{
+			LampMesh->SetStaticMesh(StateMesh);
+		}
+	}
+	if (LampLight)
+	{
+		LampLight->SetVisibility(bLit);
+	}
 }
 
 void AGimmickLaserReceiver::UpdateColorIndicator()
@@ -168,6 +242,10 @@ void AGimmickLaserReceiver::SetRejectFlash(float Alpha)
 	if (ColorIndicator)
 	{
 		ColorIndicator->SetScalarParameterValueOnMaterials(RejectFlashParameterName, Alpha);
+	}
+	if (CoreMesh)
+	{
+		CoreMesh->SetScalarParameterValueOnMaterials(RejectFlashParameterName, Alpha);
 	}
 }
 
@@ -320,6 +398,7 @@ void AGimmickLaserReceiver::HandleActivationChanged(bool bNewActivated, AActor* 
 
 	TimeSinceBeamLost = 0.f;
 	SetCharge(bNewActivated ? 1.f : 0.f);
+	ApplyLampState(bNewActivated);
 
 	if (bNewActivated && ReceiveMode == EGimmickLaserReceiveMode::Latch)
 	{
@@ -339,9 +418,16 @@ void AGimmickLaserReceiver::SetCharge(float NewCharge)
 	}
 
 	Charge = NewCharge;
-	if (Mesh && !ChargeParameterName.IsNone())
+	if (!ChargeParameterName.IsNone())
 	{
-		Mesh->SetScalarParameterValueOnMaterials(ChargeParameterName, Charge);
+		if (Mesh)
+		{
+			Mesh->SetScalarParameterValueOnMaterials(ChargeParameterName, Charge);
+		}
+		if (CoreMesh)
+		{
+			CoreMesh->SetScalarParameterValueOnMaterials(ChargeParameterName, Charge);
+		}
 	}
 }
 
