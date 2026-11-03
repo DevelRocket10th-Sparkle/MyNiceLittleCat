@@ -48,7 +48,6 @@ namespace TutorialTag
 	const FName Gate03(TEXT("Tutorial.Gate.03"));                              // 락온 -> 전투 사이 문
 
 	//! 락온 -> 전투 사이 통로
-	const FName TriggerCombatEnter(TEXT("Tutorial.Trigger.CombatEnter"));      // 두 문 사이 통로 (Gate03 보다 안쪽)
 	const FName Gate04(TEXT("Tutorial.Gate.04"));                              // 통로 -> 전투 구간 문
 	const FName PetPointAfterDoor04(TEXT("Tutorial.PetPoint.AfterDoor04"));    // 전투 구간 문 너머
 
