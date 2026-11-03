@@ -1,7 +1,7 @@
 /// 작성자: 최요환
 /// 작성일자: 2026-10-15
 ///
-/// 상호작용 인터페이스 (감지 기준점 외에는 기본 구현 없음, 구현체에서 _Implementation 정의)
+/// 상호작용 인터페이스 (감지 기준점·안내 UI 외에는 기본 구현 없음, 구현체에서 _Implementation 정의)
 
 #include "Interfaces/InteractableInterface.h"
 #include "GameFramework/Actor.h"
@@ -10,4 +10,23 @@ FVector IInteractableInterface::GetInteractFocusLocation_Implementation(AActor* 
 {
 	const AActor* Self = Cast<const AActor>(this);
 	return Self ? Self->GetActorLocation() : FVector::ZeroVector;
+}
+
+FInteractPromptInfo IInteractableInterface::GetInteractPrompt_Implementation(AActor* InteractInstigator) const
+{
+	FInteractPromptInfo Result;
+
+	const AActor* Self = Cast<const AActor>(this);
+	if (!Self)
+	{
+		Result.bShowPrompt = false;
+		return Result;
+	}
+
+	// 콜리전 있는 컴포넌트 기준 바운드 윗면 중앙
+	FVector Origin;
+	FVector Extent;
+	Self->GetActorBounds(true, Origin, Extent);
+	Result.WorldLocation = Origin + FVector(0.f, 0.f, Extent.Z);
+	return Result;
 }

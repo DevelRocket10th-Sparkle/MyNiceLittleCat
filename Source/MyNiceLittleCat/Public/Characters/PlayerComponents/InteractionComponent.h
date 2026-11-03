@@ -7,6 +7,7 @@
 /// 대상 선정: 반경 + 캐릭터 정면 각도 + (선택) 시야 트레이스를 통과한 후보 중 점수가 가장 높은 액터
 /// InteractionVolume 컴포넌트가 있는 액터는 반경 대신 캐릭터 캡슐이 그 볼륨에 닿아 있어야 후보가 됩니다.
 /// 사용법: 캐릭터에 컴포넌트를 추가하고, 상호작용 입력(E, IA_Interact)에서 TryInteract()만 호출하면 됩니다.
+/// PromptWidgetClass를 지정하면 포커스 대상이 알려준 위치(GetInteractPrompt)에 안내 UI(키 + 동작 텍스트) 하나를 띄웁니다.
 /// 테스트·프로토타입용으로 bBindInteractKey를 켜면 컴포넌트가 InteractKey를 직접 받아 TryInteract를 호출합니다 (기본 꺼짐).
 
 #pragma once
@@ -21,6 +22,9 @@ class APawn;
 class AController;
 class APlayerController;
 class UInputComponent;
+class UInputAction;
+class UWidgetComponent;
+class UInteractionPromptWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnInteractFocusChanged, AActor*, NewFocus, AActor*, OldFocus);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInteractExecuted, AActor*, Target);
@@ -49,6 +53,14 @@ public:
 	// 정렬 중(상호작용 실행 대기) 여부
 	UFUNCTION(BlueprintPure, Category = "Interaction")
 	bool IsAligning() const { return AlignTarget.IsValid(); }
+
+	// 안내 UI 위젯 (PromptWidgetClass가 없으면 null)
+	UFUNCTION(BlueprintPure, Category = "Interaction|Prompt")
+	UInteractionPromptWidget* GetPromptWidget() const;
+
+	// 포커스 대상의 안내 UI 정보를 다시 읽어 갱신 (기믹 상태가 바뀐 직후 즉시 반영하고 싶을 때)
+	UFUNCTION(BlueprintCallable, Category = "Interaction|Prompt")
+	void RefreshPrompt();
 
 public:
 	// 포커스 대상이 바뀔 때 (안내 UI 등)
@@ -83,6 +95,11 @@ private:
 	void PushKeyInput(AController* Controller);
 	void PopKeyInput();
 	void HandleInteractKey();
+
+	// 안내 UI: 위젯 컴포넌트 생성, 숨김, 표시할 키 이름
+	void CreatePrompt();
+	void HidePrompt();
+	FText GetInteractKeyText() const;
 
 protected:
 	// 테스트·프로토타입용: 켜면 InteractKey로 직접 TryInteract (실제 캐릭터는 플레이어 담당이 입력에서 TryInteract 호출)
@@ -150,6 +167,30 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Interaction|Align")
 	bool bLockMoveInputWhileAligning = true;
 
+	// 안내 UI 위젯 클래스. 지정하면 포커스 대상 위에 표시 (비우면 표시 안 함)
+	UPROPERTY(EditAnywhere, Category = "Interaction|Prompt")
+	TSubclassOf<UInteractionPromptWidget> PromptWidgetClass;
+
+	// 위젯 크기 (0이면 위젯 원하는 크기)
+	UPROPERTY(EditAnywhere, Category = "Interaction|Prompt")
+	FVector2D PromptDrawSize = FVector2D::ZeroVector;
+
+	// 표시 위치 기준 위젯 피벗 (0.5, 1 = 아래 가운데가 표시 위치)
+	UPROPERTY(EditAnywhere, Category = "Interaction|Prompt")
+	FVector2D PromptPivot = FVector2D(0.5f, 1.f);
+
+	// 키 이름을 읽을 상호작용 입력 액션 (IA_Interact). 지정하면 현재 매핑된 키를 표시
+	UPROPERTY(EditAnywhere, Category = "Interaction|Prompt")
+	TObjectPtr<UInputAction> InteractAction;
+
+	// 입력 액션·테스트 키 모두 없을 때 표시할 키 이름
+	UPROPERTY(EditAnywhere, Category = "Interaction|Prompt")
+	FText FallbackKeyText = INVTEXT("E");
+
+	// 정렬(이동·회전) 중 안내 UI 숨김. 끄면 정렬하는 동안 눌린 상태로 계속 표시
+	UPROPERTY(EditAnywhere, Category = "Interaction|Prompt")
+	bool bHidePromptWhileAligning = false;
+
 	// 정렬 목표 위치·방향 디버그 표시
 	UPROPERTY(EditAnywhere, Category = "Interaction|Debug")
 	bool bDrawDebugAlign = false;
@@ -191,4 +232,11 @@ private:
 	TObjectPtr<UInputComponent> KeyInputComponent;
 
 	TWeakObjectPtr<APlayerController> KeyInputController;
+
+	// 안내 UI 위젯 컴포넌트 (표시 중에는 대상 액터 루트에 붙어 따라감)
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> PromptComponent;
+
+	// 현재 안내 UI를 띄운 대상 (null이면 숨김 상태)
+	TWeakObjectPtr<AActor> PromptTarget;
 };
