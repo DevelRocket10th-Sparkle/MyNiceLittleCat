@@ -50,6 +50,7 @@ bool UEnemyPatternComponent::InitializePatterns(UAbilitySystemComponent* InASC, 
 			|| !FMath::IsFinite(Pattern.MaxHeightDifference) || Pattern.MaxHeightDifference < 0.f
 			|| !FMath::IsFinite(Pattern.Weight) || Pattern.Weight < 0.f						// 확률 가중치가 유효하지 않거나
 			|| !FMath::IsFinite(Pattern.RecoverySeconds) || Pattern.RecoverySeconds < 0.f
+			|| !FMath::IsFinite(Pattern.DamageMultiplier) || Pattern.DamageMultiplier < 0.f
 			|| !Pattern.Movement.IsValid()
 			|| !FMath::IsFinite(Pattern.MaxExecutionSeconds)
 			|| Pattern.MaxExecutionSeconds <= 0.f)		// 공격 종료 누락 감지 제한 시간이 유효하지 않으면
@@ -162,41 +163,14 @@ bool UEnemyPatternComponent::TryStartAttack(AActor * Target, int64 & OutRequestI
 {
 	OutRequestId = 0;
 
-	if (!CanStartAttack())
-	{
-		return false;
-	}
+	FName SelectedId;
 
-	// 현재 실행 조건을 만족하는 자동 선택 후보
-	TArray<const FEnemyPatternDefinition*> Candidates;
-	float TotalWeight = 0.f;
-
-	for (const FEnemyPatternDefinition& Pattern : PatternSet->Patterns)
-	{
-		if (Pattern.Weight > 0.f && CanExecutePattern(Pattern, Target))
-		{
-			Candidates.Add(&Pattern);
-			TotalWeight += Pattern.Weight;
-		}
-	}
-
-	if (Candidates.IsEmpty() || !FMath::IsFinite(TotalWeight) || TotalWeight <= 0.f)
+	// 실행할 패턴 추첨 실패
+	if (!PickAttackPattern(Target, SelectedId))
 		return false;
 
-	float Roll = FMath::FRand() * TotalWeight;
-	const FEnemyPatternDefinition* Selected = Candidates.Last();
-	for (const FEnemyPatternDefinition* Candidate : Candidates)
-	{
-		Roll -= Candidate->Weight;
-
-		if (Roll <= 0.f)
-		{
-			Selected = Candidate;
-			break;
-		}
-	}
-
-	return TryStartPattern(Selected->PatternId, Target, OutRequestId);
+	// 추첨한 패턴 실행 시도
+	return TryStartPattern(SelectedId, Target, OutRequestId);
 }
 
 // 지정한 패턴을 실행하고 요청 번호 반환; true는 시작 성공
@@ -223,13 +197,22 @@ bool UEnemyPatternComponent::TryStartPattern(FName PatternId, AActor* Target, in
 		ActiveRequestId = ++NextRequestId;
 		ActiveResult = EEnemyPatternResult::Completed;
 		OutRequestId = ActiveRequestId;
+
+		// 로그 전용 패턴도 다음 공격까지 정상 완료 간격 적용 (패턴 선택에 대한 추가 대기 시간)
+		const float Interval = FMath::FRandRange(MinAttackInterval, MaxAttackInterval);
+		NextAttackAllowedTime = GetWorld()->GetTimeSeconds() + static_cast<double>(Interval);
+
+		// 로그 출력
 		if (!LoggedPlaceholderPatterns.Contains(PatternId))
 		{
 			UE_LOG(LogTemp, Log, TEXT("[EnemyPattern][LogOnly] %s skipped"), *PatternId.ToString());
 			LoggedPlaceholderPatterns.Add(PatternId);
 		}
-		return true;
+
+		return true;	// 로그 전용 패턴이기 때문에 로그 출력 이후 성공 처리
 	}
+
+	// 로그 전용 패턴이 아닌 경우 실제 패턴 활성화
 	ActiveAbilityHandle = PatternHandles.FindChecked(PatternId);
 
 	ActiveRequestId = ++NextRequestId;
@@ -457,6 +440,100 @@ void UEnemyPatternComponent::StopAndInvalidate()
 	}
 
 	ActiveTarget.Reset();
+}
+
+bool UEnemyPatternComponent::PickAttackPattern(AActor* Target, FName& OutPatternId) const
+{
+	OutPatternId = NAME_None;
+
+	if (!CanStartAttack())
+		return false;
+
+	TArray<const FEnemyPatternDefinition*> Candidates;
+
+	// 패턴 선택 후보들의 가중치 합산 구하기
+	float TotalWeight = 0.f;
+	for (const FEnemyPatternDefinition& Pattern : PatternSet->Patterns)
+	{
+		if (Pattern.Weight > 0.f && CanExecutePattern(Pattern, Target))
+		{
+			Candidates.Add(&Pattern);
+			TotalWeight += Pattern.Weight;
+		}
+	}
+
+	// 후보들의 가중치 합산이 유효하지 않으면 실패 처리
+	if (Candidates.IsEmpty()
+		|| !FMath::IsFinite(TotalWeight)
+		|| TotalWeight <= 0.f)
+	{
+		return false;
+	}
+
+	float Roll = FMath::FRand() * TotalWeight;	// 난수에 총합을 곱해서 값 추첨
+	const FEnemyPatternDefinition* Selected = Candidates.Last();	// 반복문에서 선택되지 않는 경우를 대비해 마지막 후보를 기본값을 설정
+
+	// 반복문을 돌며 추첨된 값(Roll)에 해당하는 후보자 찾기
+	for (const FEnemyPatternDefinition* Candidate : Candidates)
+	{
+		// 각 후보자들의 가중치를 추첨된 값에서 뺌
+		Roll -= Candidate->Weight;
+
+		// 가중치를 차감한 결과가 처음으로 0 이하가 되는 후보를 선택
+		if (Roll <= 0.f)
+		{
+			Selected = Candidate;
+			break;
+		}
+	}
+
+	// 추첨 성공
+	OutPatternId = Selected->PatternId;
+	return true;
+}
+
+bool UEnemyPatternComponent::GetPatternDefinition(FName PatternId, FEnemyPatternDefinition& OutDefinition) const
+{
+	OutDefinition = FEnemyPatternDefinition();
+
+	if (bStopped)
+		return false;
+	
+	const FEnemyPatternDefinition* Pattern = FindPattern(PatternId);
+	if (!Pattern)
+		return false;
+
+	OutDefinition = *Pattern;
+	return true;
+}
+
+bool UEnemyPatternComponent::CanStartPattern(FName PatternId, AActor* Target) const
+{
+	if (!CanStartAttack())
+		return false;
+
+	const FEnemyPatternDefinition* Pattern = FindPattern(PatternId);
+
+	return Pattern && CanExecutePattern(*Pattern, Target);
+}
+
+bool UEnemyPatternComponent::HasExecutableAttack(AActor* Target) const
+{
+	if (!CanStartAttack())
+		return false;
+
+	for (const FEnemyPatternDefinition& Pattern : PatternSet->Patterns)
+	{
+		// 실행 가능한 패턴이 하나라도 있으면 true
+		// 패턴 선택 가중치가 유효하고 실행 가능한 패턴인지 확인
+		if (Pattern.Weight > 0.f && CanExecutePattern(Pattern, Target))
+		{
+			return true;
+		}
+	}
+
+	// 실행 가능한 패턴이 하나도 없으면 false
+	return false;
 }
 
 // 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출

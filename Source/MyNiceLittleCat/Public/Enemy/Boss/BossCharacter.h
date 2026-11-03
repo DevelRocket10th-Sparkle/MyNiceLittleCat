@@ -66,6 +66,9 @@ public :
 	UPROPERTY(BlueprintAssignable, Category = "Boss")
 	FBossEncounterSignal OnEncounterFailed;
 
+	// Encounter가 전달한 이동 경로를 PhaseComponent에 전달
+	void SetLevelMovementRoutes(const TMap<FName, FBossMovementRoute>& InRoutes);
+
 protected :
 	// 기본 Enemy 초기화 후 페이즈 설정, 패턴 ID 및 배리어 연결 검사
 	// 기본 초기화 뒤 파생 캐릭터의 추가 설정 준비

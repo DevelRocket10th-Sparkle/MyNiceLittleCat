@@ -14,6 +14,7 @@
 
 class AEnemyCharacter;
 class UEnemyPatternComponent;
+class AAIController;
 
 /**
  * 
@@ -29,7 +30,7 @@ public :
 	
 protected :
 
-	// Task 시작 시 행동을 요청하고 비동기 완료까지 InProgress 반환
+	// 실행할 패턴을 확정하고, 필요하면 방향 회전 후 실행
 	virtual EBTNodeResult::Type ExecuteTask(
 		UBehaviorTreeComponent& OwnerComp,
 		uint8* NodeMemory
@@ -57,15 +58,13 @@ private :
 	// 이 Task가 소유한 패턴 요청 해제
 	void Cleanup();
 
-	// 기존 공격 요청 실행
+	// 선택해 둔 패턴을 재추첨 없이 실행
+	// - 실행 직전 조건은 컴포넌트가 재검사
 	bool StartAttack();
-
-	// 회전 준비 중 획득한 이동 잠금 해제
-	void ReleaseFacingMovementLock();
 
 public :
 
-	// 빈 값이면 가중치 추첨, 지정하면 해당 패턴을 직접 요청
+	// BT에서 직접 지정 (None이면 자동 추첨)
 	UPROPERTY(EditAnywhere, Category = "Pattern")
 	FName PatternId;
 
@@ -88,7 +87,15 @@ private :
 	TWeakObjectPtr<AActor> CachedTarget;			// 회전 방향 목표 Target
 
 	bool bWaitingForFacing = false;
-	bool bOwnsFacingMovementLock = false;
 	float FacingElapsed = 0.f;
+
+	// 이번 실행에서 선택한 패턴 (회전 후에도 같은 패턴 실행)
+	FName SelectedPatternId = NAME_None;
+
+	// 이 Task가 설정한 공격 Focus를 해제할 컨트롤러
+	TWeakObjectPtr<AAIController> CachedAI;
+
+	// 이 Task가 AttackFacing Focus를 설정했는지 기록
+	bool bOwnsAttackFacingFocus = false;
 
 };

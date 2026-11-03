@@ -19,7 +19,6 @@ bool UMoneyGunPatternSettings::IsValidConfiguration() const
 		&& FMath::IsFinite(ShotInterval) && ShotInterval >= 0.02f
 		&& FMath::IsFinite(ProjectileSpeed) && ProjectileSpeed > 0.f
 		&& FMath::IsFinite(ProjectileLifeSeconds) && ProjectileLifeSeconds > 0.f
-		&& FMath::IsFinite(DamageMultiplier) && DamageMultiplier >= 0.f
 		&& FMath::IsFinite(AimDegreesPerSecond) && AimDegreesPerSecond > 0.f
 		&& !TargetOffset.ContainsNaN();
 }

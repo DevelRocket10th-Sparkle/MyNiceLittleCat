@@ -17,6 +17,9 @@ class APlayerCharacter;
 class UTextBlock;
 struct FOnAttributeChangeData;
 
+class ABossCharacter;
+class UBossHealthBarWidget;
+
 UCLASS()
 class MYNICELITTLECAT_API UMainWidget : public UUserWidget
 {
@@ -26,7 +29,12 @@ public:
 	// 표시 대상 플레이어 설정 (리스폰 시 다시 호출됨)
 	void InitForPlayer(APlayerCharacter* InPlayer);
 
+	void ShowBossHealthBar(ABossCharacter* Boss);
+	void HideBossHealthBar();
+
 protected:
+
+	virtual void NativeOnInitialized() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual void NativeDestruct() override;
 
@@ -52,6 +60,10 @@ protected:
 	// 대상 머리 위로 띄울 높이
 	UPROPERTY(EditAnywhere, Category = "HUD|LockOn")
 	float LockOnMarkerHeightOffset = 30.f;
+
+	// 보스 체력 바 위젯
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UBossHealthBarWidget> BossHealthBar;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> PotionIcon;
