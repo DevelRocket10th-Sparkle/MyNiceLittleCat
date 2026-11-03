@@ -7,6 +7,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Enemy/EnemyCharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 #include "AbilitySystemComponent.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
@@ -199,6 +200,12 @@ void AEnemyCharacter::BeginDeath()
 
 	GetCharacterMovement()->StopMovementImmediately();	// 현재 움직임 제거
 	GetCharacterMovement()->DisableMovement();	// 사망 시점 움직임 제거
+
+	// 사망 시 카메라 셰이크 실행
+	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+	{
+		PC->ClientStartCameraShake(DeathCameraShakeClass, DeathShakeScale);
+	}
 
 	// 사망 연출
 	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();

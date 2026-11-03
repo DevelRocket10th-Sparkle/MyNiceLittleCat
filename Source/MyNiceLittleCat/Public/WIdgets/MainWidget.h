@@ -14,6 +14,7 @@ class UImage;
 class UTexture2D;
 class UAbilitySystemComponent;
 class APlayerCharacter;
+class UTextBlock;
 struct FOnAttributeChangeData;
 
 class ABossCharacter;
@@ -64,11 +65,27 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UBossHealthBarWidget> BossHealthBar;
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> PotionIcon;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> PotionCountText;
+
+	// 포션이 없을 경우의 색
+	UPROPERTY(EditAnywhere, Category = "HUD|Potion")
+	FLinearColor EmptyPotionColor = FLinearColor(1.f, 1.f, 1.f, 0.3f);
+
 private:
 	void BindToPlayer();
 	void UnbindFromPlayer();
 	void OnHealthAttributeChanged(const FOnAttributeChangeData& Data);
 	void RefreshOrbs();
+	void RefreshPotions(int32 Current, int32 Max);
+
+	FDelegateHandle PotionHandle;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UImage>> PotionIcons;
 
 	TWeakObjectPtr<APlayerCharacter> Player;
 	TWeakObjectPtr<UAbilitySystemComponent> PlayerASC;
