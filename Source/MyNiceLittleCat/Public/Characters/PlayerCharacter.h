@@ -24,6 +24,7 @@ class UPlayerConfig;
 struct FInputActionValue;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPlayerDied);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnPotionCountChanged, int32 /*Current*/, int32 /*Max*/);
 
 UCLASS()
 class MYNICELITTLECAT_API APlayerCharacter : public ACharacter, public IAbilitySystemInterface
@@ -45,6 +46,8 @@ public:
 	bool GetbIsRunning() const { return bIsRunning; }
 	bool GetbIsDeflected() const { return bIsDeflected; }
 	bool GetbIsHealing() const { return bIsHealing; }
+	int32 GetPotionCount() const { return CurrentPotions; }
+	int32 GetMaxPotions() const { return MaxPotions; }
 
 	UStaticMeshComponent* GetWeaponMesh() const{ return WeaponMesh; }
 	UStaticMeshComponent* GetPotionMesh() const { return PotionMesh; }
@@ -71,6 +74,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Hit Reaction")
 	void ApplyPlayerHit(float Damage, FVector HitDirection);
 
+	UFUNCTION()
+	void RefillPotions();
 protected:
 	// 이동 함수
 	void Move(const FInputActionValue& Value);
@@ -129,6 +134,7 @@ private:
 public:
 	UPROPERTY(BlueprintAssignable, Category = "Character|Death")
 	FOnPlayerDied OnPlayerDied;
+	FOnPotionCountChanged OnPotionCountChanged;
 
 protected:
 
@@ -213,6 +219,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> IA_TargetSwitch;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> IA_Heal;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS")
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 
@@ -234,11 +243,23 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Deflect")
 	TObjectPtr<UAnimMontage> DeflectMontage;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Heal")
+	TObjectPtr<UAnimMontage> DrinkMontage;
+
 	UPROPERTY(VisibleAnywhere, Category = "Weapon")
 	TObjectPtr<UStaticMeshComponent> WeaponMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<UStaticMeshComponent> PotionMesh;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Heal", meta = (ClampMin = "0.0"))
+	float HealAmount = 3.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Heal", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float HealMoveSpeedMultiplier = 0.4f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Heal", meta = (ClampMin = "0"))
+	int32 MaxPotions = 3;
 
 	/* Enemy 밀어내기 관련 */
 
@@ -260,7 +281,11 @@ private:
 	bool bIsAbleToAttack = true;
 	bool bIsAbleToMove = true;
 	bool bIsDodgeInvincible = false;
+	bool bIsHealing = false;
+	bool bHealApplied = false;
+	float SpeedBeforeHeal = 0.f;
 	float OriginalMaxWalkSpeed = 0.0f;
+	int32 CurrentPotions = 0;
 	FVector DodgeDirection = FVector::ForwardVector;
 
 	bool bIsInvincible = false;
@@ -270,6 +295,5 @@ private:
 	bool bIsDeflected = false;
 
 	TEnumAsByte<ECollisionResponse> SavedCapsuleProjectileResponse = ECR_Block;
-	TEnumAsByte<ECollisionResponse> SavedMeshProjectileResponse = ECR_Block;
 
 };

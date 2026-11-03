@@ -7,6 +7,7 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
 #include "Components/Image.h"
+#include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
 
 #include "Characters/PlayerCharacter.h"
@@ -25,6 +26,9 @@ void UMainWidget::BindToPlayer()
 {
 	if (!Player.IsValid()) return;
 
+	PotionHandle = Player->OnPotionCountChanged.AddUObject(this, &UMainWidget::RefreshPotions);
+	RefreshPotions(Player->GetPotionCount(), Player->GetMaxPotions());
+
 	UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent();
 	if (!ASC) return;
 
@@ -39,6 +43,12 @@ void UMainWidget::BindToPlayer()
 
 void UMainWidget::UnbindFromPlayer()
 {
+	if (Player.IsValid())
+	{
+		Player->OnPotionCountChanged.Remove(PotionHandle);
+	}
+	PotionHandle.Reset();
+
 	if (UAbilitySystemComponent* ASC = PlayerASC.Get())
 	{
 		ASC->GetGameplayAttributeValueChangeDelegate(UPlayerAttributeSet::GetHealthAttribute()).Remove(HealthHandle);
@@ -95,6 +105,18 @@ void UMainWidget::RefreshOrbs()
 	for (int32 i = 0; i < Orbs.Num(); ++i)
 	{
 		Orbs[i]->SetColorAndOpacity(i < Lives ? FLinearColor::White : EmptyOrbColor);
+	}
+}
+
+void UMainWidget::RefreshPotions(int32 Current, int32 Max)
+{
+	if (PotionCountText)
+	{
+		PotionCountText->SetText(FText::AsNumber(Current));
+	}
+	if (PotionIcon)
+	{
+		PotionIcon->SetColorAndOpacity(Current > 0 ? FLinearColor::White : EmptyPotionColor);
 	}
 }
 
