@@ -40,6 +40,28 @@ struct FTutorialAction
     TFunction<bool()> Condition;              // Wait == Condition 일 때 확인할 조건
 };
 
+// 연출 순간 하나에 같이 나오는 효과 묶음 (비워 둔 칸은 그냥 건너뜀 -> 에셋 없이도 연출은 그대로 진행)
+USTRUCT(BlueprintType)
+struct FTutorialFXSet
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere)
+    TObjectPtr<class UNiagaraSystem> Effect;           // 파티클 효과
+
+    UPROPERTY(EditAnywhere)
+    TObjectPtr<class USoundBase> Sound;                // 효과음
+
+    UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0"))
+    float VolumeMultiplier = 1.f;                // 효과음 볼륨 배율
+
+    UPROPERTY(EditAnywhere)
+    TSubclassOf<class UCameraShakeBase> CameraShake;   // 카메라 흔들림
+
+    UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0"))
+    float ShakeScale = 1.f;                      // 흔들림 세기 배율
+};
+
 UCLASS()
 class MYNICELITTLECAT_API ATutorialManager : public AActor
 {
@@ -163,6 +185,17 @@ protected:
     void StartBossAI();                                  // 보스 AI 시작 (연출이 끝나고 조작이 돌아올 때)
     void SwapBossToPet(AActor* _AppearPoint, AActor* _FaceTarget); // 보스 제거 -> 지정 지점에 거대한 펫 등장 (_FaceTarget 쪽을 바라봄)
     bool IsBossDead() const;                             // 보스가 죽었는지
+
+private:
+    void PlayFXSetAtGround(const FTutorialFXSet& _Set, AActor* _Actor); // 액터 발밑에서 묶음 1회 재생
+    void StartLoopFXOnPet(const FTutorialFXSet& _Set);                  // 펫에 붙여 반복 재생 (흔들림은 시작할 때 1회)
+    void StopLoopFX();                                                  // 반복 중인 효과/소리 정리
+    void PlayCameraShake(TSubclassOf<UCameraShakeBase> _Shake, float _Scale); // 지금 보는 카메라 흔들기
+    void PlayFXSetAtLocation(const FTutorialFXSet& _Set, const FVector& _Location); // 지정 위치에서 묶음 1회 재생
+
+    UFUNCTION()
+    void HandleLockOnEnemyEndPlay(AActor* _Actor, EEndPlayReason::Type _Reason); // 락온 구간 적이 사라질 때
+    void HandleLockOnEnemyDeathStarted(class AEnemyCharacter* _Enemy); // 락온 구간 적의 HP 가 0 이 된 순간
     // =========================================================
 protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tutorial")
@@ -237,6 +270,29 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Tutorial|Combat", meta = (ClampMin = "0.0"))
     float BossShowTime = 1.5f;         // 보스 등장 후 조작을 돌려주기 전까지 보여주는 시간
 
+    // ===== 전투 구간 효과 =====
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Combat|FX")
+    FTutorialFXSet PetGrowFX;      // 펫이 커지는 동안 (펫에 붙어서 반복 재생 -> 다 커지면 멈춤. 반복 에셋 사용)
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Combat|FX")
+    FTutorialFXSet BossAppearFX;   // 다 커져서 보스로 바뀌는 순간 (1회)
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Combat|FX")
+    FTutorialFXSet PetShrinkFX;    // 보스를 잡고 펫이 줄어들기 시작할 때 (1회)
+
+    // ===== 펫 =====
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Pet")
+    TObjectPtr<class USoundBase> PetSaySound; // 말풍선이 뜰 때 소리 (짧은 UI음)
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Pet")
+    FTutorialFXSet PetAppearFX;     // 펫이 처음 나타날 때 (순간이동 자리에서 반짝)
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|LockOn")
+    FTutorialFXSet EnemyVanishFX;   // 쓰러진 적이 사라질 때 (연기 팡)
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|LockOn")
+    FTutorialFXSet EnemyDyingFX;    // 쓰러져 있는 동안 몸에서 피어오르는 연기 (반복 에셋. 적이 사라질 때 같이 사라짐)
+
 private:
     bool bChangingStage = false; // 구간 전환 도중에 또 전환되는 것을 막는 불값
     
@@ -293,4 +349,11 @@ private:
     float PetScaleTo = 1.f;
     float PetScaleDuration = 0.f;
     float PetScaleElapsed = 0.f;
+
+    // 반복 재생 중인 효과 (UPROPERTY: GC 가 몰래 지우지 않게)
+    UPROPERTY()
+    TObjectPtr<class UNiagaraComponent> LoopFXComp;
+
+    UPROPERTY()
+    TObjectPtr<class UAudioComponent> LoopSoundComp;
 };

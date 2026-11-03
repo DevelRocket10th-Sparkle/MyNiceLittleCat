@@ -7,7 +7,6 @@
 #include "Pet/SpeechBubbleComponent.h"
 #include "AIController.h"                 // 비행 전 길찾기 이동 멈추기
 #include "Components/CapsuleComponent.h"  // 착지 높이 계산
-//#include "GameFramework/Character.h"                       // 발바닥 높이 계산 (캡슐 절반)
 #include "Characters/PlayerComponents/LockOnComponent.h"   // 플레이어 락온 상태 읽기
 #include "Interfaces/TargetableInterface.h"                // 적 생존 확인 (락온 시스템과 같은 기준)
 #include "Navigation/PathFollowingComponent.h" // 펫이 걷는 중인지 확인 (EPathFollowingStatus)
@@ -18,6 +17,9 @@
 #include "Characters/GAS/PlayerAttributeSet.h" // 플레이어 체력(목숨) 채우기
 #include "Enemy/AI/EnemyAIController.h"    // 보스 타깃을 플레이어로 바로 지정
 #include "Characters/PlayerMainController.h" // 튜토리얼 동안 펫 입력 막기
+#include "NiagaraFunctionLibrary.h"       // 효과 스폰
+#include "Components/AudioComponent.h"    // 반복 소리 끄기
+#include "Tutorial/TutorialPortal.h"  // 보스 처치 후 열리는 관문
 
 namespace TutorialTag
 {
@@ -57,6 +59,8 @@ namespace TutorialTag
 	const FName CameraBossArena(TEXT("Tutorial.Camera.BossArena"));				// 보스 아레나 전체 샷
 	const FName CheckpointCombat(TEXT("Tutorial.Checkpoint.Combat"));			// 보스 잡으면 나타나는 체크포인트
 	const FName PetPointCheckpoint(TEXT("Tutorial.PetPoint.Checkpoint"));		// 체크포인트 옆 펫 자리
+
+	const FName PortalExit(TEXT("Tutorial.Portal.Exit"));						// 보스 잡으면 벽이 녹아 열리는 관문
 }
 
 ATutorialManager::ATutorialManager()
@@ -153,6 +157,8 @@ void ATutorialManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	// 튜토리얼에서 막았던 펫 입력 복구 (다음 레벨에서 펫 조작이 안 되는 일 방지)
 	if (APlayerMainController* MainPC = Cast<APlayerMainController>(UGameplayStatics::GetPlayerController(this, 0)))
 		MainPC->SetPetInputEnabled(true);
+
+	StopLoopFX(); // 커지는 도중에 레벨이 끝나도 효과/소리가 남지 않게
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -269,8 +275,8 @@ void ATutorialManager::BuildMovementActions(TArray<FTutorialAction>& OutActions)
 	// 0) 시작 연출: 문 쪽 앵글 + 조작 잠금
 	OutActions.Add(Do([this, CameraDoor01] { BeginCinematic(CameraDoor01.Get(), 0.f); }));
 
-	// 1) 펫이 플레이어 근처에 나타나 인사
-	OutActions.Add(Do([this, PetStart] { PlacePet(PetStart.Get()); }));
+	// 1) 펫이 플레이어 근처에 반짝하며 나타나 인사 (순간이동이 "툭" 생기지 않게 효과로 가려줌)
+	OutActions.Add(Do([this, PetStart] { PlacePet(PetStart.Get()); PlayFXSetAtGround(PetAppearFX, Pet.Get()); }));
 	OutActions.Add(Do([this] { PetSay(INVTEXT("안녕!")); }));
 	OutActions.Add(WaitSeconds(1.5f));
 
@@ -348,7 +354,17 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 	TArray<AActor*> FoundEnemies;
 	UGameplayStatics::GetAllActorsWithTag(this, TutorialTag::EnemyLockOn, FoundEnemies);
 	for (AActor* Enemy : FoundEnemies)
+	{
 		LockOnEnemies.Add(Enemy);
+
+		// 쓰러진 적은 3초 뒤 갑자기 사라짐 -> 사라지는 순간 연기 팡 (적 코드는 안 건드리고 여기서 구독)
+		Enemy->OnEndPlay.AddUniqueDynamic(this, &ATutorialManager::HandleLockOnEnemyEndPlay);
+
+		// 쓰러지는 순간부터 몸에서 연기 -> 래그돌로 굴러다니는 3초도 연출이 됨
+		// (OnDeathStarted 는 다이내믹 델리게이트가 아니라서 AddUObject)
+		if (AEnemyCharacter* EnemyChar = Cast<AEnemyCharacter>(Enemy))
+			EnemyChar->OnDeathStarted.AddUObject(this, &ATutorialManager::HandleLockOnEnemyDeathStarted);
+	}
 
 	UE_LOG(LogTemp, Log, TEXT("[Tutorial] 락온 구간 적 %d 마리"), LockOnEnemies.Num());
 
@@ -438,6 +454,7 @@ void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 	TWeakObjectPtr<AActor> CamBossArena = FindActorByTag(TutorialTag::CameraBossArena);
 	TWeakObjectPtr<AActor> Checkpoint = FindActorByTag(TutorialTag::CheckpointCombat);
 	TWeakObjectPtr<AActor> PetCheckpoint = FindActorByTag(TutorialTag::PetPointCheckpoint);
+	TWeakObjectPtr<AActor> PortalExit = FindActorByTag(TutorialTag::PortalExit);
 
 	// 0) 체크포인트는 보스를 잡기 전까지 숨김
 	OutActions.Add(Do([this, Checkpoint] { SetActorShown(Checkpoint.Get(), false); }));
@@ -465,10 +482,19 @@ void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 	// 3) "나를 이겨 봐!" -> 펫이 보스 크기까지 커짐 -> 같은 자리에 보스로 교체
 	// (말풍선을 먼저: 커진 뒤에 말하면 말풍선이 거대한 몸에 파묻힘)
 	OutActions.Add(Do([this] { PetSay(INVTEXT("나를 이겨 봐!")); }));
-	OutActions.Add(WaitSeconds(0.6f));
-	OutActions.Add(Do([this] { StartPetMeshScale(BossMeshScale, PetGrowTime); }));
+	OutActions.Add(WaitSeconds(0.3f));
+
+	// 커지는 동안 발밑 효과 + 차오르는 소리를 계속 재생
+	OutActions.Add(Do([this] { StartLoopFXOnPet(PetGrowFX); StartPetMeshScale(BossMeshScale, PetGrowTime); }));
 	OutActions.Add(WaitUntil([this] { return false == IsPetMeshScaling(); }));
-	OutActions.Add(Do([this] { SwapPetToBoss(); }));
+	OutActions.Add(Do([this]
+		{
+			// 다 커진 순간: 반복 효과를 멈추고 -> 펑 + 쿵 + 흔들림 -> 보스로 교체
+			// (터지는 효과가 교체 순간을 가려줘서 펫 -> 보스가 더 자연스럽게 이어 보임)
+			StopLoopFX();
+			PlayFXSetAtGround(BossAppearFX, Pet.Get()); // 교체 직전 펫 자리 = 보스가 설 자리
+			SwapPetToBoss();
+		}));
 	OutActions.Add(WaitSeconds(BossShowTime)); // 보스를 잠깐 보여줌 (AI 는 아직 꺼져 있어서 공격 안 함)
 
 	// 3-1) (잠금 해제) 플레이어 카메라 복귀와 동시에 보스 AI 시작 -> 전투 시작
@@ -484,26 +510,32 @@ void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 			BeginCinematic(CamBossArena.Get(), BossCameraBlendTime);
 		}));
 	OutActions.Add(WaitSeconds(BossCameraBlendTime));
-	OutActions.Add(Do([this] { StartPetMeshScale(1.f, PetShrinkTime); }));
+	// 줄어들기 시작할 때 반짝이 + 퐁 (보스 기운이 빠져나가는 느낌)
+	OutActions.Add(Do([this] { PlayFXSetAtGround(PetShrinkFX, Pet.Get()); StartPetMeshScale(1.f, PetShrinkTime); }));
 	OutActions.Add(WaitUntil([this] { return false == IsPetMeshScaling(); }));
 	OutActions.Add(Do([this] { PetFacePlayer(); }));
 	OutActions.Add(WaitSeconds(0.3f));
 	OutActions.Add(Do([this] { PetSay(INVTEXT("아야! 네가 이겼어!")); }));
 	OutActions.Add(WaitSeconds(1.5f));
 
-	// 6) 체크포인트 등장 -> 펫이 옆으로 걸어감 -> (잠금 해제) "합격! 이제 가자!"
-	OutActions.Add(Do([this, Checkpoint] { SetActorShown(Checkpoint.Get(), true); }));
-	OutActions.Add(WaitSeconds(0.5f)); // 체크포인트가 나타난 걸 먼저 보여줌
+	// 6) 끝 벽이 관문으로 바뀜 (아레나 샷 정면에 보임) -> 다 열리면 펫이 관문 앞으로 -> (잠금 해제) "저기로 가자!"
+	OutActions.Add(Do([this, PortalExit] { SetActivated(PortalExit.Get(), true); }));
+	OutActions.Add(WaitUntil([PortalExit]
+		{
+			// 관문이 없거나(배치 안 함) 다 열리면 통과 -> 관문이 없어도 튜토리얼이 멈추지 않게
+			const ATutorialPortal* Portal = Cast<ATutorialPortal>(PortalExit.Get());
+			return nullptr == Portal || Portal->IsOpen();
+		}));
+	OutActions.Add(WaitSeconds(0.5f)); // 열린 관문을 잠깐 보여줌
 	OutActions.Add(Do([this, PetCheckpoint]
 		{
 			if (true == PetCheckpoint.IsValid())
-				PetWalkToLocation(PetCheckpoint->GetActorLocation());
+				PetWalkToLocation(PetCheckpoint->GetActorLocation()); // 관문 바로 앞 자리
 		}));
 	OutActions.Add(WaitUntil([this] { return false == IsPetWalking(); }));
 	OutActions.Add(Do([this] { PetFacePlayer(); }));
 	OutActions.Add(WaitSeconds(0.3f));
-	// 말풍선과 동시에 조작을 돌려줌 -> "나가자" 를 듣자마자 움직일 수 있게
-	OutActions.Add(Do([this] { EndCinematic(CameraReturnBlendTime); PetSay(INVTEXT("합격! 이제 가자!")); }));
+	OutActions.Add(Do([this] { EndCinematic(CameraReturnBlendTime); PetSay(INVTEXT("저기로 가자!")); }));
 }
 
 void ATutorialManager::RunNextAction()
@@ -701,7 +733,6 @@ void ATutorialManager::PetMoveTo(AActor* _Point, float _Speed)
 
 void ATutorialManager::PetSay(const FText& _Message)
 {
-	//! 임시..
 	UE_LOG(LogTemp, Log, TEXT("[Tutorial] 펫: %s"), *_Message.ToString());
 
 	APetCharacter* PetPtr = Pet.Get();
@@ -709,6 +740,11 @@ void ATutorialManager::PetSay(const FText& _Message)
 
 	if (USpeechBubbleComponent* Bubble = PetPtr->GetSpeechBubble())
 		Bubble->Say(_Message, 4.f);
+
+	// 말풍선이 뜰 때 짧은 소리 -> 화면 어디를 보고 있어도 펫이 말한 걸 알아챔
+// (2D 로 재생: 아레나 카메라처럼 펫과 멀리 떨어져 있어도 같은 크기로 들림)
+	if (nullptr != PetSaySound)
+		UGameplayStatics::PlaySound2D(this, PetSaySound);
 }
 
 void ATutorialManager::PetFlyTo(AActor* _Point, float _Duration)
@@ -1393,4 +1429,118 @@ bool ATutorialManager::IsBossDead() const
 {
 	// 락온 구간과 같은 기준 (체력 0 이 되는 순간 Dying 으로 바뀌어 false)
 	return false == IsEnemyAlive(Boss.Get());
+}
+
+void ATutorialManager::PlayFXSetAtGround(const FTutorialFXSet& _Set, AActor* _Actor)
+{
+	//if (nullptr == _Actor) return;
+
+	//// 캐릭터는 캡슐 중심이 아니라 발바닥 기준 -> 바닥에서 터지고, 소리도 그 자리에서 남
+	//const FVector Location = GetGroundLocation(_Actor);
+	//if (nullptr != _Set.Effect) UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, _Set.Effect, Location);
+	//if (nullptr != _Set.Sound) UGameplayStatics::PlaySoundAtLocation(this, _Set.Sound, Location, _Set.VolumeMultiplier);
+
+	//PlayCameraShake(_Set.CameraShake, _Set.ShakeScale);
+
+	// 캐릭터는 캡슐 중심이 아니라 발바닥 기준 -> 바닥에서 터지고, 소리도 그 자리에서 남
+	PlayFXSetAtLocation(_Set, GetGroundLocation(_Actor));
+}
+
+void ATutorialManager::StartLoopFXOnPet(const FTutorialFXSet& _Set)
+{
+	StopLoopFX(); // 이전 반복 효과가 남아 있으면 먼저 정리 (두 번 겹쳐 재생되지 않게)
+
+	APetCharacter* PetPtr = Pet.Get();
+	if (nullptr == PetPtr) return;
+
+	// 펫 캡슐에 붙이고 캡슐 반높이만큼 내림 -> 발밑 기준으로 재생되고, 펫이 움직여도 따라감
+	USceneComponent* Root = PetPtr->GetRootComponent();
+	const FVector FootOffset(0.f, 0.f, -PetPtr->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+
+	if (nullptr != _Set.Effect)
+	{
+		// 캡슐이 아니라 "메시"에 붙임 -> 메시가 커지면 효과 범위도 같이 커짐 (캡슐은 크기가 그대로라서)
+		// 메시 원점 = 발바닥이라 따로 내릴 필요 없음
+		LoopFXComp = UNiagaraFunctionLibrary::SpawnSystemAttached(
+			_Set.Effect, PetPtr->GetMesh(), NAME_None, FVector::ZeroVector, FRotator::ZeroRotator,
+			EAttachLocation::KeepRelativeOffset, true); // true = 끝나면 컴포넌트 자동 삭제
+	}
+
+	if (nullptr != _Set.Sound)
+	{
+		// true = 펫이 사라지면 소리도 같이 멈춤
+		LoopSoundComp = UGameplayStatics::SpawnSoundAttached(
+			_Set.Sound, Root, NAME_None, FootOffset,
+			EAttachLocation::KeepRelativeOffset, true, _Set.VolumeMultiplier);
+	}
+
+	PlayCameraShake(_Set.CameraShake, _Set.ShakeScale);
+}
+
+void ATutorialManager::StopLoopFX()
+{
+	// 효과는 바로 지우지 않고 "새 입자만" 멈춤 -> 이미 나온 입자는 자연스럽게 사라짐
+	if (nullptr != LoopFXComp)
+	{
+		LoopFXComp->Deactivate();
+		LoopFXComp = nullptr;
+	}
+
+	// 소리는 뚝 끊기지 않게 짧게 줄이면서 끔
+	if (nullptr != LoopSoundComp)
+	{
+		LoopSoundComp->FadeOut(0.2f, 0.f);
+		LoopSoundComp = nullptr;
+	}
+}
+
+void ATutorialManager::PlayCameraShake(TSubclassOf<UCameraShakeBase> _Shake, float _Scale)
+{
+	if (nullptr == _Shake) return;
+
+	// 카메라 매니저가 "지금 보고 있는 카메라"를 흔듦 -> 아레나 연출 카메라로 보고 있어도 흔들림
+	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+		PC->ClientStartCameraShake(_Shake, _Scale);
+}
+
+void ATutorialManager::PlayFXSetAtLocation(const FTutorialFXSet& _Set, const FVector& _Location)
+{
+	if (nullptr != _Set.Effect)
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, _Set.Effect, _Location);
+
+	if (nullptr != _Set.Sound)
+		UGameplayStatics::PlaySoundAtLocation(this, _Set.Sound, _Location, _Set.VolumeMultiplier);
+
+	PlayCameraShake(_Set.CameraShake, _Set.ShakeScale);
+}
+
+void ATutorialManager::HandleLockOnEnemyEndPlay(AActor* _Actor, EEndPlayReason::Type _Reason)
+{
+	// 레벨이 끝나서 정리되는 경우는 제외 (실제로 처치돼서 사라질 때만)
+	if (EEndPlayReason::Destroyed != _Reason || nullptr == _Actor) return;
+
+	// 시체는 래그돌이라 캡슐 자리에서 굴러가 있음 -> 메시(몸) 위치에서 터뜨려야 "그 자리에서 사라짐"으로 보임
+	FVector Location = _Actor->GetActorLocation();
+	if (const ACharacter* Character = Cast<ACharacter>(_Actor))
+		Location = Character->GetMesh()->GetComponentLocation();
+
+	PlayFXSetAtLocation(EnemyVanishFX, Location);
+}
+
+void ATutorialManager::HandleLockOnEnemyDeathStarted(AEnemyCharacter* _Enemy)
+{
+	if (nullptr == _Enemy) return;
+
+	USkeletalMeshComponent* Mesh = _Enemy->GetMesh();
+
+	// 메시에 붙임 -> 래그돌로 굴러가도 몸을 따라가고, 적이 사라질 때 같이 사라짐 (따로 끌 필요 없음)
+	if (nullptr != EnemyDyingFX.Effect)
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAttached(
+			EnemyDyingFX.Effect, Mesh, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator,
+			EAttachLocation::SnapToTarget, true);
+	}
+
+	if (nullptr != EnemyDyingFX.Sound)
+		UGameplayStatics::PlaySoundAtLocation(this, EnemyDyingFX.Sound, Mesh->GetComponentLocation(), EnemyDyingFX.VolumeMultiplier);
 }

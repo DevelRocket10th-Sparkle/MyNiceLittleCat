@@ -39,6 +39,9 @@ public:
 protected:
 	// 열린 정도(0-1)를 문짝 회전에 반영
 	void ApplyDoorRotation();
+
+	// 열릴 때 먼지 + 소리
+	void PlayOpenFX();
 	// =======================================================================
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "Tutorial|Gate")
@@ -64,6 +67,15 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Tutorial|Gate", meta = (ClampMin = "0.01"))
 	float OpenDuration = 1.f; // 열리거나 닫히는 데 걸리는 시간(초)
+
+	UPROPERTY(EditAnywhere, Category = "Tutorial|Gate|FX")
+	TObjectPtr<class UNiagaraSystem> OpenEffect; // 열릴 때 문 아래 먼지
+
+	UPROPERTY(EditAnywhere, Category = "Tutorial|Gate|FX")
+	TObjectPtr<class USoundBase> OpenSound; // 열리는 소리
+
+	UPROPERTY(EditAnywhere, Category = "Tutorial|Gate|FX")
+	FVector EffectOffset = FVector::ZeroVector; // (문 기준) 먼지 위치 보정. 문 피벗이 바닥이 아니면 조정
 
 private:
 	bool bWantOpen = false; // 목표 상태 (열기 요청 = true)
