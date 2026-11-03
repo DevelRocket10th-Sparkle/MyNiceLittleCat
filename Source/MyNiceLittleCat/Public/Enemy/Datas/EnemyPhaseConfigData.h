@@ -66,24 +66,61 @@ struct FBossPhaseDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement")
 	EBossPhaseMovementMode MovementMode = EBossPhaseMovementMode::Chasing;
 
-	// MovementMode가 Waypoints일 때만 MovementRouteId 편집 가능
-	// EditConditionHides 설정으로 인해 Stop, Chasing 모드일 때는 설정 숨김
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement",
-		meta = (
-			EditCondition = "MovementMode == EBossPhaseMovementMode::Waypoints",
-			EditConditionHides
-		)
-	)
+	// 기본 이동이 Stop이어도 예외가 Waypoints면 경로 필요
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement")
 	FName MovementRouteId;
 
+	// 추격, Waypoint 도착 반경 (중심 간 수평 거리)
+	// Chasing의 접근 허용 거리와 Waypoints의 지점 도착 허용 반경
+	// 추격 후 공격을 시작할 수 있도록 공격 사거리 안쪽에 여유를 두어 설정
+	// 실제 공격 가능 여부는 거리, 높이, 시야, GA 활성화 조건을 별도로 검사
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement", meta = (ClampMin = "0.0", Units = "cm"))
 	float MovementAcceptanceRadius = 100.f;
+
+	// 기본 이동과 다르게 움직일 패턴만 추가 (목록에 없는 패턴은 MovementMode 사용)
+	// 적용 구간: 패턴 선택(방향 정렬) ~ 실행 ~ 후딜(후딜은 항상 정지)
+	// 단, 공격 실행 중 Stop/AbilityDriven이 우선되며, 후딜에는 이동 잠금으로 정지
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement", meta = (TitleProperty = "PatternId"))
+	TArray<FBossPatternMovementOverride> PatternMovementOverrides;
 
 	// 페이즈의 기본 회전 목표
 	// Hold는 페이즈 시작 방항 사용 (공격 회전 정렬 Focus가 일시적으로 우선함)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rotation")
 	EBossPhaseRotationMode RotationMode = EBossPhaseRotationMode::FaceTarget;
 
+	// 패턴별 예외가 있으면 해당 모드, PatternId가 None이거나 예외가 없으면 기본 모드 반환
+	// 공격의 Stop/AbilityDriven 정책과 이동 잠금은 호출자가 별도로 적용
+	EBossPhaseMovementMode ResolveMovementMode(FName PatternId) const
+	{
+		if (!PatternId.IsNone())
+		{
+			if (const FBossPatternMovementOverride* Found =
+				PatternMovementOverrides.FindByPredicate(
+					[PatternId](const FBossPatternMovementOverride& Entry)
+					{
+						return Entry.PatternId == PatternId;
+					}
+				))
+			{
+				return Found->MovementMode;
+			}
+		}
+
+		return MovementMode;
+	}
+
+	// 기본 이동 또는 예외 중 Waypoints 사용 여부 확인
+	// 현재 실행 중인 이동 모드를 판단하는 함수는 아님
+	bool UsesWaypoints() const
+	{
+		return MovementMode == EBossPhaseMovementMode::Waypoints
+			|| PatternMovementOverrides.ContainsByPredicate(
+				[](const FBossPatternMovementOverride& Entry)
+				{
+					return Entry.MovementMode == EBossPhaseMovementMode::Waypoints;
+				}
+			);
+	}
 };
 
 /**
@@ -96,6 +133,15 @@ class MYNICELITTLECAT_API UEnemyPhaseConfigData : public UDataAsset
 
 public :
 
+	// 개별 설정과 현재 담당 범위로 로그 전용 페이즈인지 확인
+	bool IsLogOnlyPhase(int32 Index) const;
+
+	// 중복 ID, 체력 하한 순서 및 마지막 전투 상태 검사
+	// 페이즈 순서, 중복 ID 및 체력 하한의 감소 여부 검사
+	bool ValidateConfiguration(FString& OutError) const;
+
+public :
+
 	// 실행 순서: CombatA(0.7), Barrier70, CombatB(0.3), Barrier30, CombatC(0)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Phases")
 	TArray<FBossPhaseDefinition> Phases;
@@ -103,11 +149,4 @@ public :
 	// 첫 페이즈 이후는 기믹 없이 로그만 출력하고 각 페이즈에서 수동 완료까지 대기
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Phases")
 	bool bLogOnlyAfterFirstPhase = false;
-
-	// 개별 설정과 현재 담당 범위로 로그 전용 페이즈인지 확인
-	bool IsLogOnlyPhase(int32 Index) const;
-
-	// 중복 ID, 체력 하한 순서 및 마지막 전투 상태 검사
-	// 페이즈 순서, 중복 ID 및 체력 하한의 감소 여부 검사
-	bool ValidateConfiguration(FString& OutError) const;
 };

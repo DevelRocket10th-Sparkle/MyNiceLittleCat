@@ -40,6 +40,7 @@ class MYNICELITTLECAT_API UEnemyPhaseComponent : public UActorComponent
 	GENERATED_BODY()
 
 public:	
+
 	// 컴포넌트의 기본 실행 상태를 설정한다.
 	UEnemyPhaseComponent();
 
@@ -93,10 +94,14 @@ public:
 	// 구체적인 배리어 및 코인 시작은 Boss가 담당하는 단일 적용 함수
 	FApplyBossPhase ApplyPhase;
 
-	// Waypoints 이동 정책에 사용
+	/* Waypoints 이동 정책에 사용 */
+
 	// Setter: Movement Routes
 	void SetMovementRoutes(const TMap<FName, FBossMovementRoute>& InRoutes);
+
 	// Getter: CurrentWaypoint
+	// 실제로 Waypoints 이동 중인지는 호출자가 확인
+	// 이 함수는 현재 경로 지점의 좌표만 제공
 	bool GetCurrentWaypoint(FVector& OutLocation) const;
 
 	// 이동 Task가 도착을 확인한 뒤 호출
@@ -134,7 +139,6 @@ private :
 	// 정지 콜백을 먼저 분리한 후 재생 상태와 임시 액터 제거
 	void CleanupTransitionSequence();
 
-	// Waypoints 이동 정책 경로 유효성
 	bool ValidateMovementRoutes(FString& OutError) const;
 	
 	// Waypoints 이동 정책 설정 초기화

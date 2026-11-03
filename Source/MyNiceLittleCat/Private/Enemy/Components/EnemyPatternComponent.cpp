@@ -189,6 +189,7 @@ bool UEnemyPatternComponent::TryStartPattern(FName PatternId, AActor* Target, in
 
 	bRecovering = false;
 	ActivePattern = *Pattern;
+	ReservedPatternId = NAME_None;	// 실행 설정으로 인계했으므로 사전 선택 기록은 비움
 	ActiveTarget = Target;
 
 	// 미담당 패턴은 실제 능력을 부여하거나 실행하지 않고 요청만 완료
@@ -383,7 +384,9 @@ bool UEnemyPatternComponent::GetActiveExecution(FEnemyPatternDefinition& OutPatt
 	return true;
 }
 
-// 어빌리티가 끝난 뒤에도 후딜이 진행 중이면 해당 구간의 이동 정책을 제공한다.
+// GA 실행 중에는 패턴의 공격 이동 정책을 반환
+// 후딜 중에도 요청은 유효하지만, 정책은 UsePhaseDefault를 반환
+// 후딜의 실제 이동 정지는 별도의 이동 잠금이 담당
 bool UEnemyPatternComponent::GetActiveMovement(FEnemyPatternMovementSettings& OutMovement, AActor*& OutTarget, int64& OutRequestId) const
 {
 	OutMovement = FEnemyPatternMovementSettings();
@@ -422,6 +425,8 @@ void UEnemyPatternComponent::StopAndInvalidate()
 	
 	ActiveRequestId = 0;
 	ActiveResult = EEnemyPatternResult::Invalid;
+
+	ReservedPatternId = NAME_None;
 
 	if (GetWorld())
 	{
@@ -534,6 +539,20 @@ bool UEnemyPatternComponent::HasExecutableAttack(AActor* Target) const
 
 	// 실행 가능한 패턴이 하나도 없으면 false
 	return false;
+}
+
+FName UEnemyPatternComponent::GetActivePatternId() const
+{
+	return IsRequestRunning(ActiveRequestId) ? ActivePattern.PatternId : ReservedPatternId;
+}
+
+// 현재 예약 ID가 호출자가 정리하려는 ID와 일치할 때만 해제
+void UEnemyPatternComponent::ClearReservedPattern(FName PatternId)
+{
+	if (ReservedPatternId == PatternId)
+	{
+		ReservedPatternId = NAME_None;
+	}
 }
 
 // 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출

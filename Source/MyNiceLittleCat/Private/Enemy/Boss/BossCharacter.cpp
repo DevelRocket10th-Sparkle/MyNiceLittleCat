@@ -13,7 +13,6 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 
-
 ABossCharacter::ABossCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
@@ -56,25 +55,57 @@ bool ABossCharacter::InitializeEnemyExtensions()
 		{
 			continue;
 		}
+
 		const FBossPhaseDefinition& Phase = PhaseConfig->Phases[Index];
 		for (FName PatternId : Phase.AllowedPatternIds)
+		{
 			if (!GetPatternComponent()->HasPattern(PatternId))
 			{
 				return false;
 			}
+		}
 
+		// 기본 Chasing의 도착 반경이 자동 선택 패턴의 거리 범위와 맞는지 검사
+		// - 높이, 시야, GA 활성화 조건 및 패턴별 이동 예외는 이 검사에 포함하지 않음
+		if (Phase.MovementMode == EBossPhaseMovementMode::Chasing)
+		{
+			const float Radius = Phase.MovementAcceptanceRadius;
+			bool bUsableAtArrival = false;
+
+			for (FName CandidateId : Phase.AllowedPatternIds)
+			{
+				FEnemyPatternDefinition Pattern;
+				if (!GetPatternComponent()->GetPatternDefinition(CandidateId, Pattern) || Pattern.Weight <= 0.f)
+				{
+					continue;
+				}
+
+				if (Pattern.bLogOnly || !Pattern.bCheckTargetDistance
+					|| (Pattern.MinRange <= Radius && Radius < Pattern.MaxRange))
+				{
+					bUsableAtArrival = true;
+					break;
+				}
+			}
+
+			if (!bUsableAtArrival)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Phase '%s': no auto pattern usable at chase acceptance radius %.0f. (check MinRange/MaxRange)"),
+					*Phase.PhaseId.ToString(), Radius);
+			}
+		}
 	}
+
 	if (!InitializeGimmickConnection())
 	{
 		return false;
 	}
+
 	PhaseComponent->OnTransitionRequested.AddUObject(this, &ABossCharacter::HandleTransitionRequested);
 	PhaseComponent->ApplyPhase.BindUObject(this, &ABossCharacter::HandlePhaseEntered);
 	GetPatternComponent()->SetRequestsBlocked(true);
 	return PhaseComponent->InitializePhases(ASC, PhaseConfig);
 }
-
-
 
 // 준비된 보스방의 첫 페이즈와 타깃 선정 시작
 bool ABossCharacter::StartEncounter()

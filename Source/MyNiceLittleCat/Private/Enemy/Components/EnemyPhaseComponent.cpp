@@ -31,7 +31,6 @@ UEnemyPhaseComponent::UEnemyPhaseComponent()
 //
 //}
 
-
 // 진행 중인 전환 시퀀스의 상태를 확인한다.
 void UEnemyPhaseComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
@@ -108,9 +107,10 @@ void UEnemyPhaseComponent::SetMovementRoutes(const TMap<FName, FBossMovementRout
 bool UEnemyPhaseComponent::GetCurrentWaypoint(FVector & OutLocation) const
 {
 	const FBossPhaseDefinition* Phase = GetCurrentPhase();
-	// 유효하지 않은 페이즈이거나 이동 정책이 Waypoints가 아니면 실행하지 않음
+
+	// 페이즈가 기본 이동과 패턴별 예외 어디에서도 Waypoints를 사용하지 않으면 중단
 	if (!IsActive() || IsCurrentPhaseLogOnly() || !Phase
-		|| Phase->MovementMode != EBossPhaseMovementMode::Waypoints)
+		|| !Phase->UsesWaypoints())
 	{
 		return false;
 	}
@@ -149,7 +149,7 @@ void UEnemyPhaseComponent::AdvanceWaypoint(int64 PhaseExecutionId)
 	const FBossPhaseDefinition* Phase = GetCurrentPhase();
 	// 유효하지 않은 페이즈이거나 이동 정책이 Waypoints가 아니면 실행하지 않음
 	if (!Phase
-		|| Phase->MovementMode != EBossPhaseMovementMode::Waypoints)
+		|| !Phase->UsesWaypoints())
 	{
 		return;
 	}
@@ -376,8 +376,8 @@ bool UEnemyPhaseComponent::ValidateMovementRoutes(FString& OutError) const
 
 		const FBossPhaseDefinition& Phase = Config->Phases[PhaseIndex];
 
-		// Stop, Chasing은 경로 사용 안 함
-		if (Phase.MovementMode != EBossPhaseMovementMode::Waypoints)
+		// 기본 이동과 패턴별 예외 모두 Waypoints를 사용하지 않으면 경로 검사 생략
+		if (!Phase.UsesWaypoints())
 		{
 			continue;
 		}
