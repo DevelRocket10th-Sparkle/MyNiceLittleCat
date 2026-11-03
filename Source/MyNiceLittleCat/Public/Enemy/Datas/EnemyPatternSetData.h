@@ -27,10 +27,9 @@ enum class EEnemyPatternResult : uint8
 UENUM(BlueprintType)
 enum class EEnemyPatternMovementPolicy : uint8
 {
-	Stop,
-	ChaseTarget,
-	AbilityDriven,
-	UsePhaseDefault		// 현재 페이즈 기본 이동 정책 사용
+	Stop,				// 공격 실행 중 정지
+	AbilityDriven,		// 공격 GA가 이동 제어
+	UsePhaseDefault		// 보스: 페이즈가 이 패턴에 정한 이동 모드 / 일반 Enemy: Stop
 };
 
 USTRUCT(BlueprintType)
@@ -39,35 +38,15 @@ struct FEnemyPatternMovementSettings
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	EEnemyPatternMovementPolicy Policy = EEnemyPatternMovementPolicy::Stop;
+	EEnemyPatternMovementPolicy Policy = EEnemyPatternMovementPolicy::UsePhaseDefault;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0", Units="cm", EditCondition="Policy == EEnemyPatternMovementPolicy::ChaseTarget"))
-	float AcceptanceRadius = 150.f;
+	//  Policy가 정의된 enum 값 범위에 있는지 검사
+	inline bool IsValid() const { return static_cast<uint8>(Policy) <= static_cast<uint8>(EEnemyPatternMovementPolicy::UsePhaseDefault); }
 
-	// 허용 반경이 0이어도 이 옵션이 켜져 있으면 캡슐 크기를 도착 판정에 더한다.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(EditCondition="Policy == EEnemyPatternMovementPolicy::ChaseTarget"))
-	bool bIncludeAgentRadius = true;
+	// 비교 연산자(==) 오버로드
+	// 두 설정의 공격 이동 정책이 같은지 비교
+	bool operator==(const FEnemyPatternMovementSettings& Other) const { return Policy == Other.Policy; }
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(EditCondition="Policy == EEnemyPatternMovementPolicy::ChaseTarget"))
-	bool bIncludeGoalRadius = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(EditCondition="Policy == EEnemyPatternMovementPolicy::ChaseTarget"))
-	bool bAllowPartialPath = false;
-
-	bool IsValid() const
-	{
-		return
-			static_cast<uint8>(Policy) <= static_cast<uint8>(EEnemyPatternMovementPolicy::UsePhaseDefault)
-			&& FMath::IsFinite(AcceptanceRadius)
-			&& AcceptanceRadius >= 0.f;
-	}
-
-	bool operator==(const FEnemyPatternMovementSettings& Other) const
-	{
-		return Policy == Other.Policy && AcceptanceRadius == Other.AcceptanceRadius
-			&& bIncludeAgentRadius == Other.bIncludeAgentRadius && bIncludeGoalRadius == Other.bIncludeGoalRadius
-			&& bAllowPartialPath == Other.bAllowPartialPath;
-	}
 };
 
 USTRUCT(BlueprintType)

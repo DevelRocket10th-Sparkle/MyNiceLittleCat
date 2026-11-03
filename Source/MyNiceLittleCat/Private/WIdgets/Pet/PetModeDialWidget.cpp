@@ -1,4 +1,4 @@
-#include "WIdgets/Pet/PetModeDialWidget.h"
+#include "Widgets/Pet/PetModeDialWidget.h"
 #include "Pet/Data/PetModeDialData.h"
 
 #include "Framework/Application/SlateApplication.h"
