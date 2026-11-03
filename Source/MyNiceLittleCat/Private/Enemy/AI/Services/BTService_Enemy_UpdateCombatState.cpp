@@ -61,9 +61,12 @@ void UBTService_Enemy_UpdateCombatState::UpdateCombatState(UBehaviorTreeComponen
 	// Target 찾기
 	AActor* Target = Cast<AActor>(Blackboard->GetValueAsObject(EnemyCombatKeys::TargetActor));
 
+	// 패턴 컴포넌트와 공격 가능 여부 알아내기
+	UEnemyPatternComponent* PatternComp = IsValid(Enemy) ? Enemy->GetPatternComponent() : nullptr;
+	const bool bCanStartAttack = IsValid(PatternComp) && PatternComp->HasExecutableAttack(Target);
+
 	bool bInAttackRange = false;
 	bool bHasLineOfSight = false;
-	const bool bCanStartAttack = IsValid(Enemy) && Enemy->GetPatternComponent()->CanStartAttack();
 
 	if (IsValid(Enemy) && Enemy->IsAlive()
 		&& IsValid(Target) && Target != Enemy)

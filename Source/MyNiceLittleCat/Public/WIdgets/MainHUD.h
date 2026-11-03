@@ -10,10 +10,17 @@
 
 class UMainWidget;
 
+class ABossCharacter;
+
 UCLASS()
 class MYNICELITTLECAT_API AMainHUD : public AHUD
 {
 	GENERATED_BODY()
+
+public :
+
+	void ShowBossHealthBar(ABossCharacter* Boss);
+	void HideBossHealthBar();
 
 protected:
 	virtual void BeginPlay() override;

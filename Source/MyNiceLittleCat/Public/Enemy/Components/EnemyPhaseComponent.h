@@ -11,6 +11,9 @@
 #include "Components/ActorComponent.h"
 #include "Enemy/Datas/EnemyPatternSetData.h"
 #include "Enemy/Datas/EnemyPhaseConfigData.h"
+
+#include "Enemy/Datas/BossMovementTypes.h"
+
 #include "EnemyPhaseComponent.generated.h"
 
 class UAbilitySystemComponent;
@@ -19,7 +22,13 @@ class ALevelSequenceActor;
 
 // 현재 페이즈와 별개로 관리하는 전환 진행 상태
 UENUM(BlueprintType)
-enum class EBossPhaseRunState : uint8 { Stopped, Active, TransitionPending, Transitioning };
+enum class EBossPhaseRunState : uint8
+{
+	Stopped,
+	Active,
+	TransitionPending,
+	Transitioning
+};
 
 // BossCharacter가 페이즈별 기믹 설정을 적용하고 성공 여부를 반환
 DECLARE_DELEGATE_RetVal_OneParam(bool, FApplyBossPhase, const FBossPhaseDefinition&);
@@ -84,6 +93,16 @@ public:
 	// 구체적인 배리어 및 코인 시작은 Boss가 담당하는 단일 적용 함수
 	FApplyBossPhase ApplyPhase;
 
+	// Waypoints 이동 정책에 사용
+	// Setter: Movement Routes
+	void SetMovementRoutes(const TMap<FName, FBossMovementRoute>& InRoutes);
+	// Getter: CurrentWaypoint
+	bool GetCurrentWaypoint(FVector& OutLocation) const;
+
+	// 이동 Task가 도착을 확인한 뒤 호출
+	// 이전 페이즈의 뒤늦은 통지는 실행 번호로 거부
+	void AdvanceWaypoint(int64 PhaseExecutionId);
+
 protected:
 
 	//virtual void BeginPlay() override;
@@ -114,6 +133,14 @@ private :
 	void FinishTransitionSequence(const TCHAR* Reason);
 	// 정지 콜백을 먼저 분리한 후 재생 상태와 임시 액터 제거
 	void CleanupTransitionSequence();
+
+	// Waypoints 이동 정책 경로 유효성
+	bool ValidateMovementRoutes(FString& OutError) const;
+	
+	// Waypoints 이동 정책 설정 초기화
+	void ResetPhaseMovement();
+
+private :
 
 	// 공유 페이즈 설정 데이터
 	UPROPERTY(Transient)
@@ -150,4 +177,12 @@ private :
 	EBossPhaseRunState RunState = EBossPhaseRunState::Stopped;
 	// 현재 전환 요청의 결과
 	EEnemyPatternResult TransitionResult = EEnemyPatternResult::Invalid;
+
+	// Waypoints 이동 정책에서 사용할 경로 저장
+	UPROPERTY(Transient)
+	TMap<FName, FBossMovementRoute> MovementRoutes;
+
+	// 이동 정책 실행 상태
+	int32 CurrentWaypointIndex = 0;
+	int32 WaypointDirection = 1;
 };

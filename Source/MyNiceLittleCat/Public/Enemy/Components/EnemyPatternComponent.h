@@ -126,6 +126,18 @@ public:
 
 	// 요청을 먼저 무효화한 뒤 타이머, 구독 및 능력 실행 정리
 	void StopAndInvalidate();
+
+	// 실행 가능한 자동 선택 후보 중 하나를 추첨 (GA는 실행하지 않음)
+	bool PickAttackPattern(AActor* Target, FName& OutPatternId) const;
+
+	// 지정한 패턴의 설정 복사
+	bool GetPatternDefinition(FName PatternId, FEnemyPatternDefinition& OutDefinition) const;
+
+	// 지정한 패턴을 지금 시작할 수 있는지 검사
+	bool CanStartPattern(FName PatternId, AActor* Target) const;
+
+	// 실행 가능한 자동 선택 후보가 있는지 검사 (추첨하지 않음)
+	bool HasExecutableAttack(AActor* Target) const;
 	
 protected:
 

@@ -8,7 +8,8 @@ namespace EnemyPatternSetVersion
 	const FGuid Guid(0x9D3E658A, 0xAB414EE8, 0xB37D17B0, 0x13604BF2);
 	constexpr int32 CommonRecovery = 1;
 	constexpr int32 CommonMovement = 2;
-	const FCustomVersionRegistration Registration(Guid, CommonMovement, TEXT("EnemyPatternSetVersion"));
+	constexpr int32 CommonDamage = 3;
+	const FCustomVersionRegistration Registration(Guid, CommonDamage, TEXT("EnemyPatternSetVersion"));
 }
 
 void UEnemyPatternSetData::Serialize(FArchive& Ar)
@@ -50,6 +51,7 @@ void UEnemyPatternSetData::PostLoad()
 			}
 		}
 	}
+
 }
 
 #if WITH_EDITOR

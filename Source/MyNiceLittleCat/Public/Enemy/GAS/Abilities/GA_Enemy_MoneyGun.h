@@ -34,6 +34,6 @@ private:
 	TWeakObjectPtr<AActor> Target;
 	FTimerHandle UpdateTimer;
 	int64 RequestId = 0;
-	float Damage = 0.f;
+	float Damage = 1.f;
 	bool bOwnsRotationLock = false;
 };

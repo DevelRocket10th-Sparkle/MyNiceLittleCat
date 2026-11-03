@@ -8,6 +8,8 @@
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
 
+#include "Enemy/AI/EnemyAIController.h"
+
 UBTTask_Enemy_ExecuteAttack::UBTTask_Enemy_ExecuteAttack()
 {
 	NodeName = TEXT("Execute Enemy Attack");
@@ -31,15 +33,16 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeCompon
 		: nullptr;
 
 	// BlackboardComponent 찾기
-	UBlackboardComponent* Blackboard = OwnerComp.GetBlackboardComponent();
+	UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();
 
 	// AIC, Enenmy, BlackboardComponent 중 하나라도 없으면 실패 처리
-	if (!IsValid(Enemy) || !Enemy->CanRunEnemyAI() || !IsValid(Blackboard))
+	if (!IsValid(Enemy) || !Enemy->CanRunEnemyAI() || !IsValid(BlackboardComp))
 	{
 		return EBTNodeResult::Failed;
 	}
 
 	CachedEnemy = Enemy;
+	CachedAI = AI;
 	CachedPatternComp = Enemy->GetPatternComponent();	// 패턴 컴포넌트 찾기
 
 	// Pattern 정보 없으면 실패 처리
@@ -50,36 +53,63 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeCompon
 	}
 
 	// 타깃 설정
-	AActor* Target = Cast<AActor>(Blackboard->GetValueAsObject(BlackboardKey.SelectedKeyName));
+	AActor* Target = Cast<AActor>(BlackboardComp->GetValueAsObject(BlackboardKey.SelectedKeyName));
 	CachedTarget = Target;
 
-	// 선택된 패턴 실행 시도 (선택된 패턴이 없으면 선택해서 시도)
-	// 타깃이 필요 없는 패턴도 있으므로 실행 조건은 컴포넌트에서 판단
-	if (!IsValid(Target))
+	// PatternId는 BT 설정값으로 유지
+	// 이번 실행에서 확정한 값만 SelectedPatternId에 저장
+	SelectedPatternId = PatternId;
+
+	if (SelectedPatternId.IsNone())
 	{
+		// 자동 선택: 실행 가능한 후보 중 한 번만 추첨
+		if (!CachedPatternComp->PickAttackPattern(Target, SelectedPatternId))
+		{
+			Cleanup();
+			return EBTNodeResult::Failed;
+		}
+	}
+	else
+	{
+		// 직접 지정: 가중치와 무관하게 해당 패턴의 실행 가능 여부 검사
+		if (!CachedPatternComp->CanStartPattern(SelectedPatternId, Target))
+		{
+			Cleanup();
+			return EBTNodeResult::Failed;
+		}
+	}
+
+	FEnemyPatternDefinition Definition;
+
+	if (!CachedPatternComp->GetPatternDefinition(SelectedPatternId, Definition))
+	{
+		Cleanup();
+		return EBTNodeResult::Failed;
+	}
+	
+	// 실제 패턴 실행 전에 타깃 방향 회전을 기다려야 하는지 검사
+	const bool bNeedsFacing = !Definition.bLogOnly && Definition.bFaceTargetOnStart && IsValid(Target);
+	if (!bNeedsFacing)
+	{
+		// 사전 방향 회전이 필요 없으면 선택한 패턴을 즉시 실행
 		if (!StartAttack())
 		{
 			Cleanup();
-			return EBTNodeResult::Failed;	// 패턴 실행 실패
+			return EBTNodeResult::Failed;
 		}
 
-		return EBTNodeResult::InProgress;	// 패턴 실행 성공
+		return EBTNodeResult::InProgress;
 	}
 
-	// 이동은 막되, 회전은 허용
-	Enemy->AcquireAttackMovementLock();
-	bOwnsFacingMovementLock = true;
+	// 회전 때문에 이동을 강제로 멈추지 않음
+	// 실행 중 정지는 패턴 이동 정책 또는 GA의 이동 잠금이 담당
+	AI->SetFocus(Target, EnemyFocusPriority::AttackFacing);
+	bOwnsAttackFacingFocus = true;
 
-	AI->StopMovement();
-	Enemy->GetCharacterMovement()->StopMovementImmediately();
-	Enemy->ConsumeMovementInputVector();
-
-	AI->SetFocus(Target, EAIFocusPriority::Gameplay);
-
-	FacingElapsed = 0.f;	// Cleaup()에서 이미 초기화하지만, 명시적으로 한 번 더 초기화
+	FacingElapsed = 0.f;
 	bWaitingForFacing = true;
 
-	return EBTNodeResult::InProgress;		// 패턴 실행 성공
+	return EBTNodeResult::InProgress;
 }
 
 void UBTTask_Enemy_ExecuteAttack::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
@@ -133,9 +163,8 @@ void UBTTask_Enemy_ExecuteAttack::TickTask(UBehaviorTreeComponent& OwnerComp, ui
 			return;
 		}
 
-		// 목표 방향으로 회전을 완료하면 공격 Ability가 이동 잠금을 관리하도록 넘김
+		// 목표 방향으로 회전을 완료하면 선택해 둔 패턴 실행
 		bWaitingForFacing = false;
-		ReleaseFacingMovementLock();
 
 		// 회전 완료 후 공격 시도 실패하면 실패 처리
 		if (!StartAttack())
@@ -147,7 +176,8 @@ void UBTTask_Enemy_ExecuteAttack::TickTask(UBehaviorTreeComponent& OwnerComp, ui
 		return;
 	}
 
-	/* 공격 시작 이후에는 기존처럼 요청 종료를 기다림 */
+	// Running에는 GA 실행 뿐만 아니라 후딜 대기도 포함
+	// Completed가 되어야 공격 Task를 성공 종료
 	const EEnemyPatternResult Result = CachedPatternComp.IsValid()
 		? CachedPatternComp->GetRequestResult(PatternRequestId)
 		: EEnemyPatternResult::Invalid;
@@ -178,21 +208,37 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::AbortTask(UBehaviorTreeComponen
 
 void UBTTask_Enemy_ExecuteAttack::Cleanup()
 {
-	// 정렬 중 BT가 중단돼도 이동 잠금이 남지 않도록 처리
-	ReleaseFacingMovementLock();
-
-	// 진행 중인 요청은 취소하고, 끝난 요청은 결과 보관을 해제
+	// 진행 중인 요청은 취소하고, 끝난 요청은 결과 보관 해제
 	if (CachedPatternComp.IsValid())
 	{
 		CachedPatternComp->ReleaseRequest(PatternRequestId);
 	}
+
+	// 이 Task가 설정한 공격 Focus만 해제
+	// -> 해제 후 남아 있는 가장 높은 Focus가 회전 목표가 됨
+	// -> 실제 몸 회전은 회전 잠금과 CharacterMovement의 회전 설정을 따름
+	if (bOwnsAttackFacingFocus)
+	{
+		if (AAIController* AI = CachedAI.Get())
+		{
+			// 다른 Pawn으로 재빙의한 컨트롤러의 Focus는 건드리지 않음
+			if (AI->GetPawn() == CachedEnemy.Get())
+			{
+				AI->ClearFocus(EnemyFocusPriority::AttackFacing);
+			}
+		}
+	}
+
+	bOwnsAttackFacingFocus = false;
 	
 	// 캐싱 해놓은 것들 초기화
 	CachedPatternComp.Reset();
 	CachedEnemy.Reset();
 	CachedTarget.Reset();
+	CachedAI.Reset();
 
 	// 기억 해놓은 상태 초기화
+	SelectedPatternId = NAME_None;
 	PatternRequestId = 0;
 	bWaitingForFacing = false;
 	FacingElapsed = 0.f;
@@ -200,25 +246,12 @@ void UBTTask_Enemy_ExecuteAttack::Cleanup()
 
 bool UBTTask_Enemy_ExecuteAttack::StartAttack()
 {
-	// 패턴 컴포넌트 준비 안 됐으면 false
-	if (!CachedPatternComp.IsValid())
+	// 패턴 컴포넌트나 선택된 패턴이 준비 안 됐으면 실패 처리
+	if (!CachedPatternComp.IsValid()
+		|| SelectedPatternId.IsNone())
 		return false;
 
-	// 패턴 실행 요청
-	return PatternId.IsNone()
-		? CachedPatternComp->TryStartAttack(CachedTarget.Get(), PatternRequestId)
-		: CachedPatternComp->TryStartPattern(PatternId, CachedTarget.Get(), PatternRequestId);
-}
-
-void UBTTask_Enemy_ExecuteAttack::ReleaseFacingMovementLock()
-{
-	if (!bOwnsFacingMovementLock)
-		return;
-
-	if (AEnemyCharacter* Enemy = CachedEnemy.Get())
-	{
-		Enemy->ReleaseAttackMovementLock();
-	}
-
-	bOwnsFacingMovementLock = false;
+	// 사전에 선택한 패턴을 재추첨 없이 실행
+	// -> 회전을 기다리는 동안 조건이 바뀔 수 있으므로 TryStartPattern에서 재검사
+	return CachedPatternComp->TryStartPattern(SelectedPatternId, CachedTarget.Get(), PatternRequestId);
 }

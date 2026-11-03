@@ -47,8 +47,6 @@ public:
 	float ProjectileSpeed = 1200.f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Firing", meta=(ClampMin="0.1", Units="s"))
 	float ProjectileLifeSeconds = 4.f;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Firing", meta=(ClampMin="0"))
-	float DamageMultiplier = 1.f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aiming", meta=(ClampMin="1", Units="deg/s"))
 	float AimDegreesPerSecond = 100.f;
 	// 높은 부착 지점에서도 아래쪽 플레이어를 맞힐 수 있도록 높이 차이를 포함해 조준한다.

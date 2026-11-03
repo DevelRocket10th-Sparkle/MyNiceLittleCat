@@ -268,7 +268,7 @@ float UGA_BossLaserGrid::GetDamagePerHitOverride() const
 	}
 
 	// 근접 패턴과 같은 공식
-	return Enemy->GetAttributeSet()->GetAttackPower() * GridSettings->DamageMultiplier;
+	return Enemy->GetAttributeSet()->GetAttackPower() * ExecutionPattern.DamageMultiplier;
 }
 
 void UGA_BossLaserGrid::FaceTarget()

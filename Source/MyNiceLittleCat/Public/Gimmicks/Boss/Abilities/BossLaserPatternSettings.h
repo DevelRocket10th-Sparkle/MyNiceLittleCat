@@ -55,9 +55,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Damage")
 	bool bUseBossAttackPower = true;
 
-	// 보스 AttackPower에 곱할 배율. 레이저는 닿아 있으면 DamageInterval마다 다시 맞으므로 근접보다 낮게 잡는 것을 권장
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Damage", meta = (ClampMin = "0.0", EditCondition = "bUseBossAttackPower"))
-	float DamageMultiplier = 1.f;
 
 	// 패턴 한 번에 추적→확정→발사를 반복하는 횟수
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Repeat", meta = (ClampMin = "1"))
