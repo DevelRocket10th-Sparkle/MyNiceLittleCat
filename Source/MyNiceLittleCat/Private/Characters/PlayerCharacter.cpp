@@ -15,6 +15,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "GameplayTagContainer.h"
 #include "Components/CapsuleComponent.h"
+#include "Frameworks/Save/GameProgressSubsystem.h"
 
 #include "Characters/Datas/PlayerConfig.h"
 #include "Characters/GAS/PlayerAttributeSet.h"
@@ -94,6 +95,25 @@ UAbilitySystemComponent* APlayerCharacter::GetAbilitySystemComponent() const
     return AbilitySystemComponent;
 }
 
+void APlayerCharacter::SetDodgeInvincible(bool bNewDodgeInvincible)
+{
+    if (bIsDodgeInvincible == bNewDodgeInvincible) return;
+    bIsDodgeInvincible = bNewDodgeInvincible;
+
+    UCapsuleComponent* Capsule = GetCapsuleComponent();
+    USkeletalMeshComponent* CharMesh = GetMesh();
+
+    if (bNewDodgeInvincible)
+    {
+        SavedCapsuleProjectileResponse = Capsule->GetCollisionResponseToChannel(ECC_GameTraceChannel1);
+        Capsule->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Ignore);
+    }
+    else
+    {
+        Capsule->SetCollisionResponseToChannel(ECC_GameTraceChannel1, SavedCapsuleProjectileResponse);
+    }
+}
+
 void APlayerCharacter::PlayDeflect()
 {
     UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
@@ -125,13 +145,6 @@ void APlayerCharacter::BeginPlay()
                 this,
                 &APlayerCharacter::OnHealthChanged);
     }
-    UE_LOG(LogTemp, Warning,
-        TEXT("AttributeSet valid: %s"),
-        IsValid(PlayerAttributeSet) ? TEXT("true") : TEXT("false"));
-
-    UE_LOG(LogTemp, Warning,
-        TEXT("ASC valid: %s"),
-        IsValid(AbilitySystemComponent) ? TEXT("true") : TEXT("false"));
 
     if (AbilitySystemComponent && MeleeAttackAbilityClass)
     {
@@ -139,6 +152,25 @@ void APlayerCharacter::BeginPlay()
             FGameplayAbilitySpec(MeleeAttackAbilityClass, 1)
         );
     }
+
+    CurrentPotions = MaxPotions;
+    OnPotionCountChanged.Broadcast(CurrentPotions, MaxPotions);
+
+    if (!PotionMesh)
+    {
+        TArray<UStaticMeshComponent*> Meshes;
+        GetComponents<UStaticMeshComponent>(Meshes);
+        for (UStaticMeshComponent* C : Meshes)
+        {
+            if (C && C->GetName().Contains(TEXT("Potion"))) { PotionMesh = C; break; }
+        }
+    }
+    if (PotionMesh)
+    {
+        PotionMesh->SetVisibility(true);
+        PotionMesh->SetHiddenInGame(true);
+    }
+
     APlayerController* PC = Cast<APlayerController>(GetController());
 
     if (!PC || !IMC) return;
@@ -150,6 +182,12 @@ void APlayerCharacter::BeginPlay()
     if (Subsystem)
     {
         Subsystem->AddMappingContext(IMC, 0);
+    }
+
+
+    if (UGameProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UGameProgressSubsystem>())
+    {
+        Progress->OnPlayerRested.AddUniqueDynamic(this, &APlayerCharacter::RefillPotions);
     }
 
     
@@ -264,6 +302,15 @@ void APlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
             &APlayerCharacter::OnMeleeAttackInput
         );
     }
+    if (IA_Heal)
+    {
+        EnhancedInput->BindAction(
+            IA_Heal, 
+            ETriggerEvent::Started, 
+            this, 
+            &APlayerCharacter::StartHeal
+        );
+    }
 }
 
 void APlayerCharacter::TestReceiveHit()
@@ -348,6 +395,12 @@ void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
         TEXT("[HitReaction] Damage=%.1f | Health=%.1f"),
         Damage,
         ASC->GetNumericAttribute(UPlayerAttributeSet::GetHealthAttribute()));
+}
+
+void APlayerCharacter::RefillPotions()
+{
+    CurrentPotions = MaxPotions;
+    OnPotionCountChanged.Broadcast(CurrentPotions, MaxPotions);
 }
 
 void APlayerCharacter::Move(const FInputActionValue& Value)
@@ -486,13 +539,13 @@ void APlayerCharacter::EndDodge()
 
 void APlayerCharacter::OnDodgeInput(const FInputActionValue& Value)
 {
-    if (bIsDeflected) return;
+    if (bIsDeflected || bIsHealing) return;
     GetWorldTimerManager().SetTimer(RunHoldTimer, this, &APlayerCharacter::StartRun, RunHoldThreshold, false);
 }
 
 void APlayerCharacter::OnDodgeReleased(const FInputActionValue& Value)
 {
-    // Released before the run kicked in → tap → dodge
+    // 달리기 전 버튼이 떼지면 구르기
     if (GetWorldTimerManager().IsTimerActive(RunHoldTimer))
     {
         GetWorldTimerManager().ClearTimer(RunHoldTimer);
@@ -506,10 +559,10 @@ void APlayerCharacter::StartRun()
 {
     if (bIsDead || bIsRunning) return;
 
-    // Still rolling: try again shortly so holding through a roll turns into a run
+    // 이미 구르는 중이면 0.1초 뒤에 달리기 예약
     if (bIsDodging)
     {
-        GetWorldTimerManager().SetTimer(RunHoldTimer, this, &APlayerCharacter::StartRun, 0.05f, false);
+        GetWorldTimerManager().SetTimer(RunHoldTimer, this, &APlayerCharacter::StartRun, 0.1f, false);
         return;
     }
 
@@ -532,7 +585,7 @@ void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
 {
     bool bIsMeleeAttackActive = false;
 
-	if (bIsDead || bIsAbleToAttack == false || bIsDeflected) return;
+	if (bIsDead || bIsAbleToAttack == false || bIsDeflected || bIsHealing) return;
 
     LastMoveInputFrame = 0;
     LastMoveInputDir = GetActorRotation().Vector();
@@ -592,6 +645,8 @@ void APlayerCharacter::Die()
     GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
 
     UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+
+    if (PotionMesh) PotionMesh->SetHiddenInGame(true);
 
     OnPlayerDied.Broadcast();
 
@@ -750,6 +805,49 @@ void APlayerCharacter::OnDeathMontageNotify(FName NotifyName, const FBranchingPo
     {
         DropWeapon();
     }
+}
+
+void APlayerCharacter::StartHeal()
+{
+    UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+    if (!Anim || !DrinkMontage || bIsDead || bIsDodging || bIsDeflected || bIsHealing || !bIsAbleToAttack || CurrentPotions <= 0) return;
+    if (Anim->IsAnyMontagePlaying()) return;   // not mid-attack etc.
+
+    if (bIsRunning) StopRun();
+
+    bIsHealing = true;
+    bHealApplied = false;
+    if (PotionMesh) PotionMesh->SetHiddenInGame(false);
+
+    SpeedBeforeHeal = GetCharacterMovement()->MaxWalkSpeed;
+    GetCharacterMovement()->MaxWalkSpeed = SpeedBeforeHeal * HealMoveSpeedMultiplier;
+
+    Anim->OnPlayMontageNotifyBegin.AddUniqueDynamic(this, &APlayerCharacter::OnHealMontageNotify);
+    Anim->Montage_Play(DrinkMontage);
+
+    FOnMontageEnded OnEnd;
+    OnEnd.BindUObject(this, &APlayerCharacter::OnHealMontageEnded);
+    Anim->Montage_SetEndDelegate(OnEnd, DrinkMontage);
+}
+
+void APlayerCharacter::OnHealMontageNotify(FName NotifyName, const FBranchingPointNotifyPayload& Payload)
+{
+    if (NotifyName != TEXT("Heal") || !bIsHealing || bHealApplied || !AbilitySystemComponent) return;
+    bHealApplied = true;
+    --CurrentPotions;
+    OnPotionCountChanged.Broadcast(CurrentPotions, MaxPotions);
+
+    const float Health = AbilitySystemComponent->GetNumericAttribute(UPlayerAttributeSet::GetHealthAttribute());
+    const float MaxHealth = AbilitySystemComponent->GetNumericAttribute(UPlayerAttributeSet::GetMaxHealthAttribute());
+    AbilitySystemComponent->SetNumericAttributeBase(UPlayerAttributeSet::GetHealthAttribute(),
+        FMath::Min(Health + HealAmount, MaxHealth));
+}
+
+void APlayerCharacter::OnHealMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+    bIsHealing = false;
+    if (PotionMesh) PotionMesh->SetHiddenInGame(true);
+    GetCharacterMovement()->MaxWalkSpeed = SpeedBeforeHeal;
 }
 
 void APlayerCharacter::PushNearbyEnemies(const FVector& WorldMoveInput)
