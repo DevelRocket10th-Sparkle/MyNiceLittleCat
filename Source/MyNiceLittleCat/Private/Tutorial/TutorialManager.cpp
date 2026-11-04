@@ -20,6 +20,7 @@
 #include "NiagaraFunctionLibrary.h"       // 효과 스폰
 #include "Components/AudioComponent.h"    // 반복 소리 끄기
 #include "Tutorial/TutorialPortal.h"  // 보스 처치 후 열리는 관문
+#include "Characters/PlayerCharacter.h" // 포오오션
 
 namespace TutorialTag
 {
@@ -52,6 +53,8 @@ namespace TutorialTag
 	//! 락온 -> 전투 사이 통로
 	const FName Gate04(TEXT("Tutorial.Gate.04"));                              // 통로 -> 전투 구간 문
 	const FName PetPointAfterDoor04(TEXT("Tutorial.PetPoint.AfterDoor04"));    // 전투 구간 문 너머
+	const FName TriggerCorridor(TEXT("Tutorial.Trigger.Corridor"));            // 통로 입구 쪽 (들어오면 회복 안내 시작)
+	const FName PetPointCorridor(TEXT("Tutorial.PetPoint.Corridor"));          // 통로에서 펫이 서서 말할 자리 (Gate04 앞)
 
 	//! 전투 구간
 	const FName TriggerBossRoomEnter(TEXT("Tutorial.Trigger.BossRoomEnter"));	// 전투 방 안쪽 (Gate04 를 지난 곳)
@@ -61,6 +64,8 @@ namespace TutorialTag
 	const FName PetPointCheckpoint(TEXT("Tutorial.PetPoint.Checkpoint"));		// 체크포인트 옆 펫 자리
 
 	const FName PortalExit(TEXT("Tutorial.Portal.Exit"));						// 보스 잡으면 벽이 녹아 열리는 관문
+
+	const FName PointBossRetry(TEXT("Tutorial.Point.BossRetry"));				// 보스전에서 죽으면 다시 태어날 자리 (보스방 입구, 아레나 쪽을 봄)
 }
 
 ATutorialManager::ATutorialManager()
@@ -346,8 +351,7 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 
 	TWeakObjectPtr<AActor> CamArena = FindActorByTag(TutorialTag::CameraLockOnArena);
 	TWeakObjectPtr<AActor> Gate03 = FindActorByTag(TutorialTag::Gate03);
-	TWeakObjectPtr<AActor> Gate04 = FindActorByTag(TutorialTag::Gate04); // 전투 구간 문도 여기서 같이 염
-	TWeakObjectPtr<AActor> PetAfterDoor04 = FindActorByTag(TutorialTag::PetPointAfterDoor04); // 펫이 통로를 지나 바로 전투 입구까지 감
+	TWeakObjectPtr<AActor> PetCorridor = FindActorByTag(TutorialTag::PetPointCorridor); // 펫이 통로에서 기다릴 자리
 
 	// 적은 여러 마리라 FindActorByTag(하나만 찾음) 대신 같은 태그를 전부 모아둠
 	LockOnEnemies.Reset();
@@ -385,7 +389,7 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(WaitUntil([this] { return false == IsPetWalking(); })); // 거리마다 걸리는 시간이 달라서 "도착"을 기다림
 	OutActions.Add(Do([this] { PetFacePlayer(); }));
 	OutActions.Add(WaitSeconds(0.3f)); // 돌고 나서 말하기
-	OutActions.Add(Do([this] { PetSay(INVTEXT("적을 물리치자!")); }));
+	OutActions.Add(Do([this] { PetSay(INVTEXT("적들이 있어!")); }));
 	OutActions.Add(WaitSeconds(1.5f));
 
 	// 3) 펫이 "휠 누르면 잡힐 적" 옆으로 걸어가서, 도착하면 휠 클릭 안내
@@ -415,7 +419,7 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(WaitSeconds(0.5f)); // 펫이 새 대상 쪽으로 움직이는 걸 볼 틈
 
 	// 4-2) 바꾸기 성공 -> 이제 공격 안내 (펫 따라가기는 이미 켜져 있음)
-	OutActions.Add(Do([this] { PetSay(INVTEXT("좋아, 이제 공격해!")); }));
+	OutActions.Add(Do([this] { PetSay(INVTEXT("좋아, 공격해!")); }));
 
 	// 5) 전부 처치하면 입력을 잠그고, 펫이 그 자리에서 플레이어를 돌아보고 칭찬
 	OutActions.Add(WaitUntil([this] { return AreLockOnEnemiesDead(); }));
@@ -430,19 +434,16 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(Do([this] { PetSay(INVTEXT("잘했어!")); }));
 	OutActions.Add(WaitSeconds(0.8f));
 
-	// 6) 문 열고 펫이 먼저 통과
+	// 6) Gate03 만 열고 펫이 통로로 먼저 감
+	// (Gate04는 통로에서 회복 안내가 끝난 뒤 전투 구간에서 엶 -> 보스 연출과 회복 안내 안 섞임!)
 	OutActions.Add(Do([this, Gate03] { SetActivated(Gate03.Get(), true); }));
-	OutActions.Add(WaitSeconds(0.8f)); // 두 문이 열리는 시간 차
-	OutActions.Add(Do([this, Gate04] { SetActivated(Gate04.Get(), true); }));
-	OutActions.Add(WaitSeconds(0.6f)); // Gate04 문짝에 펫이 부딪히지 않게
-	OutActions.Add(Do([this, PetAfterDoor04]
+	OutActions.Add(WaitSeconds(0.8f)); // Gate03 문짝에 펫이 부딪히지 않게
+	OutActions.Add(Do([this, PetCorridor]
 		{
-			if (true == PetAfterDoor04.IsValid())
-				PetWalkToLocation(PetAfterDoor04->GetActorLocation()); // 락온 구간처럼 걸어서 이동 (PetMoveTo 는 날 수 있음)
+			if (true == PetCorridor.IsValid())
+				PetWalkToLocation(PetCorridor->GetActorLocation());
 
-			// 펫이 출발하는 순간 입력 해제 -> "펫을 따라가라"는 흐름이 자연스럽게 이어짐
-			// (카메라는 이미 플레이어라 블렌드 0)
-			EndCinematic(0.f);
+			EndCinematic(0.f); // 펫이 출발하는 순간 입력 해제 -> 펫을 따라 통로로
 		}));
 }
 
@@ -456,14 +457,106 @@ void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 	TWeakObjectPtr<AActor> PetCheckpoint = FindActorByTag(TutorialTag::PetPointCheckpoint);
 	TWeakObjectPtr<AActor> PortalExit = FindActorByTag(TutorialTag::PortalExit);
 
+	AActor* TriggerCorridor = FindActorByTag(TutorialTag::TriggerCorridor);
+	TWeakObjectPtr<AActor> Gate04 = FindActorByTag(TutorialTag::Gate04);
+	TWeakObjectPtr<AActor> PetAfterDoor04 = FindActorByTag(TutorialTag::PetPointAfterDoor04);
+
+	TWeakObjectPtr<AActor> PetAfterDoor04Retry = FindActorByTag(TutorialTag::PetPointAfterDoor04); // 재도전 때 펫을 둘 자리
+
 	// 0) 체크포인트는 보스를 잡기 전까지 숨김
 	OutActions.Add(Do([this, Checkpoint] { SetActorShown(Checkpoint.Get(), false); }));
 
-	// 1) 전투 방 안까지 들어오면 목숨 채움 -> 여기서부터 보스 연출 시작
-	// (문은 열어 둠. 0.5초는 방에 들어선 걸 느낄 틈을 주고 카메라 전환)
+	if(false == bBossRetry) // 재도전이면 통로 회복 안내 / 
+	{
+		// 1) 통로에 들어오면 (잠금) 펫이 회복 이야기 -> (해제) 직접 마시기 / 읽을 시간
+	// Gate04 가 닫혀 있어서 플레이어가 보스방으로 먼저 뛰어갈 수 없음 -> 대사와 보스 연출이 꼬이지 않음
+		OutActions.Add(WaitPlayerEnter(TriggerCorridor));
+		OutActions.Add(WaitUntil([this] { return false == IsPetWalking(); })); // 플레이어가 앞질러 와도 펫이 자리에 선 뒤에 말함
+		OutActions.Add(Do([this]
+			{
+				// 카메라는 그대로(플레이어) 두고 입력만 잠금 -> 펫 말을 끝까지 보게
+				BeginCinematic(UGameplayStatics::GetPlayerPawn(this, 0), 0.f);
+
+				RefillPlayerPotions(); // 앞에서 다 써버렸어도 연습할 수 있게 + 보스전 공정하게
+				bBossHealHintShown = false;
+
+				HealLessonPotions = GetPlayerPotionCount();
+				bHealLesson = GetPlayerHealthRatio() < 1.f && HealLessonPotions > 0; // 다쳤을 때만 직접 마셔 봄 (풀피에 마시면 포션 낭비)
+
+				PetFacePlayer();
+			}));
+		OutActions.Add(WaitSeconds(0.3f)); // 돌고 나서 말하기
+		OutActions.Add(Do([this]
+			{
+				PetSay(true == bHealLesson ? INVTEXT("다쳤네! R 키로 포션 마셔!") : INVTEXT("한 대도 안 맞았어? 대단해!"));
+			}));
+		OutActions.Add(WaitSeconds(1.5f)); // 말풍선 읽을 틈 (잠금 중)
+		OutActions.Add(Do([this]
+			{
+				if (false == bHealLesson)
+					PetSay(INVTEXT("다치면 R 키로 포션을 마셔!"));
+
+				// 잠금 해제 -> 다쳤으면 직접 R 을 눌러 봐야 하니까
+				EndCinematic(0.f);
+				HealLessonSayTime = GetWorld()->GetTimeSeconds();
+			}));
+
+		// 다쳤으면 마실 때까지 기다림 (포션 수가 줄면 = 마심). 안 마시면 일정 시간마다 다시 알려줌
+		// 풀피면 바로 통과 (아래 대기 시간 동안 "다치면 R..." 을 읽음)
+		OutActions.Add(WaitUntil([this]
+			{
+				if (false == bHealLesson) return true;
+				if (GetPlayerPotionCount() < HealLessonPotions) return true;
+
+				const float Now = GetWorld()->GetTimeSeconds();
+				if (Now - HealLessonSayTime >= HealLessonRepeatTime)
+				{
+					HealLessonSayTime = Now;
+					PetSay(INVTEXT("R 키를 눌러서 포션을 마셔 봐!"));
+				}
+				return false;
+			}));
+		OutActions.Add(WaitSeconds(1.f)); // 마시는 모션이 끝날 틈 / 풀피면 메시지 읽는 시간
+		OutActions.Add(Do([this]
+			{
+				if (true == bHealLesson)
+					PetSay(INVTEXT("좋아! 위험할 땐 그렇게 마셔!"));
+			}));
+		OutActions.Add(WaitSeconds(1.8f)); // 말풍선 읽을 틈
+
+		// 1-1) 회복 안내가 끝나면 전투 구간 문을 열고 펫이 먼저 보스방으로
+		OutActions.Add(Do([this, Gate04] { SetActivated(Gate04.Get(), true); }));
+		OutActions.Add(WaitSeconds(0.6f)); // Gate04 문짝에 펫이 부딪히지 않게
+		OutActions.Add(Do([this, PetAfterDoor04]
+			{
+				if (true == PetAfterDoor04.IsValid())
+					PetWalkToLocation(PetAfterDoor04->GetActorLocation());
+			}));
+	}
+	else
+	{
+		// 재도전: 펫을 보스 자리에 바로 세움
+		// - 리스폰 때 게임모드가 펫을 "플레이어 따라가기"로 다시 초기화함 -> 매니저가 다시 잡아서 멈춰 세움
+		// - 플레이어 재시작 자리와 겹치지 않게 보스 자리로 (겹치면 순간이동이 막혀서 엉뚱한 곳에서 변신함)
+		OutActions.Add(Do([this, BossSpawn]
+			{
+				APetCharacter* PetPtr = Pet.Get();
+				if (nullptr == PetPtr || false == BossSpawn.IsValid()) return;
+
+				PetPtr->RequestBehavior(EPetBehavior::Idle);
+				if (AAIController* AIC = Cast<AAIController>(PetPtr->GetController()))
+					AIC->StopMovement();
+
+				// 지점은 바닥 -> 캡슐 반높이만큼 올려서 세움 (바닥에 박혀서 순간이동이 실패하지 않게)
+				const FVector HalfUp(0.f, 0.f, PetPtr->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+				PetPtr->TeleportTo(GetGroundLocation(BossSpawn.Get()) + HalfUp, BossSpawn->GetActorRotation());
+			}));
+	}
+
+	// 1-2) 플레이어가 보스방 안까지 들어오면 보스 연출 시작
 	OutActions.Add(WaitPlayerEnter(TriggerBossRoomEnter));
-	OutActions.Add(Do([this] { RefillPlayerHealth(); }));
-	OutActions.Add(WaitSeconds(0.5f));
+	OutActions.Add(Do([this] { bInBossFight = true; })); // 여기부터 죽으면 보스방에서 다시 시작
+	OutActions.Add(WaitSeconds(0.8f)); // 방에 들어선 걸 느낄 틈 -> 카메라 전환
 
 	// 2) (잠금) 아레나 샷 -> 펫이 보스 자리로 걸어가서 돌아보고 "마지막 시험이야!"
 	OutActions.Add(Do([this, CamBossArena] { BeginCinematic(CamBossArena.Get(), BossCameraBlendTime); }));
@@ -501,7 +594,8 @@ void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(Do([this] { EndCinematic(CameraReturnBlendTime); StartBossAI(); }));
 
 	// 4) 보스가 쓰러질 때까지 전투
-	OutActions.Add(WaitUntil([this] { return IsBossDead(); }));
+	OutActions.Add(WaitUntil([this] { CheckBossHealHint();  return IsBossDead(); }));
+	OutActions.Add(Do([this] { bInBossFight = false; })); // 보스를 잡은 뒤엔 재시작하지 않음
 
 	// 5) (잠금) 아레나 샷 -> 보스 스폰 자리에 거대한 펫 -> 원래 크기로 줄어듦 -> "아야! 네가 이겼어!"
 	OutActions.Add(Do([this, CamBossArena, BossSpawn]
@@ -1217,6 +1311,45 @@ void ATutorialManager::HandlePlayerRespawned(AController* _Controller, APawn* _N
 	EndCinematic(0.f);
 
 	ApplyTutorialCamera(_NewPawn); // 새 캐릭터는 락온 줌아웃 값이 기본값(700)이라 다시 줄여줌
+
+	// 보스전 중에 죽었으면 -> 튜토리얼 처음(PlayerStart)이 아니라 보스방 입구에서 다시
+	// (이 함수는 리스폰 화면 전환으로 화면이 어두운 동안 불림 -> 순간이동이 안 보임)
+	if (ETutorialStage::Combat == CurrentStage && true == bInBossFight)
+	{
+		if (AActor* RetryPoint = FindActorByTag(TutorialTag::PointBossRetry))
+		{
+			// 지점은 바닥에 놓음 -> 캡슐 반높이만큼 올려서 세움
+			const ACharacter* PlayerChar = Cast<ACharacter>(_NewPawn);
+			const float HalfHeight = (nullptr != PlayerChar) ? PlayerChar->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 90.f;
+			const FRotator Facing(0.f, RetryPoint->GetActorRotation().Yaw, 0.f);
+
+			_NewPawn->TeleportTo(RetryPoint->GetActorLocation() + FVector(0.f, 0.f, HalfHeight), Facing);
+			if (nullptr != _Controller) _Controller->SetControlRotation(Facing); // 카메라도 아레나 쪽을 보게
+		}
+
+		RestartBossFight();
+	}
+}
+
+void ATutorialManager::RestartBossFight()
+{
+	UE_LOG(LogTemp, Log, TEXT("[Tutorial] 보스전 재시작"));
+
+	bBossRetry = true;
+	bInBossFight = false;
+	bBossHealHintShown = false; // 재도전 때도 체력이 낮아지면 다시 알려줌
+
+	// 남아 있는 보스 제거 (펫은 StageEnd 의 RestorePetForm 에서 원래 크기 + 보이게 돌아옴)
+	if (AEnemyCharacter* BossPtr = Boss.Get()) BossPtr->Destroy();
+	Boss.Reset();
+	StopLoopFX();
+
+	RefillPlayerPotions(); // 재도전은 포션 가득으로 공정하게
+
+	// 같은 구간이라 ChangeStage 는 무시됨 -> 정리 후 직접 다시 시작
+	// (bBossRetry 라서 통로 단계는 건너뛰고 보스방 입장부터)
+	StageEnd(ETutorialStage::Combat);
+	StageStart(ETutorialStage::Combat);
 }
 
 void ATutorialManager::ApplyTutorialCamera(APawn* _PlayerPawn)
@@ -1429,6 +1562,58 @@ bool ATutorialManager::IsBossDead() const
 {
 	// 락온 구간과 같은 기준 (체력 0 이 되는 순간 Dying 으로 바뀌어 false)
 	return false == IsEnemyAlive(Boss.Get());
+}
+
+float ATutorialManager::GetPlayerHealthRatio() const
+{
+	UAbilitySystemComponent* ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (nullptr == ASC || false == ASC->HasAttributeSetForAttribute(UPlayerAttributeSet::GetHealthAttribute())) return 1.f;
+
+	const float MaxHealth = ASC->GetNumericAttribute(UPlayerAttributeSet::GetMaxHealthAttribute());
+	if (MaxHealth <= 0.f) return 1.f;
+
+	return ASC->GetNumericAttribute(UPlayerAttributeSet::GetHealthAttribute()) / MaxHealth;
+}
+
+int32 ATutorialManager::GetPlayerPotionCount() const
+{
+	const APlayerCharacter* Player = Cast<APlayerCharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	return (nullptr != Player) ? Player->GetPotionCount() : 0;
+}
+
+void ATutorialManager::RefillPlayerPotions()
+{
+	if (APlayerCharacter* Player = Cast<APlayerCharacter>(UGameplayStatics::GetPlayerPawn(this, 0)))
+		Player->RefillPotions(); // HUD 포션 개수도 알아서 갱신됨 (OnPotionCountChanged)
+}
+
+void ATutorialManager::BossSay(const FText& _Message)
+{
+	UE_LOG(LogTemp, Log, TEXT("[Tutorial] 보스: %s"), *_Message.ToString());
+
+	// 보스전 중엔 펫이 숨어 있어서 펫 말풍선을 못 씀 -> 보스 BP 에 붙인 말풍선 사용
+	AEnemyCharacter* BossPtr = Boss.Get();
+	USpeechBubbleComponent* Bubble = (nullptr != BossPtr) ? BossPtr->FindComponentByClass<USpeechBubbleComponent>() : nullptr;
+	if (nullptr == Bubble)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] BossSay: 보스에 SpeechBubble 컴포넌트가 없음"));
+		return;
+	}
+
+	Bubble->Say(_Message, 4.f);
+	if (nullptr != PetSaySound)
+		UGameplayStatics::PlaySound2D(this, PetSaySound);
+}
+
+void ATutorialManager::CheckBossHealHint()
+{
+	if (true == bBossHealHintShown || true == IsBossDead()) return;
+	if (GetPlayerHealthRatio() > BossHealHintRatio || GetPlayerPotionCount() <= 0) return;
+
+	// 처음으로 체력이 낮아진 순간 딱 한 번 (계속 뜨면 거슬림)
+	// "공격 끝나면" -> 마시는 동안 느려지니까 보스 공격 사이에 마셔야 한다는 것까지 알려줌
+	bBossHealHintShown = true;
+	BossSay(INVTEXT("아프지? 공격 끝나면 R로 포션 마셔!"));
 }
 
 void ATutorialManager::PlayFXSetAtGround(const FTutorialFXSet& _Set, AActor* _Actor)

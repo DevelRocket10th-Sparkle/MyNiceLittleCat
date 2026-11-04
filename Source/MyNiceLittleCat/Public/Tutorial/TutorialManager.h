@@ -171,6 +171,8 @@ protected:
     UFUNCTION()
     void HandlePlayerRespawned(AController* _Controller, APawn* _NewPawn); // 리스폰되면 연출 강제 종료
 
+    void RestartBossFight(); // 보스전 중 사망 -> 보스 정리 후 보스 등장 연출부터 다시
+
     void ApplyTutorialCamera(APawn* _PlayerPawn); // 튜토리얼 전용 카메라 설정 (벽/천장 밖으로 카메라가 나가지 않게)
 
     // ===== 전투 구간 =====
@@ -185,6 +187,12 @@ protected:
     void StartBossAI();                                  // 보스 AI 시작 (연출이 끝나고 조작이 돌아올 때)
     void SwapBossToPet(AActor* _AppearPoint, AActor* _FaceTarget); // 보스 제거 -> 지정 지점에 거대한 펫 등장 (_FaceTarget 쪽을 바라봄)
     bool IsBossDead() const;                             // 보스가 죽었는지
+
+    float GetPlayerHealthRatio() const;                  // 플레이어 체력 비율 (0~1, 못 읽으면 1)
+    int32 GetPlayerPotionCount() const;                  // 플레이어 남은 포션 수 (못 읽으면 0)
+    void RefillPlayerPotions();                          // 포션 가득 (회복 연습 전에)
+    void BossSay(const FText& _Message);                 // 보스(변신한 펫) 머리 위 말풍선
+    void CheckBossHealHint();                            // 보스전 중 체력이 낮아지면 회복 안내 (한 번만)
 
 private:
     void PlayFXSetAtGround(const FTutorialFXSet& _Set, AActor* _Actor); // 액터 발밑에서 묶음 1회 재생
@@ -270,6 +278,12 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Tutorial|Combat", meta = (ClampMin = "0.0"))
     float BossShowTime = 1.5f;         // 보스 등장 후 조작을 돌려주기 전까지 보여주는 시간
 
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Combat", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float BossHealHintRatio = 0.5f;    // 보스전 중 체력이 이 비율 이하가 되면 회복 안내
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|Combat", meta = (ClampMin = "1.0"))
+    float HealLessonRepeatTime = 6.f;  // 입구 회복 연습에서 안 마시면 몇 초마다 다시 알려줄지
+
     // ===== 전투 구간 효과 =====
     UPROPERTY(EditAnywhere, Category = "Tutorial|Combat|FX")
     FTutorialFXSet PetGrowFX;      // 펫이 커지는 동안 (펫에 붙어서 반복 재생 -> 다 커지면 멈춤. 반복 에셋 사용)
@@ -349,6 +363,15 @@ private:
     float PetScaleTo = 1.f;
     float PetScaleDuration = 0.f;
     float PetScaleElapsed = 0.f;
+
+    // ===== 회복 안내 =====
+    bool bHealLesson = false;          // 입구에서 직접 마셔 보는 연습 중인지 (다쳤을 때만)
+    int32 HealLessonPotions = 0;       // 연습 시작할 때 포션 수 (줄어들면 = 마셨음)
+    float HealLessonSayTime = 0.f;     // 마지막으로 안내한 시각 (다시 알려주기용)
+    bool bBossHealHintShown = false;   // 보스전 회복 안내를 이미 했는지
+
+    bool bInBossFight = false; // 보스방에 들어와서 보스를 잡기 전까지 (이때 죽으면 보스방에서 다시 시작)
+    bool bBossRetry = false;   // 재도전 중이면 통로(회복 안내) 단계는 건너뜀
 
     // 반복 재생 중인 효과 (UPROPERTY: GC 가 몰래 지우지 않게)
     UPROPERTY()
