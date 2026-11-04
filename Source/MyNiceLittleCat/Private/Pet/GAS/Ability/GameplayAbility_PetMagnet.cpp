@@ -295,9 +295,11 @@ void UGameplayAbility_PetMagnet::BeginAttractTarget(AActor* Target)
     bSavedSimulatePhysics = Body->IsSimulatingPhysics();
     bSavedActorCollision = Target->GetActorEnableCollision();
 
-    //! 테스트.. 직접 이동시키는 동안 물리와 충돌을 잠시 꺼버려잇
     Body->SetSimulatePhysics(false);
     Target->SetActorEnableCollision(false);
+
+    // 월드 기준 회전을 초기화한 자세로 끌어오기
+    Target->SetActorRotation(FRotator::ZeroRotator);
 }
 
 void UGameplayAbility_PetMagnet::UpdateHeldTarget(float DeltaTime)
