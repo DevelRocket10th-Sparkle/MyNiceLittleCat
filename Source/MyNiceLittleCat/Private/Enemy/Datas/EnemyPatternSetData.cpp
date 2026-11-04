@@ -35,15 +35,15 @@ void UEnemyPatternSetData::PostLoad()
 	}
 	if (GetLinkerCustomVersion(EnemyPatternSetVersion::Guid) < EnemyPatternSetVersion::CommonMovement)
 	{
-		// 기존 설정의 0 반경도 그대로 이전하고, 새 형식으로 저장된 값은 덮어쓰지 않는다.
+		// CommonMovement 이전 형식의 에셋만 기존 공격 이동 설정을 이전
+		// MoneyGun의 추적 설정은 UsePhaseDefault로, Rush는 AbilityDriven으로 변환
 		for (FEnemyPatternDefinition& Pattern : Patterns)
 		{
 			if (UMoneyGunPatternSettings* MoneyGun = Cast<UMoneyGunPatternSettings>(Pattern.ExecutionSettings))
 			{
 				MoneyGun->ConditionalPostLoad();
 				Pattern.Movement.Policy = MoneyGun->bChaseTarget
-					? EEnemyPatternMovementPolicy::ChaseTarget : EEnemyPatternMovementPolicy::Stop;
-				Pattern.Movement.AcceptanceRadius = MoneyGun->ChaseAcceptanceRadius;
+					? EEnemyPatternMovementPolicy::UsePhaseDefault : EEnemyPatternMovementPolicy::Stop;
 			}
 			else if (Pattern.AbilityClass && Pattern.AbilityClass->IsChildOf(UGA_Enemy_RushAttack::StaticClass()))
 			{

@@ -31,7 +31,7 @@ void APetReflector::BeginPlay()
 	Super::BeginPlay();
 
     // 실제 설치된 반사판은 이동을 막음
-    CollisionBox->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+    CollisionBox->SetCollisionProfileName(TEXT("PetPass"));
 
     // 기존 내비게이션 등록을 해제하고, 동적 장애물 설정을 적용한 뒤 다시 등록
     CollisionBox->SetCanEverAffectNavigation(false);

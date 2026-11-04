@@ -587,8 +587,8 @@ void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
 
 	if (bIsDead || bIsAbleToAttack == false || bIsDeflected || bIsHealing) return;
 
-    //LastMoveInputFrame = 0;
-    //LastMoveInputDir = GetActorRotation().Vector();
+    LastMoveInputFrame = 0;
+    LastMoveInputDir = GetActorRotation().Vector();
     for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
     {
         if (Spec.Ability &&

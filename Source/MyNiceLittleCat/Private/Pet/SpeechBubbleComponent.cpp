@@ -1,5 +1,5 @@
 #include "Pet/SpeechBubbleComponent.h"
-#include "WIdgets/Pet/SpeechBubbleWidget.h"
+#include "Widgets/Pet/SpeechBubbleWidget.h"
 
 USpeechBubbleComponent::USpeechBubbleComponent()
 {

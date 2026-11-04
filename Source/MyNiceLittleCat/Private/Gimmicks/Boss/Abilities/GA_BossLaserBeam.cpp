@@ -1,11 +1,7 @@
 #include "Gimmicks/Boss/Abilities/GA_BossLaserBeam.h"
-#include "Gimmicks/Boss/Abilities/AbilityTask_BossMoveToPoint.h"
 #include "Gimmicks/Boss/Abilities/BossLaserPatternSettings.h"
 #include "Gimmicks/Boss/BossGimmickComponent.h"
-#include "Gimmicks/Boss/LaserGridPattern.h"
-#include "Enemy/Boss/BossCharacter.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
-#include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Gimmicks/Laser/LaserBeamComponent.h"
 #include "Gimmicks/Warning/AttackWarningDecal.h"
 #include "Enemy/EnemyCharacter.h"
@@ -87,33 +83,7 @@ void UGA_BossLaserBeam::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 			Enemy->GetAttributeSet()->GetAttackPower(), ExecutionPattern.DamageMultiplier);
 	}
 
-	// 이동 잠금이 걸리면 경로 이동이 막히므로 이동을 먼저
-	FTransform BeamPoint;
-	if (LaserSettings->bMoveToGridBeamPoint && FindGridBeamPoint(BeamPoint))
-	{
-		UAbilityTask_BossMoveToPoint* MoveTask = UAbilityTask_BossMoveToPoint::BossMoveToPoint(this, BeamPoint.GetLocation(),
-			BeamPoint.Rotator().Yaw, LaserSettings->MoveAcceptanceRadius, LaserSettings->MoveTimeLimit);
-		MoveTask->OnArrived.AddDynamic(this, &UGA_BossLaserBeam::HandleArrived);
-		MoveTask->ReadyForActivation();
-		return;
-	}
-
-	if (LaserSettings->bMoveToGridBeamPoint)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[BossLaser] %s: 격자 액터를 찾지 못해 제자리에서 쏩니다. 매니저 PhaseGimmickActors를 확인하세요."), *Enemy->GetName());
-	}
-
-	HandleArrived();
-}
-
-void UGA_BossLaserBeam::HandleArrived()
-{
-	if (!IsExecutionValid())
-	{
-		EndWithResult(true);
-		return;
-	}
-
+	// 보스를 지점으로 옮기지 않고 지금 자리에서 쏨 (이동은 보스 쪽 이동 패턴 담당)
 	if (AAIController* AI = Cast<AAIController>(Enemy->GetController()))
 	{
 		AI->StopMovement();
@@ -127,9 +97,6 @@ void UGA_BossLaserBeam::HandleArrived()
 		Enemy->AcquireRotationLock();
 		bOwnsRotationLock = true;
 	}
-
-	// 이동하는 동안 플레이어가 움직였을 수 있으므로 지점을 다시 잡음
-	FindTargetFloorPoint(AimPoint);
 
 	if (ExecutionPattern.bFaceTargetOnStart)
 	{
@@ -260,37 +227,6 @@ void UGA_BossLaserBeam::HandleLaserStopped(ULaserBeamComponent* InLaser)
 	{
 		StartShot();
 	}
-}
-
-bool UGA_BossLaserBeam::FindGridBeamPoint(FTransform& OutTransform) const
-{
-	if (!Enemy.IsValid() || !LaserSettings)
-	{
-		return false;
-	}
-
-	const UBossGimmickComponent* Gimmick = Enemy->FindComponentByClass<UBossGimmickComponent>();
-	if (!Gimmick)
-	{
-		return false;
-	}
-
-	FName Key = LaserSettings->GridActorKey;
-	if (Key.IsNone())
-	{
-		const ABossCharacter* Boss = Cast<ABossCharacter>(Enemy.Get());
-		const UEnemyPhaseComponent* Phase = Boss ? Boss->GetPhaseComponent() : nullptr;
-		Key = Phase ? Phase->GetCurrentPhaseId() : NAME_None;
-	}
-
-	const ALaserGridPattern* Grid = Cast<ALaserGridPattern>(Gimmick->GetPhaseActor(Key));
-	if (!Grid)
-	{
-		return false;
-	}
-
-	OutTransform = Grid->GetBossBeamTransform();
-	return true;
 }
 
 bool UGA_BossLaserBeam::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,

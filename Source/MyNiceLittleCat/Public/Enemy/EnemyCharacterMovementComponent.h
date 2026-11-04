@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.19.
-* 비행형 몬스터의 루트 모션 관련 회전 문제 처리를 위해
+* 비행형 Enemy의 루트 모션 관련 회전 문제 처리를 위해
 * 캐릭터 무브먼트 컴포넌트를 상속하여 일부 함수 오버라이드 구현
 */
 
@@ -136,7 +136,7 @@ private :
 	// 아직 이동 갱신에 반영하지 않은 플레이어의 직접 밀기 요청
 	FVector PendingDirectPush = FVector::ZeroVector;
 
-	// 아직 반영하지 않은 주변 몬스터의 양보 요청
+	// 아직 반영하지 않은 주변 Enemy의 양보 요청
 	FVector PendingYieldPush = FVector::ZeroVector;
 
 	// 이번 이동 갱신에서 실제로 사용할 밀림 속도

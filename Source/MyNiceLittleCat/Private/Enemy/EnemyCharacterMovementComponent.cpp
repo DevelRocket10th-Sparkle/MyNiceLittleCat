@@ -335,7 +335,7 @@ void UEnemyCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick
 	else
 	{
 		// 밀려나기 요청 끊기면 맥 갱신마다 시간 줄이기
-		// 밀림은 멈추지만, 몬스터가 곧바로 플레이어에게 재접근하지 않도록 잠깐 기다리도록 구현
+		// 밀림은 멈추지만, Enemy가 곧바로 플레이어에게 재접근하지 않도록 잠깐 기다리도록 구현
 		PushHoldRemaining = FMath::Max(0.f, PushHoldRemaining - DeltaTime);
 	}
 
@@ -419,7 +419,7 @@ void UEnemyCharacterMovementComponent::UpdateFlightHeight(float DeltaTime)
 
 	const FVector TraceEnd = Center - FVector(0.f, 0.f, FlightGroundTraceDistance);
 
-	// 플레이어와 몬스터 대신 정적 지형만 바닥 후보로 탐색
+	// 플레이어와 Enemy 대신 정적 지형만 바닥 후보로 탐색
 	FCollisionObjectQueryParams Objects;
 	Objects.AddObjectTypesToQuery(ECC_WorldStatic);
 
