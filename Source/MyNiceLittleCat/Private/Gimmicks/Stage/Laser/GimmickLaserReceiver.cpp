@@ -290,6 +290,11 @@ bool AGimmickLaserReceiver::AcceptsBeam(const ULaserBeamComponent* Laser, const 
 
 		if (FVector::DotProduct(-Incoming, Front) < FMath::Cos(FMath::DegreesToRadians(ReceiveHalfAngle)))
 		{
+			// 통 없이 각도로만 막으므로, 본체에 닿았지만 방향이 틀린 빛도 거부 연출로 알려 줌
+			if (bOutColorMismatch)
+			{
+				*bOutColorMismatch = Laser != nullptr;
+			}
 			return false;
 		}
 	}
