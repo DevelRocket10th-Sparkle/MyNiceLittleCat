@@ -42,6 +42,8 @@ void ATurret::BeginPlay()
 {
 	Super::BeginPlay();
 	CachedPet = Cast<APetCharacter>(UGameplayStatics::GetActorOfClass(this, APetCharacter::StaticClass()));
+	Mesh->SetNotifyRigidBodyCollision(true);
+	Mesh->OnComponentHit.AddDynamic(this, &ATurret::HandleMeshHit);
 	HeadBaseScale = HeadMesh->GetRelativeScale3D();
 }
 
@@ -74,7 +76,13 @@ void ATurret::Tick(float DeltaTime)
 		SetCarried(bNowCarried);
 	}
 
-	if (bHostile && !bCarried)
+	if (!bLanded && Mesh->IsSimulatingPhysics() && FMath::Abs(Mesh->GetPhysicsLinearVelocity().Z) < 5.f)
+	{
+		Land();
+	}
+
+	const bool bArmed = bLanded && GetWorld()->GetTimeSeconds() - LandedTime >= ArmDelay;
+	if (bHostile && !bCarried && bArmed)
 	{
 		TickHostile(DeltaTime);
 	}
@@ -113,7 +121,11 @@ void ATurret::SetCarried(bool bNewCarried)
 
 	if (bCarried)
 	{
-		bHostile = false;                                   // 잡히는 순간 아군으로 전환
+		if (bHostile)
+		{
+			bHostile = false;          // 잡히는 순간 아군으로 전환
+			CurrentAmmo = MaxAmmo;     // 처음 잡을 때만 장전 (다시 잡아도 리필 안 됨)
+		}
 		Head->SetRelativeRotation(FRotator::ZeroRotator);   // 포신을 몸체 정면(=펫 정면)으로
 
 		// 포구를 펫 정면으로 맞춤. CarryPoint에 붙어 있으므로 이후엔 펫이 도는 대로 같이 돎
@@ -142,15 +154,15 @@ void ATurret::SetCarried(bool bNewCarried)
 
 void ATurret::Fire()
 {
-	if (!bCarried || !ProjectileClass) return;
+	if (!bCarried || !ProjectileClass || CurrentAmmo <= 0) return;
 
 	const float Now = GetWorld()->GetTimeSeconds();
 	if (Now - LastFireTime < FireCooldown) return;
 	LastFireTime = Now;
 
+	--CurrentAmmo;
 	SpawnProjectile(false);
 }
-
 void ATurret::SpawnProjectile(bool bHostileShot)
 {
 	if (!ProjectileClass) return;
@@ -176,4 +188,24 @@ void ATurret::SpawnProjectile(bool bHostileShot)
 	Proj->FinishSpawning(SpawnTM);;
 	if (FireSound) UGameplayStatics::PlaySoundAtLocation(this, FireSound, Muzzle->GetComponentLocation());
 	JellyElapsed = 0.f;
+}
+
+void ATurret::HandleMeshHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+{
+	if (!bLanded && Hit.ImpactNormal.Z > 0.7f)
+	{
+		Land();
+	}
+}
+
+void ATurret::Land()
+{
+	bLanded = true;
+	LandedTime = GetWorld()->GetTimeSeconds();
+
+	if (Mesh->IsSimulatingPhysics())
+	{
+		Mesh->SetPhysicsLinearVelocity(FVector::ZeroVector);
+		Mesh->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+	}
 }

@@ -40,6 +40,10 @@ protected:
 	void TickHostile(float DeltaTime);
 	void SpawnProjectile(bool bHostileShot);
 
+	UFUNCTION()
+	void HandleMeshHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
+
+	void Land();
 protected:
 	UPROPERTY(EditAnywhere, Category = "Turret")
 	TSubclassOf<UGameplayEffect> DamageEffectClass;
@@ -96,6 +100,12 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Turret", meta = (ClampMin = "0.0"))
 	float PlayerSpreadDeg = 6.f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Turret", meta = (ClampMin = "1"))
+	int32 MaxAmmo = 30;
+
+	UPROPERTY(EditAnywhere, Category = "Turret|Hostile", meta = (ClampMin = "0.0"))
+	float ArmDelay = 0.6f;
+
 	UPROPERTY(EditAnywhere, Category = "Turret|Jelly")
 	float JellyAmount = 0.35f;
 
@@ -108,8 +118,11 @@ protected:
 private:
 	bool bCarried = false;
 	bool bFireKeyBound = false;
+	bool bLanded = false;
+	float LandedTime = -1.f;
 	float LastFireTime = -1000.f;
 	float JellyElapsed = -1.f;
+	int32 CurrentAmmo = 0;
 	FVector HeadBaseScale = FVector::OneVector;
 	TWeakObjectPtr<APetCharacter> CachedPet;
 };

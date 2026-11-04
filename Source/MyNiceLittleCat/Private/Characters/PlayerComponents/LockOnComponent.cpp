@@ -98,6 +98,7 @@ void ULockOnComponent::BeginPlay()
     {
         BaseCameraTargetOffset = CameraBoom->TargetOffset;
         BaseCameraArmLength = CameraBoom->TargetArmLength;
+        BaseCameraPitch = CameraBoom->GetRelativeRotation().Pitch;
 
         GetWorld()->GetTimerManager().SetTimer(
             CameraFocusTimerHandle,
@@ -300,11 +301,13 @@ void ULockOnComponent::UpdateLockOnCamera()
 
     FVector DesiredOffset = BaseCameraTargetOffset;
     float DesiredArmLength = BaseCameraArmLength;
+    float DesiredPitch = BaseCameraPitch;
 
     AActor* Target = LockedTarget.Get();
 
     if (IsValidCandidate(Target))
     {
+        DesiredPitch = LockOnCameraPitch;
         const FVector PlayerLocation =
             GetOwner()->GetActorLocation();
 
@@ -358,6 +361,10 @@ void ULockOnComponent::UpdateLockOnCamera()
         TimerDeltaTime,
         CameraFocusInterpSpeed
     );
+
+    FRotator BoomRot = CameraBoom->GetRelativeRotation();
+    BoomRot.Pitch = FMath::FInterpTo(BoomRot.Pitch, DesiredPitch, TimerDeltaTime, CameraFocusInterpSpeed);
+    CameraBoom->SetRelativeRotation(BoomRot);
 }
 
 void ULockOnComponent::UpdateReticle()
