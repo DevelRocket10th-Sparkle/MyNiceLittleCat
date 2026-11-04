@@ -25,15 +25,42 @@ namespace
 
 	// 2026-10-30에 NS_Laser_Basic 사용자 변수 이름을 Beam End → BeamEnd, Color → BeamColor로 바꿈.
 	// 그 전에 저장된 BP·맵 인스턴스에는 예전 이름이 남아 있어 끝점·색이 전달되지 않음 (흰색·엉뚱한 길이로 보임)
-	// → 예전 이름이면 지금 이름으로 바꿔서 넘김
-	FName ResolveBeamEndParam(FName Param)
+	// 반대로 예전 이름을 그대로 쓰는 사본 이펙트(NS_Laser_Tutorial 등)에 새 이름으로 넘기는 BP도 있음
+	// → 이펙트에 넘길 이름의 변수가 없으면, 같은 뜻의 다른 이름(예전/새) 변수가 있을 때 그 이름으로 바꿔서 넘김
+	bool HasUserParameter(UNiagaraSystem* System, FName Name)
 	{
-		return Param == FName(TEXT("Beam End")) ? FName(TEXT("BeamEnd")) : Param;
+		if (!System || Name.IsNone())
+		{
+			return false;
+		}
+
+		const FNiagaraVariableBase Var(FNiagaraTypeDefinition::GetVec3Def(), FName(*(FString(TEXT("User.")) + Name.ToString())));
+		return nullptr != System->GetExposedParameters().FindParameterOffset(Var, /*IgnoreType*/ true);
 	}
 
-	FName ResolveBeamColorParam(FName Param)
+	FName ResolveRenamedParam(UNiagaraSystem* System, FName Param, FName OldName, FName NewName)
 	{
-		return Param == FName(TEXT("Color")) ? FName(TEXT("BeamColor")) : Param;
+		if (Param != OldName && Param != NewName)
+		{
+			return Param;
+		}
+
+		const FName OtherName = (Param == OldName) ? NewName : OldName;
+		if (!HasUserParameter(System, Param) && HasUserParameter(System, OtherName))
+		{
+			return OtherName;
+		}
+		return Param;
+	}
+
+	FName ResolveBeamEndParam(UNiagaraSystem* System, FName Param)
+	{
+		return ResolveRenamedParam(System, Param, TEXT("Beam End"), TEXT("BeamEnd"));
+	}
+
+	FName ResolveBeamColorParam(UNiagaraSystem* System, FName Param)
+	{
+		return ResolveRenamedParam(System, Param, TEXT("Color"), TEXT("BeamColor"));
 	}
 }
 
@@ -327,9 +354,9 @@ void ULaserBeamComponent::UpdateBeamEffects()
 
 			// 엔진 Beam Emitter Setup 입력이 Vector 타입이라 월드 좌표를 Vector로 넘김 (Absolute Beam Start/End 켬)
 			Effect->SetVariableVec3(VisualSettings.BeamStartParam, Segment.Start);
-			Effect->SetVariableVec3(ResolveBeamEndParam(VisualSettings.BeamEndParam), Segment.End);
+			Effect->SetVariableVec3(ResolveBeamEndParam(VisualSettings.BeamEffect, VisualSettings.BeamEndParam), Segment.End);
 			Effect->SetVariableFloat(VisualSettings.BeamWidthParam, BeamWidth);
-			Effect->SetVariableLinearColor(ResolveBeamColorParam(VisualSettings.BeamColorParam), Color);
+			Effect->SetVariableLinearColor(ResolveBeamColorParam(VisualSettings.BeamEffect, VisualSettings.BeamColorParam), Color);
 
 			if (!Effect->IsActive())
 			{
@@ -379,7 +406,7 @@ void ULaserBeamComponent::UpdateBeamEffects()
 	ImpactColor.R *= Pulse;
 	ImpactColor.G *= Pulse;
 	ImpactColor.B *= Pulse;
-	ImpactEffectComponent->SetVariableLinearColor(ResolveBeamColorParam(VisualSettings.BeamColorParam), ImpactColor);
+	ImpactEffectComponent->SetVariableLinearColor(ResolveBeamColorParam(VisualSettings.ImpactEffect, VisualSettings.BeamColorParam), ImpactColor);
 
 	if (!ImpactEffectComponent->IsActive())
 	{
