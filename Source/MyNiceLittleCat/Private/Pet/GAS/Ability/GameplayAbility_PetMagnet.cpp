@@ -410,6 +410,16 @@ void UGameplayAbility_PetMagnet::ReleaseHeldTarget(float ReleaseSpeed, float Upw
                 Body->AddImpulse(Direction * ReleaseSpeed, NAME_None, true);
             }
         }
+
+        // 캐릭터는 CharacterMovement를 통해 발사
+        if (ACharacter* Character = Cast<ACharacter>(Target);
+            Character && false == bSavedSimulatePhysics && ReleaseSpeed > 0.f)
+        {
+            const AActor* Pet = GetAvatarActorFromActorInfo();
+            const FVector Forward = IsValid(Pet) ? Pet->GetActorForwardVector().GetSafeNormal2D() : FVector::ForwardVector;
+            const FVector Direction = (Forward + FVector::UpVector * UpwardRatio).GetSafeNormal();
+            Character->LaunchCharacter(Direction * ReleaseSpeed, true, true);
+        }
     }
 
     HeldTarget.Reset();
