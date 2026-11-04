@@ -4,13 +4,13 @@
 /// 레벨에 배치한 격자 레이저(ALaserGridPattern)로 VolleyCount번 발사하는 보스 패턴 GA입니다.
 /// 보스 PatternSet에 패턴으로 등록하면 기존 BT 공격 Task(UEnemyPatternComponent)가 근접·단일 레이저 패턴처럼 실행합니다.
 /// 흐름: GetActiveExecution으로 설정(UBossLaserGridPatternSettings) 받기 → 보스의 UBossGimmickComponent에서 격자 액터 찾기
-///       → CommitAbility → (옵션) 격자 바깥 BossStandPoint로 이동 → 이동/회전 잠금
+///       → CommitAbility → (옵션) 이동/회전 잠금 (보스를 지점으로 옮기지 않음, 이동은 보스 쪽 이동 패턴 담당)
 ///       → 발사 모양(시퀀스 DA)을 골라 PlaySequenceOnce → 끝나면 VolleyInterval 뒤 다음 발사 … VolleyCount번 → 정상 종료
 /// 레이저 교대 페이즈에서는 격자 차례일 때만 실행되고(CanActivateAbility), 정상 종료 시 순번을 단일 레이저로 넘깁니다.
 /// 취소(페이즈 전환·사망·리셋)되면 EndAbility에서 격자 패턴을 멈춰 남은 경고·레이저를 정리합니다.
 /// 피해는 격자 액터의 레이저 컴포넌트가 처리합니다 (플레이어는 ApplyPlayerHit → 플레이어 피해 GE).
 /// bUseBossAttackPower면 피해량 = 보스 AttackPower × DamageMultiplier (근접 패턴과 같은 공식)를 이번 실행에만 넘깁니다.
-/// MaxExecutionSeconds는 이동 + 전체 발사 시간보다 길게 잡아야 합니다.
+/// MaxExecutionSeconds는 전체 발사 시간보다 길게 잡아야 합니다.
 
 #pragma once
 
@@ -45,10 +45,6 @@ public:
 		const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
 
 protected:
-	// 대기 지점 도착 (이동하지 않으면 바로): 잠금 후 첫 발사
-	UFUNCTION()
-	void HandleArrived();
-
 	// 다음 발사 모양을 골라 실행
 	UFUNCTION()
 	void StartNextVolley();
@@ -77,7 +73,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Pattern")
 	FEnemyPatternDefinition ExecutionPattern;
 
-	// 실행 시작 시 타깃 (없어도 실행, 대기 지점으로 이동하지 않을 때 바라보기에만 사용)
+	// 실행 시작 시 타깃 (없어도 실행, 시작할 때 바라보기에만 사용)
 	UPROPERTY(BlueprintReadOnly, Category = "Pattern")
 	TObjectPtr<AActor> ExecutionTarget;
 
