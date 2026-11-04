@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.14.
-* 몬스터/보스에 연결된 AttributeSet
+* Enemy/보스에 연결된 AttributeSet
 * - 각 Attribute 관리
 */
 

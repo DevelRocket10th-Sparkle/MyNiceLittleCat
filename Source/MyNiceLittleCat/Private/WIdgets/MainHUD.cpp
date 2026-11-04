@@ -1,6 +1,6 @@
-﻿#include "WIdgets/MainHUD.h"
+﻿#include "Widgets/MainHUD.h"
 
-#include "WIdgets/MainWidget.h"
+#include "Widgets/MainWidget.h"
 #include "Characters/PlayerCharacter.h"
 #include "GameFramework/PlayerController.h"
 

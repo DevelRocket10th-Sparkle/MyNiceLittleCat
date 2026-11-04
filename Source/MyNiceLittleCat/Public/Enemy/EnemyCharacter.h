@@ -23,6 +23,9 @@ class UEnemyConfigData;
 class UEnemyPatternComponent;
 class UEnemyMeleeTraceComponent;
 
+class UCameraShakeBase;
+
+// Test용
 class UAnimMontage;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnEnemyDeathStarted, AEnemyCharacter*);
@@ -99,12 +102,12 @@ public:
 
 	/* 밀려나기 */
 
-	// 직접 밀기와 주변 몬스터의 양보 요청에 공통 사용
+	// 직접 밀기와 주변 Enemy의 양보 요청에 공통 사용
 	bool CanReceivePlayerPush() const;
 	
 	// bDirectPush
 	// - true: 플레이어가 직접 밀기
-	// - false: 다른 몬스터에게 공간 양보
+	// - false: 다른 Enemy에게 공간 양보
 	void ApplyPlayerPush(const FVector& PushVelocity, bool bDirectPush = true);
 
 protected:
@@ -182,6 +185,13 @@ protected :
 	int32 AttackMovementLockCount = 0;
 	// 현재 회전 제한을 획득한 공격 실행 수
 	int32 RotationLockCount = 0;
+
+	// 사망 시 적용할 카메라셰이크 클래스
+	UPROPERTY(EditAnywhere, Category = "Death")
+	TSubclassOf<UCameraShakeBase> DeathCameraShakeClass;
+	// 사망 시 카메라 셰이크 강도
+	UPROPERTY(EditAnywhere, Category = "Death")
+	float DeathShakeScale = 2.5f;
 
 	/* 밀려나기 */
 	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0", ClampMax = "1.0"))

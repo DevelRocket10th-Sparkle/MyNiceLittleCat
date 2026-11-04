@@ -66,6 +66,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Magnetic")
 	bool CalculateForceFrom(AActor* SourceActor, const FMagneticSourceInfo& Info, const FVector& Location, FVector& OutForce) const;
 
+	UFUNCTION(BlueprintPure, Category = "Magnetic|Launch")
+	float GetLaunchSpeedMultiplier() const { return FMath::Max(0.f, LaunchSpeedMultiplier); }
 public:
 	UPROPERTY(BlueprintAssignable, Category = "Magnetic")
 	FOnMagneticPolarityChanged OnPolarityChanged;
@@ -158,6 +160,10 @@ protected:
 	// 이 태그가 있는 메시에만 색 적용 (None이면 액터의 모든 메시)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Color", meta = (EditCondition = "bApplyPolarityColor"))
 	FName ColorTargetTag;
+
+	// 펫 등 외부에서 발사할 때 적용하는 속도 배율
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Launch", meta = (ClampMin = "0.0"))
+	float LaunchSpeedMultiplier = 1.f;
 
 private:
 	UPROPERTY(Transient)

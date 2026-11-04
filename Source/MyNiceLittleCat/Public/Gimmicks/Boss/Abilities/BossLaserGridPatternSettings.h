@@ -4,7 +4,8 @@
 /// 보스 격자 레이저 패턴(UGA_BossLaserGrid) 전용 실행 설정입니다.
 /// PatternSet의 패턴 항목 ExecutionSettings에서 이 클래스를 골라 편집합니다 (단일 레이저의 UBossLaserPatternSettings와 같은 방식).
 /// 경기장 크기·줄 폭·예고·발사 시간·경고 데칼은 레벨에 배치한 ALaserGridPattern 값을 그대로 쓰고,
-/// 여기서는 어느 격자 액터를 쓸지, 어떤 발사 모양을 몇 번 쏠지, 보스를 어디에 세울지만 정합니다.
+/// 여기서는 어느 격자 액터를 쓸지, 어떤 발사 모양을 몇 번 쏠지만 정합니다.
+/// 보스 이동(지점 이동·추격 등)은 보스 쪽 이동 패턴이 맡고, 이 패턴은 보스가 서 있는 자리에서 실행합니다.
 /// 격자 액터는 보스전 매니저의 PhaseGimmickActors에 등록해야 보스의 UBossGimmickComponent로 찾을 수 있습니다.
 
 #pragma once
@@ -53,18 +54,6 @@ public:
 	// true면 패턴 동안 보스가 이동하지 않음
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaserGrid")
 	bool bLockMovement = true;
-
-	// true면 발사 전에 격자 액터의 BossStandPoint(격자 바깥)로 이동
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaserGrid|Move")
-	bool bMoveToStandPoint = true;
-
-	// 지점 도착으로 볼 거리 (cm)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaserGrid|Move", meta = (ClampMin = "1.0", Units = "cm", EditCondition = "bMoveToStandPoint"))
-	float MoveAcceptanceRadius = 50.f;
-
-	// 이 시간 안에 도착하지 못하면 순간이동 (0이면 제한 없음)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaserGrid|Move", meta = (ClampMin = "0.0", Units = "s", EditCondition = "bMoveToStandPoint"))
-	float MoveTimeLimit = 3.f;
 
 	// 패턴 시작 시 재생할 몽타주 (선택, 끝나도 패턴은 계속)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaserGrid|Animation")

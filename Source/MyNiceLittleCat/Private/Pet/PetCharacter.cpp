@@ -44,7 +44,12 @@ APetCharacter::APetCharacter()
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 
 	CarryPoint = CreateDefaultSubobject<USceneComponent>(TEXT("CarryPoint"));
-	CarryPoint->SetupAttachment(GetMesh(), TEXT("CarrySocket"));
+
+	// 자성모드 캐리 위치가 애니메이션이 움직이는 Mesh 대신 캡슐을 따라가도록
+	CarryPoint->SetupAttachment(GetCapsuleComponent());
+	CarryPoint->SetAbsolute(false, true, false); // 위치와 스케일은 부모 기준, 회전은 월드 기준
+	CarryPoint->SetRelativeLocation(FVector(0.f, 0.f, 80.f));
+	CarryPoint->SetRelativeRotation(FRotator::ZeroRotator);
 
 	// 말풍선
 	SpeechBubble = CreateDefaultSubobject<USpeechBubbleComponent>(TEXT("SpeechBubble"));
@@ -107,8 +112,11 @@ void APetCharacter::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
 
-	CarryPoint->AttachToComponent(GetMesh(), 
-		FAttachmentTransformRules::KeepRelativeTransform, TEXT("CarrySocket"));
+	CarryPoint->AttachToComponent(GetCapsuleComponent(),
+		FAttachmentTransformRules::KeepRelativeTransform, NAME_None);
+
+	CarryPoint->SetAbsolute(false, true, false);
+	CarryPoint->SetWorldRotation(FRotator::ZeroRotator);
 }
 
 void APetCharacter::InitializePet(const FPetInitializationData& _data)
@@ -134,8 +142,6 @@ bool APetCharacter::RequestBehavior(EPetBehavior NewBehavior)
 {
 	if (false == bInitialized) return false;
 
-	//! 테스트용
-	//! MoveTo는 RequestMoveTo(_destination)로 호출 
 	if ((NewBehavior == EPetBehavior::MoveTo) || (NewBehavior == EPetBehavior::AbilityMoveTo)) return false;
 
 	if((EPetBehavior::Follow == NewBehavior) && (false == IsValid(GetPartnerPlayer())))

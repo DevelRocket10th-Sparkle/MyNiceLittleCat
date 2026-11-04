@@ -12,7 +12,7 @@ class ABossCharacter;
 class UEnemyPhaseComponent;
 
 // 보스는 활성 페이즈 동안 기본 이동과 패턴 이동 처리
-// 일반 몬스터는 공격과 후딜 동안 패턴 이동 처리
+// 일반 Enemy는 공격과 후딜 동안 패턴 이동 처리
 UCLASS()
 class MYNICELITTLECAT_API UBTTask_Enemy_PatternMovement : public UBTTaskNode
 {
@@ -31,10 +31,13 @@ protected:
 	virtual void OnTaskFinished(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, EBTNodeResult::Type TaskResult) override;
 
 private:
+
 	void RefreshMovement();
 	void CancelOwnedMove();
 	void Cleanup();
-	static FAIMoveRequest BuildMoveRequest(AActor* Target, const FEnemyPatternMovementSettings& Settings);
+
+	static FAIMoveRequest BuildChaseRequest(AActor* Target, float AcceptanceRadius);
+	static FAIMoveRequest BuildWaypointRequest(const FVector& Destination, float AcceptanceRadius);
 
 private :
 
@@ -43,7 +46,6 @@ private :
 	TWeakObjectPtr<AAIController> CachedAI;
 	TWeakObjectPtr<UEnemyPatternComponent> CachedPatternComp;
 	TWeakObjectPtr<AActor> CachedTarget;
-	FEnemyPatternMovementSettings CachedMovement;
 
 	// 이 Task가 발행한 AI 이동 요청 ID
 	// -> 다른 GA나 행동이 만든 새 이동을 취소하지 않도록 비교
@@ -61,9 +63,7 @@ private :
 	// 이동 설정을 한 번 이상 적용했는지 여부
 	bool bHasPolicy = false;
 
-	friend class FEnemyPatternMovementTest;
-
-	// 이동을 처리할 보스 참조: 일반 몬스터에서는 비어 있음
+	// 이동을 처리할 보스 참조: 일반 Enemy에서는 비어 있음
 	TWeakObjectPtr<ABossCharacter> CachedBoss;
 	
 	// 보스의 기본 이동 설정과 현재 경로 지점을 조회할 페이즈 컴포넌트
@@ -73,9 +73,6 @@ private :
 	// - 페이즈 변경 감지와 지점 도착 검증에 사용
 	// - 0이면 일반 Enemy의 패턴 이동으로 실행 중이거나 초기화된 상태
 	int64 CachedPhaseExecutionId = 0;
-
-	// 현재 적용한 이동이 Waypoints 이동인지 구분
-	bool bCachedWaypointMovement = false;
 
 	// 현재 요청에 사용한 목적지
 	FVector CachedDestination = FVector::ZeroVector;
@@ -88,4 +85,20 @@ private :
 
 	// 직전 확인의 공격 이동 잠금 상태
 	bool bPreviousLocked = false;
+
+	// 공격 정책과 페이즈 기본 이동, 예외를 해석한 최종 이동 종류
+	enum class EResolvedMove : uint8
+	{
+		Stop,
+		Chase,
+		Waypoint,
+		AbilityDriven
+	};
+
+	EResolvedMove CachedMove = EResolvedMove::Stop;	// 직전 갱신에서 적용한 최종 이동 종류
+
+	float CachedAcceptanceRadius = 0.f;	// 직전 이동 설정에 사용한 도착 허용 반경
+
+	// 직전 확인의 이동 기준 패턴 ID (선택 또는 실행 중)
+	FName PreviousPatternId;
 };

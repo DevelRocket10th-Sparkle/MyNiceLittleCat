@@ -16,7 +16,7 @@
 #include "AbilitySystemComponent.h"
 #include "Characters/GAS/PlayerAttributeSet.h"
 #include "Frameworks/GameMode/MainGameMode.h"
-#include "WIdgets/Checkpoint/CheckpointMenuWidget.h"
+#include "Widgets/Checkpoint/CheckpointMenuWidget.h"
 #include "Kismet/GameplayStatics.h"
 
 static APlayerController* GetPlayerControllerOf(AActor* InteractInstigator)

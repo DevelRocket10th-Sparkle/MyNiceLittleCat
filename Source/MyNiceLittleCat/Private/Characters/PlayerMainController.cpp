@@ -206,6 +206,30 @@ bool APlayerMainController::TryGetPetCursorHit(FHitResult& _outHit) const
 		_outHit, RayOrigin, RayOrigin + RayDirection * TraceDistance, ECC_Visibility, QueryParams);
 }
 
+void APlayerMainController::SetPetInputEnabled(bool _bEnable)
+{
+	// 끌 때 다이얼이 열려 있거나 모드 사용 중이면 먼저 취소 -> 다이얼 UI 가 떠 있는 채로 남지 않게
+	if (false == _bEnable)
+	{
+		HandleDialCanceled();
+		HandleModeUseCanceled();
+	}
+
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = (nullptr != LocalPlayer) ? LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>() : nullptr;
+	if (nullptr == Subsystem || nullptr == IMC_Pet) return;
+
+	// 펫 키 매핑(IMC_Pet)을 통째로 빼고 넣음 -> 키를 눌러도 펫 입력 액션 자체가 발생하지 않음
+	// (캐릭터 이동/공격 매핑은 따로라 영향 없음)
+	if (true == _bEnable)
+	{
+		if (false == Subsystem->HasMappingContext(IMC_Pet))
+			Subsystem->AddMappingContext(IMC_Pet, 1); // BeginPlay 와 같은 우선순위
+	}
+	else
+		Subsystem->RemoveMappingContext(IMC_Pet);
+}
+
 void APlayerMainController::HandleDialTriggered()
 {
 	if ((false == IsValid(PetModeDialComponent.Get())) || (false == PetModeDialComponent->IsDialOpen())) return;

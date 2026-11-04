@@ -1,4 +1,6 @@
 #include "Tutorial/TutorialGate.h"
+#include "NiagaraFunctionLibrary.h"
+#include "Kismet/GameplayStatics.h"
 
 ATutorialGate::ATutorialGate()
 {
@@ -66,6 +68,7 @@ void ATutorialGate::Open()
 	
 	bWantOpen = true;
 	SetActorTickEnabled(true); // 여는 건 틱에서
+	PlayOpenFX(); // 열기 시작하는 순간 먼지 + 소리
 }
 
 void ATutorialGate::Close()
@@ -86,5 +89,17 @@ void ATutorialGate::ApplyDoorRotation()
 	// 양쪽 문짝은 서로 반대 방향으로 회전해야 같은 쪽으로 열려요
 	LeftDoorMesh->SetRelativeRotation(FRotator(0.f, -Yaw, 0.f));
 	RightDoorMesh->SetRelativeRotation(FRotator(0.f, Yaw, 0.f));
+}
+
+void ATutorialGate::PlayOpenFX()
+{
+	// 문 바닥 가운데 기준 + 문 회전도 같이 넘김 -> 먼지 줄이 문 폭(로컬 X)을 따라 퍼짐
+	const FVector Location = GetActorTransform().TransformPosition(EffectOffset);
+
+	if (nullptr != OpenEffect)
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, OpenEffect, Location, GetActorRotation());
+
+	if (nullptr != OpenSound)
+		UGameplayStatics::PlaySoundAtLocation(this, OpenSound, Location);
 }
 
