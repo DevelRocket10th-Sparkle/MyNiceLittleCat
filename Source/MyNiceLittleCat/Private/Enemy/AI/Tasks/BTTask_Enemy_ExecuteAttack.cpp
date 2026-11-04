@@ -86,6 +86,9 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeCompon
 		Cleanup();
 		return EBTNodeResult::Failed;
 	}
+
+	// 실행 요청 생성 전에도 선택한 패턴의 페이즈 이동 예외를 적용할 수 있도록 기록
+	CachedPatternComp->SetReservedPattern(SelectedPatternId);
 	
 	// 실제 패턴 실행 전에 타깃 방향 회전을 기다려야 하는지 검사
 	const bool bNeedsFacing = !Definition.bLogOnly && Definition.bFaceTargetOnStart && IsValid(Target);
@@ -212,6 +215,9 @@ void UBTTask_Enemy_ExecuteAttack::Cleanup()
 	if (CachedPatternComp.IsValid())
 	{
 		CachedPatternComp->ReleaseRequest(PatternRequestId);
+
+		// 실행 전 실패, 회전 정렬 중단 시에도 예약된 패턴의 이동 예외가 남지 않도록 해제
+		CachedPatternComp->ClearReservedPattern(SelectedPatternId);
 	}
 
 	// 이 Task가 설정한 공격 Focus만 해제
