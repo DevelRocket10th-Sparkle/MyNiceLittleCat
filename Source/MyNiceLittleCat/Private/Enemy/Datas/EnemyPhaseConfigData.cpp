@@ -53,14 +53,27 @@ bool UEnemyPhaseConfigData::ValidateConfiguration(FString& OutError) const
 			}
 
 			// Waypoints 모드에서 사용할 경로 ID가 지정되지 않은 경우
-			if (Phase.MovementMode == EBossPhaseMovementMode::Waypoints
-				&& Phase.MovementRouteId.IsNone())
+			if (Phase.UsesWaypoints() && Phase.MovementRouteId.IsNone())
 			{
-				OutError = FString::Printf(
-					TEXT("Phase '%s': MovementRouteId is None"),
-					*Phase.PhaseId.ToString()
-				);
+				OutError = FString::Printf(TEXT("Phase '%s': MovementRouteId is None"), *Phase.PhaseId.ToString());
 				return false;
+			}
+
+			// 패턴별 이동 예외 검사
+			TSet<FName> OverrideIds;
+			for (const FBossPatternMovementOverride& Override : Phase.PatternMovementOverrides)
+			{
+				if (Override.PatternId.IsNone()
+					|| OverrideIds.Contains(Override.PatternId)
+					|| !Phase.AllowedPatternIds.Contains(Override.PatternId)
+					|| static_cast<uint8>(Override.MovementMode) > static_cast<uint8>(EBossPhaseMovementMode::Waypoints))
+				{
+					OutError = FString::Printf(TEXT("Phase '%s': Invalid movement override '%s'."),
+						*Phase.PhaseId.ToString(), *Override.PatternId.ToString());
+					return false;
+				}
+
+				OverrideIds.Add(Override.PatternId);
 			}
 
 			// 등록된 페이즈 회전 모드인지 검사

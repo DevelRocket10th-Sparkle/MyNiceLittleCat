@@ -1,4 +1,4 @@
-#include "WIdgets/Pet/SpeechBubbleWidget.h"
+#include "Widgets/Pet/SpeechBubbleWidget.h"
 #include "Components/TextBlock.h"
 #include "Animation/WidgetAnimation.h"
 

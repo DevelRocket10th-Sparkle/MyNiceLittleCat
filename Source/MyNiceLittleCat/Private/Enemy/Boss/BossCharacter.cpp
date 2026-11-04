@@ -13,6 +13,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 
+#include "Components/CapsuleComponent.h"
 
 ABossCharacter::ABossCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -56,25 +57,57 @@ bool ABossCharacter::InitializeEnemyExtensions()
 		{
 			continue;
 		}
+
 		const FBossPhaseDefinition& Phase = PhaseConfig->Phases[Index];
 		for (FName PatternId : Phase.AllowedPatternIds)
+		{
 			if (!GetPatternComponent()->HasPattern(PatternId))
 			{
 				return false;
 			}
+		}
 
+		// 기본 Chasing의 도착 반경이 자동 선택 패턴의 거리 범위와 맞는지 검사
+		// - 높이, 시야, GA 활성화 조건 및 패턴별 이동 예외는 이 검사에 포함하지 않음
+		if (Phase.MovementMode == EBossPhaseMovementMode::Chasing)
+		{
+			const float Radius = Phase.MovementAcceptanceRadius;
+			bool bUsableAtArrival = false;
+
+			for (FName CandidateId : Phase.AllowedPatternIds)
+			{
+				FEnemyPatternDefinition Pattern;
+				if (!GetPatternComponent()->GetPatternDefinition(CandidateId, Pattern) || Pattern.Weight <= 0.f)
+				{
+					continue;
+				}
+
+				if (Pattern.bLogOnly || !Pattern.bCheckTargetDistance
+					|| (Pattern.MinRange <= Radius && Radius < Pattern.MaxRange))
+				{
+					bUsableAtArrival = true;
+					break;
+				}
+			}
+
+			if (!bUsableAtArrival)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Phase '%s': no auto pattern usable at chase acceptance radius %.0f. (check MinRange/MaxRange)"),
+					*Phase.PhaseId.ToString(), Radius);
+			}
+		}
 	}
+
 	if (!InitializeGimmickConnection())
 	{
 		return false;
 	}
+
 	PhaseComponent->OnTransitionRequested.AddUObject(this, &ABossCharacter::HandleTransitionRequested);
 	PhaseComponent->ApplyPhase.BindUObject(this, &ABossCharacter::HandlePhaseEntered);
 	GetPatternComponent()->SetRequestsBlocked(true);
 	return PhaseComponent->InitializePhases(ASC, PhaseConfig);
 }
-
-
 
 // 준비된 보스방의 첫 페이즈와 타깃 선정 시작
 bool ABossCharacter::StartEncounter()
@@ -169,6 +202,15 @@ void ABossCharacter::FinishPhaseTransition()
 		GetPatternComponent()->SetAvailablePatterns({});
 	}
 
+	// Hold 기준 방향 저장 전에 위치부터 맞춤
+	if (!bLogOnly)
+	{
+		if (const FBossPhaseDefinition* EnteredPhase = PhaseComponent->GetCurrentPhase())
+		{
+			TeleportToFirstWaypoint(*EnteredPhase);
+		}
+	}
+
 	// 첫 페이즈 시작과 각 페이즈 전환 완료 시 기준 방향 설정
 	if (AEnemyAIController* AI = Cast<AEnemyAIController>(GetController()))
 	{
@@ -188,6 +230,10 @@ void ABossCharacter::FinishPhaseTransition()
 
 	GetPatternComponent()->SetRequestsBlocked(bLogOnly);
 	RefreshBossBlackboard();
+
+	// BP Test용
+	// 새 페이즈가 활성화된 뒤 레벨 BP에 알림
+	OnPhaseStarted.Broadcast(this, PhaseComponent->GetCurrentPhaseId());
 }
 
 // 체력 변경 시 사망 판정을 먼저 수행한 뒤 추가 상태 처리
@@ -342,6 +388,34 @@ void ABossCharacter::StopPhaseGimmicks()
 {
 	if (HasAuthority() && IsValid(PhaseGimmickComponent))
 		IBossPhaseGimmickInterface::Execute_StopBossGimmicks(PhaseGimmickComponent);
+}
+
+void ABossCharacter::TeleportToFirstWaypoint(const FBossPhaseDefinition& Phase)
+{
+	if (!Phase.bTeleportToFirstWaypoint || Phase.MovementMode != EBossPhaseMovementMode::Waypoints)
+		return;
+
+	// ApplyCurrentPhase에서 인덱스가 0으로 초기화되므로 첫 지점
+	FVector Point;
+	if (!PhaseComponent->GetCurrentWaypoint(Point))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BossPhase] %s: %s의 첫 Waypoint를 찾지 못해 순간이동을 건너뜁니다. 경로 %s를 확인하세요."),
+			*GetName(), *Phase.PhaseId.ToString(), *Phase.MovementRouteId.ToString());
+		return;
+	}
+
+	if (AEnemyAIController* AI = Cast<AEnemyAIController>(GetController()))
+	{
+		AI->StopMovement();
+	}
+	GetCharacterMovement()->StopMovementImmediately();
+
+	// TargetPoint는 바닥에 놓이므로 캡슐 절반 높이만큼 올림 (AbilityTask_BossMoveToPoint와 같은 방식)
+	const FVector Location = Point + FVector(0.f, 0.f, GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+	SetActorLocation(Location, false, nullptr, ETeleportType::TeleportPhysics);
+
+	UE_LOG(LogTemp, Log, TEXT("[BossPhase] %s: %s 첫 Waypoint로 순간이동"), *GetName(), *Phase.PhaseId.ToString());
+	
 }
 
 // 연결된 컴포넌트와 현재 전투에서 발생한 완료 통지만 수락

@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "WIdgets/Checkpoint/CheckpointMenuWidget.h"
+#include "Widgets/Checkpoint/CheckpointMenuWidget.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "Components/PanelWidget.h"

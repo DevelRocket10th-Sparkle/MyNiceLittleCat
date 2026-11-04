@@ -120,7 +120,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pattern")
 	bool IsRequestRunning(int64 RequestId) const;
 
-	// 공격 중에는 패턴 정책을, 후딜 중에는 항상 Stop을 반환한다.
+	// GA 실행 중에는 패턴의 공격 이동 정책을 반환
+	// 후딜 중에도 요청은 유효하지만, 정책은 UsePhaseDefault를 반환
+	// 후딜의 실제 이동 정지는 별도의 이동 잠금이 담당
 	UFUNCTION(BlueprintPure, Category="Pattern")
 	bool GetActiveMovement(FEnemyPatternMovementSettings& OutMovement, AActor*& OutTarget, int64& OutRequestId) const;
 
@@ -138,6 +140,16 @@ public:
 
 	// 실행 가능한 자동 선택 후보가 있는지 검사 (추첨하지 않음)
 	bool HasExecutableAttack(AActor* Target) const;
+
+	// Getter: 활성된 패턴 ID
+	// 이동 모드 결정용: 실행 중(후딜 포함) 패턴 -> 선택만 된 패턴 -> None
+	FName GetActivePatternId() const;
+
+	// Setter: ReservedPattern
+	inline void SetReservedPattern(FName PatternId) { ReservedPatternId = PatternId; }
+	
+	// 현재 예약 ID가 호출자가 정리하려는 ID와 일치할 때만 해제
+	void ClearReservedPattern(FName PatternId);
 	
 protected:
 
@@ -206,8 +218,12 @@ private :
 
 	// 새 요청 번호 발급용; 이전 번호를 재사용하지 않음
 	int64 NextRequestId = 0;
+
 	// 현재 요청 번호; 0은 유효한 요청 없음
 	int64 ActiveRequestId = 0;
+
+	// 선택 후 실행 전(방향 정렬 중) 패턴 ID
+	FName ReservedPatternId;
 
 	// 현재 요청의 실행 결과
 	EEnemyPatternResult ActiveResult = EEnemyPatternResult::Invalid;

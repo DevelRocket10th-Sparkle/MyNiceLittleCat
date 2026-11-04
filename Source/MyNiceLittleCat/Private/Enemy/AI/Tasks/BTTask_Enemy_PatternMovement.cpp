@@ -81,6 +81,7 @@ EBTNodeResult::Type UBTTask_Enemy_PatternMovement::ExecuteTask(UBehaviorTreeComp
 
 	bPreviousRecovering = CachedPatternComp->IsRecovering();	// 현재 후딜 여부
 	bPreviousLocked = Enemy->IsAttackMovementLocked();			// 현재 이동 잠금 여부
+	PreviousPatternId = CachedPatternComp->GetActivePatternId();
 
 	// 이동 정책 및 목표 갱신 시간 초기화
 	UpdateRemaining = FMath::Max(0.05f, UpdateInterval);
@@ -137,15 +138,18 @@ void UBTTask_Enemy_PatternMovement::TickTask(UBehaviorTreeComponent& OwnerComp, 
 
 	const bool bRecovering = CachedPatternComp->IsRecovering();
 	const bool bLocked = Enemy->IsAttackMovementLocked();
+	const FName SeenPatternId = CachedPatternComp->GetActivePatternId();
 
 	// 현재 관측한 상태와 마지막으로 관측된 상태가 다르면 갱신
 	if (SeenRequestId != PreviousRequestId
 		|| bRecovering != bPreviousRecovering
-		|| bLocked != bPreviousLocked)
+		|| bLocked != bPreviousLocked
+		|| SeenPatternId != PreviousPatternId)
 	{
 		PreviousRequestId = SeenRequestId;
 		bPreviousRecovering = bRecovering;
 		bPreviousLocked = bLocked;
+		PreviousPatternId = SeenPatternId;
 
 		// 주기 갱신을 기다리지 않고 이번 Tick에 이동 정책 재평가
 		UpdateRemaining = 0.f;
@@ -161,15 +165,32 @@ void UBTTask_Enemy_PatternMovement::TickTask(UBehaviorTreeComponent& OwnerComp, 
 	}
 }
 
-FAIMoveRequest UBTTask_Enemy_PatternMovement::BuildMoveRequest(AActor* Target, const FEnemyPatternMovementSettings& Settings)
+FAIMoveRequest UBTTask_Enemy_PatternMovement::BuildChaseRequest(AActor* Target, float AcceptanceRadius)
 {
 	FAIMoveRequest Request(Target);
-	Request.SetAcceptanceRadius(Settings.AcceptanceRadius);
-	Request.SetReachTestIncludesAgentRadius(Settings.bIncludeAgentRadius);
-	Request.SetReachTestIncludesGoalRadius(Settings.bIncludeGoalRadius);
+
+	Request.SetAcceptanceRadius(AcceptanceRadius);
+	Request.SetReachTestIncludesAgentRadius(false);		// 패턴 사거리와 같은 중심 간 거리 기준
+	Request.SetReachTestIncludesGoalRadius(false);
 	Request.SetUsePathfinding(true);
-	Request.SetAllowPartialPath(Settings.bAllowPartialPath);
+	Request.SetAllowPartialPath(false);
 	Request.SetCanStrafe(false);
+
+	return Request;
+}
+
+FAIMoveRequest UBTTask_Enemy_PatternMovement::BuildWaypointRequest(const FVector& Destination, float AcceptanceRadius)
+{
+	FAIMoveRequest Request;
+
+	Request.SetGoalLocation(Destination);
+	Request.SetAcceptanceRadius(AcceptanceRadius);
+	Request.SetReachTestIncludesAgentRadius(false);		// 패턴 사거리와 같은 중심 간 거리 기준
+	Request.SetReachTestIncludesGoalRadius(false);
+	Request.SetUsePathfinding(true);
+	Request.SetAllowPartialPath(false);
+	Request.SetCanStrafe(true);							// 시선은 Focus와 회전 설정이 결정
+
 	return Request;
 }
 
@@ -209,77 +230,69 @@ void UBTTask_Enemy_PatternMovement::RefreshMovement()
 	}
 
 	FEnemyPatternMovementSettings Movement;
-	AActor* Target = nullptr;
+	AActor* PatternTarget = nullptr;
 	int64 RequestId = 0;
+	const bool bHasPattern = CachedPatternComp->GetActiveMovement(Movement, PatternTarget, RequestId);
 
-	const bool bHasPattern = CachedPatternComp->GetActiveMovement(Movement, Target, RequestId);
-
-	// 일반 Enemy이면서 패턴 정보가 유효하지 않은 경우 제한
-	if (!bBossMovement
-		&& (!bHasPattern || RequestId != PatternRequestId))
+	// 일반 Enemy는 자신이 담당한 패턴 요청에서만 동작
+	if (!bBossMovement && (!bHasPattern || RequestId != PatternRequestId))
 	{
 		CancelOwnedMove();
 		return;
 	}
 
-	bool bWaypointMovement = false;
+	EResolvedMove Move = EResolvedMove::Stop;
+	AActor* Target = nullptr;
 	FVector Destination = FVector::ZeroVector;
+	float AcceptanceRadius = 0.f;
 
-	// 패턴이 없거나 패턴 정책이 UsePhaseDefault일 때만 true
-	const bool bUsePhaseDefault =
-		bBossMovement
-		&& (!bHasPattern || Movement.Policy == EEnemyPatternMovementPolicy::UsePhaseDefault);
+	// 공격 실행 중 Stop/AbilityDriven은 패턴이 결정
+	// 공격 전, 방향 정렬, UsePhaseDefault, 후딜은 이동 모드를 따름 (후딜은 이동 잠금으로 정지)
+	const bool bFollowLocomotion = !bHasPattern || Movement.Policy == EEnemyPatternMovementPolicy::UsePhaseDefault;
 
-	if (bUsePhaseDefault)
+	// 다음 행동 결정
+	if (!bFollowLocomotion)
 	{
-		// 실행 중 패턴이 없거나 UsePhaseDefault이므로 페이즈 기본 이동을 사용
+		Move = Movement.Policy == EEnemyPatternMovementPolicy::AbilityDriven
+			? EResolvedMove::AbilityDriven
+			: EResolvedMove::Stop;
+	}
+	else if (bBossMovement)
+	{
 		const FBossPhaseDefinition* Phase = CachedPhaseComp->GetCurrentPhase();
-
 		if (!Phase)
 		{
 			CancelOwnedMove();
 			return;
 		}
+		AcceptanceRadius = Phase->MovementAcceptanceRadius;
 
-		// 페이즈 이동에는 패턴별 거리 설정을 사용하지 않음
-		Movement = FEnemyPatternMovementSettings();
-		Movement.AcceptanceRadius = Phase->MovementAcceptanceRadius;
-		Movement.bIncludeAgentRadius = false;
-		Movement.bIncludeGoalRadius = false;
-		Movement.bAllowPartialPath = false;
-		Target = nullptr;
-
-		// 페이즈 기본 이동 모드를 실제 실행할 이동 설정으로 변환
-		switch (Phase->MovementMode)
+		// 실행 중 패턴 -> 선택된 패턴 -> 페이즈 기본 순으로 결정
+		switch (Phase->ResolveMovementMode(CachedPatternComp->GetActivePatternId()))
 		{
 		case EBossPhaseMovementMode::Stop:
-			Movement.Policy = EEnemyPatternMovementPolicy::Stop;
+			Move = EResolvedMove::Stop;
 			break;
 
 		case EBossPhaseMovementMode::Chasing:
-		{	// 지역변수 선언을 위해 스코프를 강제로 만들어줌 (case는 자체 스코프를 만들지 않음)
-			Movement.Policy = EEnemyPatternMovementPolicy::ChaseTarget;
-
+		{	// 지역 변수 사용을 위해 스코프 명시
+			Move = EResolvedMove::Chase;
 			UBlackboardComponent* BlackboardComp = CachedAI->GetBlackboardComponent();
-
 			Target = BlackboardComp
 				? Cast<AActor>(BlackboardComp->GetValueAsObject(TEXT("TargetActor")))
 				: nullptr;
-
 			break;
 		}
-		case EBossPhaseMovementMode::Waypoints:
-			// 실제 실행은 bWaypointMovement 분기로 구분
-			Movement.Policy = EEnemyPatternMovementPolicy::UsePhaseDefault;
 
-			// Waypoints 이동 모드일 때 목적지가 있는지 확인
+		case EBossPhaseMovementMode::Waypoints:
+			// 목적지 확인
 			if (!CachedPhaseComp->GetCurrentWaypoint(Destination))
 			{
 				CancelOwnedMove();
 				return;
 			}
 
-			bWaypointMovement = true;
+			Move = EResolvedMove::Waypoint;
 			break;
 
 		default:
@@ -287,102 +300,68 @@ void UBTTask_Enemy_PatternMovement::RefreshMovement()
 			return;
 		}
 	}
-	else if (Movement.Policy == EEnemyPatternMovementPolicy::UsePhaseDefault)
-	{
-		// 페이즈가 없는 일반 Enemy에서 이동 정책을 잘못 사용한 경우 Stop 정책 사용
-		Movement.Policy = EEnemyPatternMovementPolicy::Stop;
-	}
+	// 일반 Enemy의 UsePhaseDefault는 Stop (Move 기본값)
 
 	const bool bFirstPolicy = !bHasPolicy;
 	const bool bPolicyChanged =
-		bFirstPolicy	// 아직 적용한 정책이 없어 최초 적용이 필요한 경우
-		|| !(Movement == CachedMovement)	// 현재 이동 정책이랑 기록된 이동 정책이 다른 경우
-		|| Target != CachedTarget.Get()		// 현재 이동 목표 타깃이 기록된 거랑 다른 경우
-		|| bWaypointMovement != bCachedWaypointMovement	// 현재 Waypoint 이동 상태가 기록된 거랑 다른 경우
-		|| (bWaypointMovement && !Destination.Equals(CachedDestination, 0.1f));	// 현재 Waypoint 이동 목적지가 기록된 거랑 다른 경우
+		bFirstPolicy
+		|| Move != CachedMove
+		|| !FMath::IsNearlyEqual(AcceptanceRadius, CachedAcceptanceRadius)
+		|| Target != CachedTarget.Get()
+		|| (Move == EResolvedMove::Waypoint && !Destination.Equals(CachedDestination, 0.1f));
 
-	// 이동 정책이 바뀐 경우 이전 이동 취소 및 기록 갱신
 	if (bPolicyChanged)
 	{
 		CancelOwnedMove();
-
-		CachedMovement = Movement;
+		CachedMove = Move;
+		CachedAcceptanceRadius = AcceptanceRadius;
 		CachedTarget = Target;
-		bCachedWaypointMovement = bWaypointMovement;
 		CachedDestination = Destination;
 		bHasPolicy = true;
 	}
 
-	// GA가 만든 이동 요청을 이 Task가 반복해서 취소하지 않음
-	if (Movement.Policy == EEnemyPatternMovementPolicy::AbilityDriven)
+	// GA가 만든 이동 요청을 반복해서 취소하지 않음
+	if (Move == EResolvedMove::AbilityDriven)
 	{
 		return;
 	}
 
-	// 기존 일반 이동에서 처음 한 번만 제어권을 인계 받음
+	// 기존 일반 이동에서 처음 한 번만 제어권 인계
 	if (bFirstPolicy && Path->GetStatus() != EPathFollowingStatus::Idle)
 	{
-		Path->AbortMove(
-			*this,
-			FPathFollowingResultFlags::NewRequest,
-			Path->GetCurrentRequestId()
-		);
+		Path->AbortMove(*this, FPathFollowingResultFlags::NewRequest, Path->GetCurrentRequestId());
 	}
 
-	// 패턴에서 이동이 제한되는 경우 이동 취소
-	// - 이동 정책이 Stop인 경우
-	// - 공격 중 이동 금지인 경우
-	// - 이동 정책이 Waypoint가 아닌데(Chasing) 타깃이 유효하지 않은 경우
-	if (Movement.Policy == EEnemyPatternMovementPolicy::Stop
+	if (Move == EResolvedMove::Stop
 		|| Enemy->IsAttackMovementLocked()
-		|| (!bWaypointMovement && !IsValid(Target)))
+		|| (Move == EResolvedMove::Chase && !IsValid(Target)))
 	{
 		CancelOwnedMove();
 		return;
 	}
 
-	// 진행 중인 요청을 매 갱신마다 덮어쓰지 않음
 	if (Path->GetStatus() != EPathFollowingStatus::Idle)
 	{
 		return;
 	}
 
 	OwnedMoveId = FAIRequestID::InvalidRequest;
-	FAIMoveRequest MoveRequest;
-	if (bWaypointMovement)
-	{
-		// Waypoint 이동 모드를 사용하는 경우
-		MoveRequest.SetGoalLocation(Destination);
-		MoveRequest.SetAcceptanceRadius(Movement.AcceptanceRadius);
-		MoveRequest.SetReachTestIncludesAgentRadius(false);
-		MoveRequest.SetReachTestIncludesGoalRadius(false);
-		MoveRequest.SetUsePathfinding(true);
-		MoveRequest.SetAllowPartialPath(false);
-
-		// 이동 방향과 바라보는 방향이 달라도 이동할 수 있도록 허용
-		// 실제 시선 방향은 AI Focus, 캐릭터 회전 설정, 회전 잠금에 따라 결정
-		MoveRequest.SetCanStrafe(true);
-	}
-	else
-	{
-		// Waypoint 이외의 이동 모드를 사용하는 경우
-		MoveRequest = BuildMoveRequest(Target, Movement);
-	}
+	const FAIMoveRequest MoveRequest =
+		Move == EResolvedMove::Waypoint
+		? BuildWaypointRequest(Destination, AcceptanceRadius)
+		: BuildChaseRequest(Target, AcceptanceRadius);
 
 	if (Path->HasReached(MoveRequest))
 	{
-		if (bWaypointMovement)
+		if (Move == EResolvedMove::Waypoint)
 		{
-			// Task 시작 시 저장한 페이즈 실행 번호를 사용
 			CachedPhaseComp->AdvanceWaypoint(CachedPhaseExecutionId);
 		}
 
-		// 새 지점으로의 이동 요청은 다음 갱신에서 수행
 		return;
 	}
 
 	const FPathFollowingRequestResult Result = CachedAI->MoveTo(MoveRequest);
-
 	if (Result.Code == EPathFollowingRequestResult::RequestSuccessful)
 	{
 		OwnedMoveId = Result.MoveId;
@@ -424,17 +403,19 @@ void UBTTask_Enemy_PatternMovement::Cleanup()
 	PatternRequestId = 0;
 	CachedPhaseExecutionId = 0;
 
-	CachedMovement = FEnemyPatternMovementSettings();
 	CachedDestination = FVector::ZeroVector;
 
 	bHasPolicy = false;
-	bCachedWaypointMovement = false;
 
 	UpdateRemaining = 0.f;
 
 	PreviousRequestId = 0;
 	bPreviousRecovering = false;
 	bPreviousLocked = false;
+
+	CachedMove = EResolvedMove::Stop;
+	CachedAcceptanceRadius = 0.f;
+	PreviousPatternId = NAME_None;
 }
 
 EBTNodeResult::Type UBTTask_Enemy_PatternMovement::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)

@@ -24,6 +24,7 @@ struct FBossMovementRoute
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TArray<TObjectPtr<ATargetPoint>> Points;
+
 };
 
 // 페이즈의 기본 회전 방식
@@ -32,4 +33,18 @@ enum class EBossPhaseRotationMode : uint8
 {
 	FaceTarget,	// 타깃을 바라보는 회전 허용
 	Hold		// 페이즈 시작 방향으로 복귀하고 유지
+};
+
+// 페이즈 기본 이동과 다르게 움직일 패턴
+USTRUCT(BlueprintType)
+struct FBossPatternMovementOverride
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FName PatternId;
+
+	// Waypoints는 페이즈의 MovementRouteId를 사용
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	EBossPhaseMovementMode MovementMode = EBossPhaseMovementMode::Stop;
 };

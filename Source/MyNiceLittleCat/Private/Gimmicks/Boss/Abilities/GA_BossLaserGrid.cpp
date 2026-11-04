@@ -4,7 +4,6 @@
 /// 보스 격자 레이저 패턴 GA 구현
 
 #include "Gimmicks/Boss/Abilities/GA_BossLaserGrid.h"
-#include "Gimmicks/Boss/Abilities/AbilityTask_BossMoveToPoint.h"
 #include "Gimmicks/Boss/Abilities/BossLaserGridPatternSettings.h"
 #include "Gimmicks/Boss/BossGimmickComponent.h"
 #include "Gimmicks/Boss/LaserGridPattern.h"
@@ -82,29 +81,7 @@ void UGA_BossLaserGrid::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 
 	UE_LOG(LogTemp, Log, TEXT("[BossLaserGrid] %s: 시작 (%d회, 피해 %.1f)"), *Enemy->GetName(), GridSettings->VolleyCount, GetDamagePerHitOverride());
 
-	// 이동 잠금이 걸리면 경로 이동이 막히므로 이동을 먼저
-	if (GridSettings->bMoveToStandPoint)
-	{
-		const FTransform StandTransform = Grid->GetBossStandTransform();
-		UAbilityTask_BossMoveToPoint* MoveTask = UAbilityTask_BossMoveToPoint::BossMoveToPoint(this, StandTransform.GetLocation(),
-			StandTransform.Rotator().Yaw, GridSettings->MoveAcceptanceRadius, GridSettings->MoveTimeLimit);
-		MoveTask->OnArrived.AddDynamic(this, &UGA_BossLaserGrid::HandleArrived);
-		MoveTask->ReadyForActivation();
-	}
-	else
-	{
-		HandleArrived();
-	}
-}
-
-void UGA_BossLaserGrid::HandleArrived()
-{
-	if (!IsExecutionValid())
-	{
-		EndWithResult(true);
-		return;
-	}
-
+	// 보스를 지점으로 옮기지 않고 지금 자리에서 실행 (이동은 보스 쪽 이동 패턴 담당)
 	if (GridSettings->bLockMovement)
 	{
 		if (AAIController* AI = Cast<AAIController>(Enemy->GetController()))
@@ -117,8 +94,7 @@ void UGA_BossLaserGrid::HandleArrived()
 		bOwnsMovementLock = true;
 	}
 
-	// 대기 지점으로 갔으면 지점 방향을 유지, 아니면 타깃을 바라봄
-	if (ExecutionPattern.bFaceTargetOnStart && !GridSettings->bMoveToStandPoint)
+	if (ExecutionPattern.bFaceTargetOnStart)
 	{
 		FaceTarget();
 	}
