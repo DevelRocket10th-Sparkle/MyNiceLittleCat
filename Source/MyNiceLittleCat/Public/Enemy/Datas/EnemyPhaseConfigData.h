@@ -82,9 +82,12 @@ struct FBossPhaseDefinition
 		meta = (EditCondition = "MovementMode == EBossPhaseMovementMode::Waypoints", EditConditionHides))
 	bool bTeleportToFirstWaypoint = false;
 
-	// 기본 이동과 다르게 움직일 패턴만 추가 (목록에 없는 패턴은 MovementMode 사용)
-	// 적용 구간: 패턴 선택(방향 정렬) ~ 실행 ~ 후딜(후딜은 항상 정지)
-	// 단, 공격 실행 중 Stop/AbilityDriven이 우선되며, 후딜에는 이동 잠금으로 정지
+	// 페이즈 기본 이동과 다르게 처리할 패턴만 추가 (목록에 없는 패턴은 페이즈 기본 이동, 속도 배수 1)
+	// - 이동 모드: bOverrideMovementMode 체크 시 MovementMode로 덮어씀
+	//   적용 구간: 패턴 선택(방향 정렬) ~ 실행 ~ 후딜(후딜은 이동 잠금으로 항상 정지)
+	//   단, 패턴 Movement 정책이 Stop/AbilityDriven이면 실행 중에는 패턴 정책이 우선
+	// - 이동 속도: ActiveMoveSpeedMultiplier를 GA가 정한 활성 구간에만 적용 (LaserBeam: 발사 중)
+	//   패턴 Movement 정책이 UsePhaseDefault일 때만 의미 있음 (그 외에는 이동 잠금으로 정지)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement", meta = (TitleProperty = "PatternId"))
 	TArray<FBossPatternMovementOverride> PatternMovementOverrides;
 
@@ -93,39 +96,16 @@ struct FBossPhaseDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rotation")
 	EBossPhaseRotationMode RotationMode = EBossPhaseRotationMode::FaceTarget;
 
-	// 패턴별 예외가 있으면 해당 모드, PatternId가 None이거나 예외가 없으면 기본 모드 반환
-	// 공격의 Stop/AbilityDriven 정책과 이동 잠금은 호출자가 별도로 적용
-	EBossPhaseMovementMode ResolveMovementMode(FName PatternId) const
-	{
-		if (!PatternId.IsNone())
-		{
-			if (const FBossPatternMovementOverride* Found =
-				PatternMovementOverrides.FindByPredicate(
-					[PatternId](const FBossPatternMovementOverride& Entry)
-					{
-						return Entry.PatternId == PatternId;
-					}
-				))
-			{
-				return Found->MovementMode;
-			}
-		}
+	// 패턴별 예외가 있고 bOverrideMovementMode가 켜져 있으면 해당 모드
+	// 그 외 (PatternId가 None, 예외 없음, 체크 해제)는 페이즈 기본 모드 반환
+	EBossPhaseMovementMode ResolveMovementMode(FName PatternId) const;
 
-		return MovementMode;
-	}
+	// 패턴별 예외가 있으면 해당 속도 배수, PatternId가 None이거나 예외가 없으면 1.f 반환
+	float ResolveActiveMoveSpeedMultiplier(FName PatternId) const;
 
 	// 기본 이동 또는 예외 중 Waypoints 사용 여부 확인
 	// 현재 실행 중인 이동 모드를 판단하는 함수는 아님
-	bool UsesWaypoints() const
-	{
-		return MovementMode == EBossPhaseMovementMode::Waypoints
-			|| PatternMovementOverrides.ContainsByPredicate(
-				[](const FBossPatternMovementOverride& Entry)
-				{
-					return Entry.MovementMode == EBossPhaseMovementMode::Waypoints;
-				}
-			);
-	}
+	bool UsesWaypoints() const;
 };
 
 /**

@@ -159,8 +159,10 @@ void AEnemyCharacter::ApplyEnemyConfig()
 		EnemyConfig->AttackPower
 	);
 
-	GetCharacterMovement()->MaxWalkSpeed = EnemyConfig->MoveSpeed;
-	GetCharacterMovement()->MaxFlySpeed = EnemyConfig->MoveSpeed;
+	// 이동 속도 적용
+	BaseMoveSpeed = EnemyConfig->MoveSpeed;
+	GetCharacterMovement()->MaxWalkSpeed = BaseMoveSpeed;
+	GetCharacterMovement()->MaxFlySpeed = BaseMoveSpeed;
 }
 
 // 중복 사망을 막고 공격과 AI를 정리한 뒤 사망 연출 시작
@@ -173,6 +175,7 @@ void AEnemyCharacter::BeginDeath()
 
 	OnDeathStarted.Broadcast(this);
 
+	ClearPatternMoveSpeedMultiplier();
 	PatternComponent->StopAndInvalidate();
 
 	SetWantsToMove(false);
@@ -302,6 +305,17 @@ void AEnemyCharacter::HandleDeathMontageEnded(UAnimMontage* Montage, bool bInter
 UEnemyPatternComponent* AEnemyCharacter::GetPatternComponent() const
 {
 	return PatternComponent;
+}
+
+void AEnemyCharacter::SetPatternMoveSpeedMultiplier(float Multiplier)
+{
+	GetCharacterMovement()->MaxWalkSpeed = BaseMoveSpeed * Multiplier;
+	GetCharacterMovement()->MaxFlySpeed = BaseMoveSpeed * Multiplier;
+}
+
+void AEnemyCharacter::ClearPatternMoveSpeedMultiplier()
+{
+	SetPatternMoveSpeedMultiplier(1.f);
 }
 
 // 초기화와 생존 및 보스방 전투 상태를 포함한 AI 실행 가능 여부 확인
