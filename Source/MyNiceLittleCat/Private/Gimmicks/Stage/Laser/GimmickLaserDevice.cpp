@@ -7,6 +7,42 @@
 #include "Gimmicks/Laser/LaserBeamComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/ArrowComponent.h"
+#include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
+
+namespace
+{
+	// 장치가 켜지면 머티리얼 "Glow" 파라미터를 0 → 1로 올림 (필터 유리 등, 파라미터가 있는 메시만)
+	const FName DeviceGlowParam(TEXT("Glow"));
+	constexpr float DeviceGlowBlendSpeed = 5.f; // 초당 변화량 (0.2초에 다 켜짐)
+
+	// 아직 목표 값에 닿지 않은 메시가 있으면 true
+	bool UpdateDeviceGlow(AActor* Owner, float Target, float DeltaTime)
+	{
+		bool bBlending = false;
+		TInlineComponentArray<UStaticMeshComponent*> Meshes(Owner);
+		for (UStaticMeshComponent* MeshComp : Meshes)
+		{
+			UMaterialInterface* Material = MeshComp ? MeshComp->GetMaterial(0) : nullptr;
+			float Current = 0.f;
+			if (!Material || !Material->GetScalarParameterValue(FHashedMaterialParameterInfo(DeviceGlowParam), Current))
+			{
+				continue;
+			}
+
+			const float Next = FMath::FInterpConstantTo(Current, Target, DeltaTime, DeviceGlowBlendSpeed);
+			if (!FMath::IsNearlyEqual(Next, Current))
+			{
+				if (UMaterialInstanceDynamic* MID = MeshComp->CreateDynamicMaterialInstance(0))
+				{
+					MID->SetScalarParameterValue(DeviceGlowParam, Next);
+				}
+			}
+			bBlending |= !FMath::IsNearlyEqual(Next, Target);
+		}
+		return bBlending;
+	}
+}
 
 AGimmickLaserDevice::AGimmickLaserDevice()
 {
@@ -207,8 +243,11 @@ void AGimmickLaserDevice::Tick(float DeltaTime)
 		}
 	}
 
+	// 켜짐에 맞춰 유리가 밝아지고 어두워짐 (꺼지는 동안에도 틱 유지)
+	const bool bGlowBlending = UpdateDeviceGlow(this, IsActivated() ? 1.f : 0.f, DeltaTime);
+
 	// 받는 빛도 없고 꺼져 있으면 쉼 (다시 빛이 들어오면 ReceiveLaserHit가 켬)
-	if (!bReceiving && !IsActivated())
+	if (!bReceiving && !IsActivated() && !bGlowBlending)
 	{
 		SetActorTickEnabled(false);
 	}
