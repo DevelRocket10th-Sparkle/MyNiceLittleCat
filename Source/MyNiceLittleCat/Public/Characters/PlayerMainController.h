@@ -38,6 +38,10 @@ public:
 
 	bool TryGetPetCursorHit(FHitResult& _outHit) const;
 
+	// 펫 입력(모드 다이얼 / 모드 사용 / 특수 행동) 켜고 끄기
+	// 튜토리얼처럼 펫 조작을 막아야 하는 곳에서 사용
+	void SetPetInputEnabled(bool _bEnable);
+
 private:
 	// 펫 입력 관련 콜백 함수들
 	void HandleDialStarted();
