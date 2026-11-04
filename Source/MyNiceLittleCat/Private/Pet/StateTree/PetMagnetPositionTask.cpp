@@ -3,6 +3,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "StateTreeExecutionContext.h"
 #include "AIController.h"
+#include "Components/CapsuleComponent.h"
+
 EStateTreeRunStatus FPetMagnetPositionTask::EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
 {
     FInstanceDataType& Data = Context.GetInstanceData(*this);
@@ -59,14 +61,18 @@ EStateTreeRunStatus FPetMagnetPositionTask::Tick(FStateTreeExecutionContext& Con
     if (false == IsValid(Player)) return EStateTreeRunStatus::Failed;
 
     const FVector Direction = Data.Pet->GetAimDirection(); // 펫의 컨트롤러가 구한 마우스 커서가 향하는 방향을 가져와요
-    const FVector TargetLocation = Player->GetActorLocation() + Direction * Data.DistanceFromPlayer + FVector(0.f, 0.f, Data.HeightOffset);
+    //const FVector TargetLocation = Player->GetActorLocation() + Direction * Data.DistanceFromPlayer + FVector(0.f, 0.f, Data.HeightOffset);
+    //const FRotator TargetRotation = Direction.Rotation();
+    const FVector DesiredLocation = Player->GetActorLocation() + Direction * Data.DistanceFromPlayer;
+    FVector TargetLocation;
+    const bool bFoundGround = TryGetGroundedTargetLocation(Data, DesiredLocation, TargetLocation);
     const FRotator TargetRotation = Direction.Rotation();
 
     Data.TimeUntilSafeSearch -= DeltaTime;
 
     FVector PositionToUse;
 
-    if (true == Data.Pet->CanUseMagnetPosition(TargetLocation))
+    if (true == bFoundGround && true == Data.Pet->CanUseMagnetPosition(TargetLocation))
     {
         // 원래 목표가 다시 유효해지면 즉시 원래 배치로 복귀
         PositionToUse = TargetLocation;
@@ -137,4 +143,53 @@ void FPetMagnetPositionTask::ExitState(FStateTreeExecutionContext& Context, cons
 
     Data.bHasSavedMovement = false;
     Data.Movement.Reset();
+}
+
+bool FPetMagnetPositionTask::TryGetGroundedTargetLocation(const FInstanceDataType& Data, const FVector& DesiredLocation, FVector& OutLocation)
+{
+    OutLocation = DesiredLocation;
+
+    APetCharacter* Pet = Data.Pet.Get();
+    if (false == IsValid(Pet)) return false;
+
+    APawn* Player = Pet->GetPartnerPlayer();
+    UCapsuleComponent* Capsule = Pet->GetCapsuleComponent();
+    UCharacterMovementComponent* Movement = Pet->GetCharacterMovement();
+
+    if (false == IsValid(Player) || false == IsValid(Pet->GetWorld()) ||
+        false == IsValid(Capsule) || false == IsValid(Movement))
+        return false;
+
+    // 플레이어 중심(기존)이 아니라 발 높이를 기준으로 탐색
+    FVector PlayerFeet = Player->GetActorLocation();
+    if (const ACharacter* PlayerCharacter = Cast<ACharacter>(Player))
+    {
+        if (const UCharacterMovementComponent* PlayerMovement = PlayerCharacter->GetCharacterMovement())
+            PlayerFeet = PlayerMovement->GetActorFeetLocation();
+    }
+
+    //. XY는 원래 자성 목표 위치, Z는 플레이어 발 높이
+    FVector ProbeLocation = DesiredLocation;
+    ProbeLocation.Z = PlayerFeet.Z;
+
+    const float SearchHeight = FMath::Max(Data.GroundSearchHeight, 1.f);
+
+    FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PetMagnetGround), false, Pet);
+    QueryParams.AddIgnoredActor(Player);
+
+    // 펫이 실제로 막히는 충돌 응답을 기준으로 바닥 탐색
+    const FCollisionResponseParams ResponseParams(Capsule->GetCollisionResponseToChannels());
+
+    FHitResult GroundHit;
+    const bool bFoundGround = Pet->GetWorld()->LineTraceSingleByChannel(
+        GroundHit, ProbeLocation + FVector::UpVector * SearchHeight, ProbeLocation - FVector::UpVector * SearchHeight,
+        Capsule->GetCollisionObjectType(), QueryParams, ResponseParams);
+
+    if (false == bFoundGround || GroundHit.bStartPenetrating || false == Movement->IsWalkable(GroundHit))
+        return false;
+
+    // 실제 바닥 위에 캡슐을 배치
+    constexpr float GroundClearance = 2.f;
+    OutLocation = GroundHit.ImpactPoint + FVector::UpVector * (Capsule->GetScaledCapsuleHalfHeight() + GroundClearance + Data.HeightOffset);
+    return true;
 }
