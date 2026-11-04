@@ -327,7 +327,13 @@ void UGameplayAbility_PetMagnet::UpdateHeldTarget(float DeltaTime)
     // Q로 극성이 바뀌어서 같은 극이 되면 강하게 내팽겨쳐요
     if (CurrentPolarity == TargetPolarity)
     {
-        ReleaseHeldTarget(RepelSpeed, RepelUpwardRatio);
+        float LaunchMultiplier = 1.f;
+
+        if (const UMagneticComponent* Magnetic = Target->FindComponentByClass<UMagneticComponent>())
+            LaunchMultiplier = Magnetic->GetLaunchSpeedMultiplier();
+
+        const float LaunchSpeed = RepelSpeed * LaunchMultiplier;
+        ReleaseHeldTarget(LaunchSpeed, RepelUpwardRatio);
         return;
     }
 
