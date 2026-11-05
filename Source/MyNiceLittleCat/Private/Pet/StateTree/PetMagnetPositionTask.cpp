@@ -3,18 +3,20 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "StateTreeExecutionContext.h"
 #include "AIController.h"
+#include "Components/CapsuleComponent.h"
+
 EStateTreeRunStatus FPetMagnetPositionTask::EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
 {
     FInstanceDataType& Data = Context.GetInstanceData(*this);
 
     Data.Movement.Reset();
     Data.bHasSavedMovement = false;
-    Data.SafeLocation = FVector::ZeroVector;
-    Data.bHasSafeLocation = false;
-    Data.TimeUntilSafeSearch = 0.f;
 
     if (false == IsValid(Data.Pet.Get()) || false == IsValid(Data.Pet->GetPartnerPlayer()))
         return EStateTreeRunStatus::Failed;
+
+    // 이전 사용 때 값이 남지 않도록 시작 시 정상으로 초기화 (바로 아래 Tick에서 다시 계산됨)
+    Data.Pet->SetMagnetPlacementValid(true);
 
     UCharacterMovementComponent* Movement = Data.Pet->GetCharacterMovement();
     if (false == IsValid(Movement)) return EStateTreeRunStatus::Failed;
@@ -37,13 +39,13 @@ EStateTreeRunStatus FPetMagnetPositionTask::EnterState(FStateTreeExecutionContex
     Movement->DisableMovement();
     Movement->bOrientRotationToMovement = false;
 
-    // 자성 시작 전의 현재 위치가 안전하면 초기 기억으로 사용
-    const FVector InitialLocation = Data.Pet->GetActorLocation();
-    if (true == Data.Pet->CanUseMagnetPosition(InitialLocation))
-    {
-        Data.SafeLocation = InitialLocation;
-        Data.bHasSafeLocation = true;
-    }
+    //// 자성 시작 전의 현재 위치가 안전하면 초기 기억으로 사용
+    //const FVector InitialLocation = Data.Pet->GetActorLocation();
+    //if (true == Data.Pet->CanUseMagnetPosition(InitialLocation))
+    //{
+    //    Data.SafeLocation = InitialLocation;
+    //    Data.bHasSafeLocation = true;
+    //}
 
     // 진입한 프레임부터 위치를 적용!
     return Tick(Context, 0.f);
@@ -58,64 +60,20 @@ EStateTreeRunStatus FPetMagnetPositionTask::Tick(FStateTreeExecutionContext& Con
     APawn* Player = Data.Pet->GetPartnerPlayer();
     if (false == IsValid(Player)) return EStateTreeRunStatus::Failed;
 
-    const FVector Direction = Data.Pet->GetAimDirection(); // 펫의 컨트롤러가 구한 마우스 커서가 향하는 방향을 가져와요
-    const FVector TargetLocation = Player->GetActorLocation() + Direction * Data.DistanceFromPlayer + FVector(0.f, 0.f, Data.HeightOffset);
+    const FVector Direction = Data.Pet->GetAimDirection(); // 마우스 커서 방향
+    const FVector DesiredLocation = Player->GetActorLocation() + Direction * Data.DistanceFromPlayer;
     const FRotator TargetRotation = Direction.Rotation();
 
-    Data.TimeUntilSafeSearch -= DeltaTime;
+    // 바닥이 있으면 바닥 위에, 없으면(허공, 벽 속) 원래 궤도 높이 그대로
+    // 의도: 공전 중에는 막지 않고 끝까지 따라가게 해서 안 가버리는!! 답답함을 없앴어요
+    FVector TargetLocation;
+    TryGetGroundedTargetLocation(Data, DesiredLocation, TargetLocation);
 
-    FVector PositionToUse;
+    Data.Pet->SetActorLocationAndRotation(TargetLocation, TargetRotation, false, nullptr, ETeleportType::TeleportPhysics);
 
-    if (true == Data.Pet->CanUseMagnetPosition(TargetLocation))
-    {
-        // 원래 목표가 다시 유효해지면 즉시 원래 배치로 복귀
-        PositionToUse = TargetLocation;
-        //Data.bHasSafeLocation = false;
-        Data.TimeUntilSafeSearch = 0.f;
-    }
-    else
-    {
-        const float MaxSafeDistance = FMath::Max(Data.MaxSafeDistanceFromPlayer, Data.DistanceFromPlayer);
-
-        const bool bRememberedPositionUsable = Data.bHasSafeLocation && FVector::DistSquared2D(Data.SafeLocation, Player->GetActorLocation())
-            <= FMath::Square(MaxSafeDistance) && Data.Pet->CanUseMagnetPosition(Data.SafeLocation);
-
-        if (false == bRememberedPositionUsable)
-        {
-            Data.bHasSafeLocation = false;
-
-            // 시작부터 안전 위치가 없거나,
-            // 기억한 위치가 무효가 된 예외에서만 탐색
-            if (Data.TimeUntilSafeSearch <= 0.f)
-            {
-                Data.TimeUntilSafeSearch = 0.2f;
-                FVector NewSafeLocation;
-                if (true == Data.Pet->TryFindSafeRecoveryLocation(TargetLocation, NewSafeLocation))
-                {
-                    Data.SafeLocation = NewSafeLocation;
-                    Data.bHasSafeLocation = true;
-                }
-            }
-        }
-
-        if (false == Data.bHasSafeLocation)
-        {
-            // 잘못된 좌표로 이동하지 않고 다음 Tick에 재검사
-            Data.Pet->SetActorRotation(TargetRotation);
-            return EStateTreeRunStatus::Running;
-        }
-
-        // 원래 목표가 무효여도 최근 안전 위치가 유효하면 유지
-        PositionToUse = Data.SafeLocation;
-    }
-
-    const bool bMoved = Data.Pet->SetActorLocationAndRotation(PositionToUse, TargetRotation, false, nullptr, ETeleportType::TeleportPhysics);
-    // 실제 배치에 성공한 위치를 가장 최근 안전 위치로 기억
-    if (true == bMoved)
-    {
-        Data.SafeLocation = Data.Pet->GetActorLocation();
-        Data.bHasSafeLocation = true;
-    }
+    // 위치는 막지 않는 대신, 지금 자리가 정상인지만 기록
+    // -> 자성 능력이 이 값을 보고 벽 속, 허공, 벽 너머에서는 자기장을 끔 (물체 벽 통과 방지)
+    Data.Pet->SetMagnetPlacementValid(Data.Pet->IsMagnetPlacementValidAt(Data.Pet->GetActorLocation()));
 
     return EStateTreeRunStatus::Running;
 }
@@ -124,17 +82,86 @@ void FPetMagnetPositionTask::ExitState(FStateTreeExecutionContext& Context, cons
 {
     FInstanceDataType& Data = Context.GetInstanceData(*this);
 
-    if (true == Data.bHasSavedMovement)
+    APetCharacter* Pet = Data.Pet.Get();
+    UCharacterMovementComponent* Movement = Data.Movement.Get();
+
+    if (true == Data.bHasSavedMovement && true == IsValid(Pet) && true == IsValid(Movement))
     {
-        if (UCharacterMovementComponent* Movement = Data.Movement.Get())
+        Movement->bOrientRotationToMovement = Data.bSavedOrientRotationToMovement;
+
+        const FVector CurrentLocation = Pet->GetActorLocation();
+        FVector LandingLocation;
+
+        // 다른 행동(MoveTo 등)으로 바뀌어서 나가는 경우엔 그 요청을 덮어쓰지 않음
+        const bool bReturningToFollow = Pet->GetRequestedBehavior() == EPetBehavior::Follow;
+
+        if (true == Pet->CanDropPetAt(CurrentLocation))
+            // 1) 놓을 수 있는 자리 → 그 자리에 그대로 내려놓기
+            Pet->ResumeNavigationSafely(Data.SavedMovementMode, Data.SavedCustomMovementMode);
+
+        else if (true == bReturningToFollow && true == Pet->TryFindSafeRecoveryLocation(CurrentLocation, LandingLocation, true))
         {
-            Movement->bOrientRotationToMovement = Data.bSavedOrientRotationToMovement;
-            //Movement->SetMovementMode(Data.SavedMovementMode, Data.SavedCustomMovementMode);
-            if (APetCharacter* Pet = Data.Pet.Get())
-                Pet->ResumeNavigationSafely(Data.SavedMovementMode, Data.SavedCustomMovementMode);
+            // 2) 놓을 수 없는 자리 → 가장 가까운 가능한 위치로 날아가기 (RecoverFollow)
+            // 이동 모드를 먼저 되돌려야 RecoverFollow가 '걷기'를 저장했다가 착지 후 복원함
+            // (DisableMovement 상태 그대로 넘기면 착지 후에도 이동 불가가 됨)
+            Movement->SetMovementMode(Data.SavedMovementMode, Data.SavedCustomMovementMode);
+            Pet->RequestBehavior(EPetBehavior::RecoverFollow);
         }
+
+        else
+            // 3) 갈 곳을 못 찾았거나 다른 행동으로 바뀌는 중 → 기존 안전 복구(재시도 + 순간이동)
+            Pet->ResumeNavigationSafely(Data.SavedMovementMode, Data.SavedCustomMovementMode);
     }
 
     Data.bHasSavedMovement = false;
     Data.Movement.Reset();
+}
+
+bool FPetMagnetPositionTask::TryGetGroundedTargetLocation(const FInstanceDataType& Data, const FVector& DesiredLocation, FVector& OutLocation)
+{
+    OutLocation = DesiredLocation;
+
+    APetCharacter* Pet = Data.Pet.Get();
+    if (false == IsValid(Pet)) return false;
+
+    APawn* Player = Pet->GetPartnerPlayer();
+    UCapsuleComponent* Capsule = Pet->GetCapsuleComponent();
+    UCharacterMovementComponent* Movement = Pet->GetCharacterMovement();
+
+    if (false == IsValid(Player) || false == IsValid(Pet->GetWorld()) ||
+        false == IsValid(Capsule) || false == IsValid(Movement))
+        return false;
+
+    // 플레이어 중심(기존)이 아니라 발 높이를 기준으로 탐색
+    FVector PlayerFeet = Player->GetActorLocation();
+    if (const ACharacter* PlayerCharacter = Cast<ACharacter>(Player))
+    {
+        if (const UCharacterMovementComponent* PlayerMovement = PlayerCharacter->GetCharacterMovement())
+            PlayerFeet = PlayerMovement->GetActorFeetLocation();
+    }
+
+    //. XY는 원래 자성 목표 위치, Z는 플레이어 발 높이
+    FVector ProbeLocation = DesiredLocation;
+    ProbeLocation.Z = PlayerFeet.Z;
+
+    const float SearchHeight = FMath::Max(Data.GroundSearchHeight, 1.f);
+
+    FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PetMagnetGround), false, Pet);
+    QueryParams.AddIgnoredActor(Player);
+
+    // 펫이 실제로 막히는 충돌 응답을 기준으로 바닥 탐색
+    const FCollisionResponseParams ResponseParams(Capsule->GetCollisionResponseToChannels());
+
+    FHitResult GroundHit;
+    const bool bFoundGround = Pet->GetWorld()->LineTraceSingleByChannel(
+        GroundHit, ProbeLocation + FVector::UpVector * SearchHeight, ProbeLocation - FVector::UpVector * SearchHeight,
+        Capsule->GetCollisionObjectType(), QueryParams, ResponseParams);
+
+    if (false == bFoundGround || GroundHit.bStartPenetrating || false == Movement->IsWalkable(GroundHit))
+        return false;
+
+    // 실제 바닥 위에 캡슐을 배치
+    constexpr float GroundClearance = 2.f;
+    OutLocation = GroundHit.ImpactPoint + FVector::UpVector * (Capsule->GetScaledCapsuleHalfHeight() + GroundClearance + Data.HeightOffset);
+    return true;
 }

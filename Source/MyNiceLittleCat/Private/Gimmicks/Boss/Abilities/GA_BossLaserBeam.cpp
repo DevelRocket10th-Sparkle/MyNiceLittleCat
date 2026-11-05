@@ -5,7 +5,9 @@
 #include "Gimmicks/Laser/LaserBeamComponent.h"
 #include "Gimmicks/Warning/AttackWarningDecal.h"
 #include "Enemy/EnemyCharacter.h"
+#include "Enemy/Boss/BossCharacter.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
+#include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "AIController.h"
@@ -83,15 +85,35 @@ void UGA_BossLaserBeam::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 			Enemy->GetAttributeSet()->GetAttackPower(), ExecutionPattern.DamageMultiplier);
 	}
 
-	// 보스를 지점으로 옮기지 않고 지금 자리에서 쏨 (이동은 보스 쪽 이동 패턴 담당)
-	if (AAIController* AI = Cast<AAIController>(Enemy->GetController()))
+	// UsePhaseDefault면 이동은 BT(페이즈 정책)에 맡기고, 그 외 (Stop 등)일 때만 제자리 고정
+	const bool bFollowPhaseMovement = ExecutionPattern.Movement.Policy == EEnemyPatternMovementPolicy::UsePhaseDefault;
+	if (!bFollowPhaseMovement)
 	{
-		AI->StopMovement();
-	}
-	Enemy->GetCharacterMovement()->StopMovementImmediately();
+		// 보스를 지점으로 옮기지 않고 지금 자리에서 쏨 (이동은 보스 쪽 이동 패턴 담당)
+		if (AAIController* AI = Cast<AAIController>(Enemy->GetController()))
+		{
+			AI->StopMovement();
+		}
+		Enemy->GetCharacterMovement()->StopMovementImmediately();
 
-	Enemy->AcquireAttackMovementLock();
-	bOwnsMovementLock = true;
+		Enemy->AcquireAttackMovementLock();
+		bOwnsMovementLock = true;
+	}
+
+	// 페이즈 내에서 패턴 이동 속도 오버라이드가 있는 경우, 레이저 활성 기간 동안 적용
+	LaserMoveSpeedMultiplier = 1.f;
+	if (bFollowPhaseMovement)
+	{
+		const ABossCharacter* Boss = Cast<ABossCharacter>(Enemy.Get());
+		const UEnemyPhaseComponent* PhaseComp = Boss ? Boss->GetPhaseComponent() : nullptr;
+		const FBossPhaseDefinition* CurrentPhase = PhaseComp ? PhaseComp->GetCurrentPhase() : nullptr;
+		if (CurrentPhase)
+		{
+			LaserMoveSpeedMultiplier = CurrentPhase->ResolveActiveMoveSpeedMultiplier(ExecutionPattern.PatternId);
+		}
+	}
+
+	// 회전 잠금은 이동 정책과 별개로 패턴 설정을 따름
 	if (ExecutionPattern.bLockRotation)
 	{
 		Enemy->AcquireRotationLock();
@@ -183,6 +205,12 @@ void UGA_BossLaserBeam::HandleLockFinished()
 	Stage = EBossLaserBeamStage::Firing;
 	HideAimWarning();
 
+	if (!FMath::IsNearlyEqual(LaserMoveSpeedMultiplier, 1.f))
+	{
+		Enemy->SetPatternMoveSpeedMultiplier(LaserMoveSpeedMultiplier);
+		bOverrodeMoveSpeed = true;
+	}
+
 	Laser->OnLaserStopped.AddUniqueDynamic(this, &UGA_BossLaserBeam::HandleLaserStopped);
 	Laser->StartLaser(GetBeamTargetLocation(Laser, AimPoint), LaserSettings->FireDuration);
 
@@ -197,6 +225,8 @@ void UGA_BossLaserBeam::HandleLaserStopped(ULaserBeamComponent* InLaser)
 		Laser->OnLaserStopped.RemoveDynamic(this, &UGA_BossLaserBeam::HandleLaserStopped);
 	}
 	Stage = EBossLaserBeamStage::None;
+
+	RestoreMoveSpeed();	// 레이저 이동 속도 되돌리기
 
 	if (!IsExecutionValid())
 	{
@@ -402,6 +432,15 @@ void UGA_BossLaserBeam::EndWithResult(bool bWasCancelled)
 	}
 }
 
+void UGA_BossLaserBeam::RestoreMoveSpeed()
+{
+	if (bOverrodeMoveSpeed && Enemy.IsValid())
+	{
+		Enemy->ClearPatternMoveSpeedMultiplier();
+	}
+	bOverrodeMoveSpeed = false;
+}
+
 void UGA_BossLaserBeam::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
 	bool bReplicateEndAbility, bool bWasCancelled)
@@ -426,6 +465,8 @@ void UGA_BossLaserBeam::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	}
 	bOverrodeDamage = false;
 
+	RestoreMoveSpeed();	// 레이저 이동 속도 되돌리기
+
 	HideAimWarning();
 
 	if (Enemy.IsValid())
@@ -443,6 +484,7 @@ void UGA_BossLaserBeam::EndAbility(const FGameplayAbilitySpecHandle Handle,
 
 	Laser = nullptr;
 	LaserSettings = nullptr;
+	LaserMoveSpeedMultiplier = 1.f;
 	ExecutionTarget = nullptr;
 	RequestId = 0;
 	ShotsFired = 0;

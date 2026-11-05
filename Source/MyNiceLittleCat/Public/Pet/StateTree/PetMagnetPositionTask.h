@@ -17,7 +17,7 @@ struct MYNICELITTLECAT_API FPetMagnetPositionTaskInstanceData
     float DistanceFromPlayer = 150.f;  // 플레이어 중심에서 펫까지의 수평 거리
 
     UPROPERTY(EditAnywhere, Category = "Parameter", meta = (Units = "cm"))
-    float HeightOffset = 0.f; // 플레이어 중심 높이를 기준으로 한 추가 높이
+    float HeightOffset = 0.f;  // 지면에 배치한 뒤 추가로 띄울 높이
 
     UPROPERTY()
     TWeakObjectPtr<class UCharacterMovementComponent> Movement;
@@ -35,14 +35,9 @@ struct MYNICELITTLECAT_API FPetMagnetPositionTaskInstanceData
     UPROPERTY()
     bool bHasSavedMovement = false;
 
-    UPROPERTY()
-    FVector SafeLocation = FVector::ZeroVector;
-
-    bool bHasSafeLocation = false;
-    float TimeUntilSafeSearch = 0.f;
-
-    UPROPERTY(EditAnywhere, Category = "Parameter", meta = (ClampMin = "1.0", Units = "cm"))
-    float MaxSafeDistanceFromPlayer = 200.f;
+    // 플레이어 발 높이를 기준으로 위아래 바닥 탐색 범위
+    UPROPERTY(EditAnywhere, Category = "Parameter", meta = (ClampMin = "1.0", Units = "cm")) 
+    float GroundSearchHeight = 100.f;
 };
 
 USTRUCT(meta = (DisplayName = "Pet Magnet Position"))
@@ -57,4 +52,7 @@ struct MYNICELITTLECAT_API FPetMagnetPositionTask
     virtual EStateTreeRunStatus EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const override;
     virtual EStateTreeRunStatus Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const override;
     virtual void ExitState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const override;
+
+private:
+    static bool TryGetGroundedTargetLocation(const FInstanceDataType& Data, const FVector& DesiredLocation, FVector& OutLocation);
 };
