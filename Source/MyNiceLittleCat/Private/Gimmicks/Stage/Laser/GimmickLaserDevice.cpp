@@ -1,0 +1,415 @@
+/// 작성자: 최요환
+/// 작성일자: 2026-11-02
+///
+/// 빛 장치 공통 베이스 구현
+
+#include "Gimmicks/Stage/Laser/GimmickLaserDevice.h"
+#include "Gimmicks/Laser/LaserBeamComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Components/ArrowComponent.h"
+#include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
+
+namespace
+{
+	// 장치가 켜지면 머티리얼 "Glow" 파라미터를 0 → 1로 올림 (필터 유리 등, 파라미터가 있는 메시만)
+	const FName DeviceGlowParam(TEXT("Glow"));
+	constexpr float DeviceGlowBlendSpeed = 5.f; // 초당 변화량 (0.2초에 다 켜짐)
+
+	// 아직 목표 값에 닿지 않은 메시가 있으면 true
+	bool UpdateDeviceGlow(AActor* Owner, float Target, float DeltaTime)
+	{
+		bool bBlending = false;
+		TInlineComponentArray<UStaticMeshComponent*> Meshes(Owner);
+		for (UStaticMeshComponent* MeshComp : Meshes)
+		{
+			UMaterialInterface* Material = MeshComp ? MeshComp->GetMaterial(0) : nullptr;
+			float Current = 0.f;
+			if (!Material || !Material->GetScalarParameterValue(FHashedMaterialParameterInfo(DeviceGlowParam), Current))
+			{
+				continue;
+			}
+
+			const float Next = FMath::FInterpConstantTo(Current, Target, DeltaTime, DeviceGlowBlendSpeed);
+			if (!FMath::IsNearlyEqual(Next, Current))
+			{
+				if (UMaterialInstanceDynamic* MID = MeshComp->CreateDynamicMaterialInstance(0))
+				{
+					MID->SetScalarParameterValue(DeviceGlowParam, Next);
+				}
+			}
+			bBlending |= !FMath::IsNearlyEqual(Next, Target);
+		}
+		return bBlending;
+	}
+}
+
+AGimmickLaserDevice::AGimmickLaserDevice()
+{
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
+
+	// 루트 Mesh는 AInteractableBase가 만듦. 회전하므로 Movable
+	Mesh->SetMobility(EComponentMobility::Movable);
+
+	// 기본 = 뒤(-X)에서 들어온 빛을 받음 (앞으로 지나가는 모양). 자식 클래스가 바꿈
+	InputDirection = CreateDefaultSubobject<UArrowComponent>(TEXT("InputDirection"));
+	InputDirection->SetupAttachment(Mesh);
+	InputDirection->SetRelativeRotation(FRotator(0.f, 180.f, 0.f));
+	InputDirection->SetHiddenInGame(true);
+	InputDirection->ArrowColor = FColor(80, 200, 255);
+
+	// 빛으로만 켜짐, 빛이 있어야 유지되므로 저장하지 않음
+	bReceiveSignals = false;
+	bSaveState = false;
+
+	ApplyRotateMode();
+}
+
+void AGimmickLaserDevice::ApplyRotateMode()
+{
+	// 켜짐 = 빛을 받는 중이라 토글 옵션은 숨김, 신호는 Signal 모드에서 회전용으로만 받음
+	bShowToggleableOption = false;
+	bReceiveSignals = RotateMode == EGimmickMirrorRotateMode::Signal;
+}
+
+void AGimmickLaserDevice::Interact_Implementation(AActor* InteractInstigator)
+{
+	if (!IInteractableInterface::Execute_CanInteract(this, InteractInstigator))
+	{
+		return;
+	}
+
+	RotateOnce();
+}
+
+bool AGimmickLaserDevice::CanInteract_Implementation(AActor* InteractInstigator) const
+{
+	return IsInteractionEnabled() && RotateMode == EGimmickMirrorRotateMode::Interact && !bRotating;
+}
+
+void AGimmickLaserDevice::HandleSignalChanged(AActor* Source, bool bSignalOn)
+{
+	// 켜짐 상태(빛 받는 중)는 바꾸지 않고, 신호가 켜질 때마다 한 칸 회전
+	if (RotateMode == EGimmickMirrorRotateMode::Signal && bSignalOn)
+	{
+		RotateOnce();
+	}
+}
+
+void AGimmickLaserDevice::RotateOnce()
+{
+	if (bRotating || RotateMode == EGimmickMirrorRotateMode::Fixed)
+	{
+		return;
+	}
+
+	RotateStartYaw = GetActorRotation().Yaw;
+	RotateTargetYaw = RotateStartYaw + RotateStep;
+	RotateElapsed = 0.f;
+
+	K2_OnRotateStarted();
+
+	if (RotateDuration <= 0.f)
+	{
+		SetActorRotation(FRotator(0.f, FRotator::NormalizeAxis(RotateTargetYaw), 0.f));
+		K2_OnRotateFinished();
+		return;
+	}
+
+	bRotating = true;
+	SetActorTickEnabled(true);
+}
+
+bool AGimmickLaserDevice::UpdateRotation(float DeltaTime)
+{
+	if (!bRotating)
+	{
+		return false;
+	}
+
+	// 도는 동안에도 출력 레이저는 매 틱 정면을 따라감(SetFollowComponentRotation)
+	RotateElapsed += DeltaTime;
+	const float Alpha = FMath::Clamp(RotateElapsed / RotateDuration, 0.f, 1.f);
+	const float Yaw = FMath::Lerp(RotateStartYaw, RotateTargetYaw, FMath::SmoothStep(0.f, 1.f, Alpha));
+	SetActorRotation(FRotator(0.f, FRotator::NormalizeAxis(Yaw), 0.f));
+
+	if (Alpha >= 1.f)
+	{
+		bRotating = false;
+		K2_OnRotateFinished();
+		return false;
+	}
+	return true;
+}
+
+void AGimmickLaserDevice::ResetGimmick_Implementation(AActor* ResetInstigator)
+{
+	bRotating = false;
+	SetActorRotation(FRotator(0.f, InitialYaw, 0.f));
+}
+
+void AGimmickLaserDevice::OnConstruction(const FTransform& Transform)
+{
+	ApplyRotateMode();
+	Super::OnConstruction(Transform);
+
+	// 루트 스케일과 상관없이 바닥(액터 원점)에서 BeamHeight 높이로 (수평 위치·회전은 BP 배치 유지)
+	TArray<ULaserBeamComponent*> Outputs;
+	GetOutputLasers(Outputs);
+	for (ULaserBeamComponent* Output : Outputs)
+	{
+		if (Output)
+		{
+			FVector Location = Output->GetComponentLocation();
+			Location.Z = GetActorLocation().Z + BeamHeight;
+			Output->SetWorldLocation(Location);
+		}
+	}
+}
+
+void AGimmickLaserDevice::BeginPlay()
+{
+	ApplyRotateMode();
+	Super::BeginPlay();
+	SetupOutputLasers();
+	InitialYaw = GetActorRotation().Yaw;
+}
+
+void AGimmickLaserDevice::SetupOutputLasers()
+{
+	TArray<ULaserBeamComponent*> Outputs;
+	GetOutputLasers(Outputs);
+	for (ULaserBeamComponent* Output : Outputs)
+	{
+		if (!Output)
+		{
+			continue;
+		}
+
+		// 생성 스크립트가 다시 돌지 않은 배치(스케일만 바뀐 경우 등)도 높이를 맞춤
+		FVector Location = Output->GetComponentLocation();
+		Location.Z = GetActorLocation().Z + BeamHeight;
+		Output->SetWorldLocation(Location);
+
+		Output->SetEnableReflection(true);
+		Output->SetFollowComponentRotation(true);
+		Output->SetUseColorTypeDisplay(true);
+		Output->SetHazardDisplay(false);
+
+		// 퍼즐용 빛: Pawn을 통과해 플레이어·펫이 지나가도 끊기지 않음, 피해 없음
+		TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes = Output->GetTraceObjectTypes();
+		ObjectTypes.Remove(UEngineTypes::ConvertToObjectType(ECC_Pawn));
+		Output->SetTraceObjectTypes(ObjectTypes);
+		Output->SetDamagePerHit(0.f);
+	}
+}
+
+bool AGimmickLaserDevice::ComputeOutputColor(ELaserBeamColor InputColor, ELaserBeamColor& OutColor) const
+{
+	OutColor = InputColor;
+	return true;
+}
+
+void AGimmickLaserDevice::ReceiveLaserHit_Implementation(ULaserBeamComponent* Laser, const FHitResult& Hit, int32 ReflectionCount)
+{
+	// 같은 레이저라도 거울이 돌거나 색·장치 거친 횟수가 바뀔 수 있으므로 매 틱 다시 판단
+	if (AcceptsBeam(Laser, Hit, ReflectionCount))
+	{
+		ReceivingLasers.Add(Laser);
+
+		// Hit.Location = 구 스윕 중심이 막힌 위치 (빔 중심선 위)
+		FInputBeamInfo& Info = InputBeamInfos.FindOrAdd(Laser);
+		Info.Direction2D = (Hit.TraceEnd - Hit.TraceStart).GetSafeNormal2D();
+		Info.Location = Hit.Location;
+
+		SetActorTickEnabled(true);
+	}
+	else
+	{
+		ReceivingLasers.Remove(Laser);
+		InputBeamInfos.Remove(Laser);
+	}
+}
+
+void AGimmickLaserDevice::EndLaserHit_Implementation(ULaserBeamComponent* Laser)
+{
+	ReceivingLasers.Remove(Laser);
+	InputBeamInfos.Remove(Laser);
+}
+
+bool AGimmickLaserDevice::AcceptsBeam(const ULaserBeamComponent* Laser, const FHitResult& Hit, int32 ReflectionCount) const
+{
+	return Laser && AcceptsInput(Laser->GetBeamColorType(), Laser->GetChainDepth(), Hit, ReflectionCount);
+}
+
+bool AGimmickLaserDevice::GetPreviewOutputLasers(ELaserBeamColor InputColor, const FHitResult& Hit, int32 ReflectionCount,
+	TArray<ULaserBeamComponent*>& OutLasers, ELaserBeamColor& OutColor) const
+{
+	// 장치 거친 횟수는 프리뷰 쪽(레이저 컴포넌트)이 따로 제한
+	if (!AcceptsInput(InputColor, 0, Hit, ReflectionCount) || !ComputeOutputColor(InputColor, OutColor))
+	{
+		return false;
+	}
+
+	GetOutputLasers(OutLasers);
+	return !OutLasers.IsEmpty();
+}
+
+bool AGimmickLaserDevice::AcceptsInput(ELaserBeamColor InputColor, int32 InputChainDepth, const FHitResult& Hit, int32 ReflectionCount) const
+{
+	if (ReflectionCount < MinReflections || InputChainDepth >= MaxChainDepth)
+	{
+		return false;
+	}
+
+	ELaserBeamColor UnusedColor;
+	if (!ComputeOutputColor(InputColor, UnusedColor))
+	{
+		return false;
+	}
+
+	const FVector Incoming = (Hit.TraceEnd - Hit.TraceStart).GetSafeNormal2D();
+	return AcceptsIncomingDirection(Incoming);
+}
+
+bool AGimmickLaserDevice::AcceptsIncomingDirection(const FVector& Incoming) const
+{
+	if (bAcceptAnySide || !InputDirection)
+	{
+		return true;
+	}
+
+	// 들어온 방향의 반대가 받는 면 화살표와 허용 각도 안이어야 함 (수평 기준)
+	const FVector Front = InputDirection->GetForwardVector().GetSafeNormal2D();
+	if (Incoming.IsNearlyZero() || Front.IsNearlyZero())
+	{
+		return false;
+	}
+
+	return FVector::DotProduct(-Incoming, Front) >= FMath::Cos(FMath::DegreesToRadians(InputHalfAngle));
+}
+
+bool AGimmickLaserDevice::IsReceivingBeam() const
+{
+	for (const TWeakObjectPtr<ULaserBeamComponent>& Laser : ReceivingLasers)
+	{
+		if (Laser.IsValid() && Laser->IsLaserActive())
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void AGimmickLaserDevice::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	// 끝 통지 없이 사라진 레이저 정리 (발사기 파괴 등)
+	for (auto It = ReceivingLasers.CreateIterator(); It; ++It)
+	{
+		if (!It->IsValid() || !(*It)->IsLaserActive())
+		{
+			InputBeamInfos.Remove(*It);
+			It.RemoveCurrent();
+		}
+	}
+
+	if (IsReceivingBeam())
+	{
+		TimeSinceBeamLost = 0.f;
+		UpdateOutputs();
+	}
+	else if (IsActivated())
+	{
+		TimeSinceBeamLost += DeltaTime;
+		if (TimeSinceBeamLost >= ReleaseDelay)
+		{
+			StopOutputs();
+			SetActivated(false, this);
+		}
+	}
+
+	const bool bReceiving = IsReceivingBeam();
+	if (bReceiving != bWasReceiving)
+	{
+		bWasReceiving = bReceiving;
+		if (bReceiving)
+		{
+			K2_OnBeamReceived(OutputColor);
+		}
+		else
+		{
+			K2_OnBeamLost();
+		}
+	}
+
+	// 켜짐에 맞춰 유리가 밝아지고 어두워짐 (꺼지는 동안에도 틱 유지)
+	const bool bGlowBlending = UpdateDeviceGlow(this, IsActivated() ? 1.f : 0.f, DeltaTime);
+
+	const bool bStillRotating = UpdateRotation(DeltaTime);
+
+	// 받는 빛도 없고 꺼져 있고 돌지도 않으면 쉼 (다시 빛이 들어오면 ReceiveLaserHit, 회전은 RotateOnce가 켬)
+	if (!bReceiving && !IsActivated() && !bGlowBlending && !bStillRotating)
+	{
+		SetActorTickEnabled(false);
+	}
+}
+
+void AGimmickLaserDevice::UpdateOutputs()
+{
+	// 장치를 가장 적게 거친 빛 기준 (고리로 돌아온 빛보다 원래 발사기 쪽 빛이 우선)
+	const ULaserBeamComponent* Source = nullptr;
+	for (const TWeakObjectPtr<ULaserBeamComponent>& Laser : ReceivingLasers)
+	{
+		if (Laser.IsValid() && Laser->IsLaserActive() && (!Source || Laser->GetChainDepth() < Source->GetChainDepth()))
+		{
+			Source = Laser.Get();
+		}
+	}
+	if (!Source)
+	{
+		return;
+	}
+
+	ComputeOutputColor(Source->GetBeamColorType(), OutputColor);
+	const int32 OutputDepth = Source->GetChainDepth() + 1;
+
+	if (const FInputBeamInfo* Info = InputBeamInfos.Find(Source))
+	{
+		PlaceOutputsForInput(Info->Direction2D, Info->Location);
+	}
+
+	TArray<ULaserBeamComponent*> Outputs;
+	GetOutputLasers(Outputs);
+	for (ULaserBeamComponent* Output : Outputs)
+	{
+		if (!Output)
+		{
+			continue;
+		}
+
+		Output->SetBeamColorType(OutputColor);
+		Output->SetChainDepth(OutputDepth);
+		if (!Output->IsLaserActive())
+		{
+			Output->StartLaserForward();
+		}
+	}
+
+	SetActivated(true, this);
+}
+
+void AGimmickLaserDevice::StopOutputs()
+{
+	TArray<ULaserBeamComponent*> Outputs;
+	GetOutputLasers(Outputs);
+	for (ULaserBeamComponent* Output : Outputs)
+	{
+		if (Output)
+		{
+			Output->StopLaser();
+		}
+	}
+}

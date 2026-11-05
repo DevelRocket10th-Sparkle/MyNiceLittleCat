@@ -44,7 +44,17 @@ struct FBossPatternMovementOverride
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FName PatternId;
 
-	// Waypoints는 페이즈의 MovementRouteId를 사용
+	// 체크 시 아래 MovementMode로 페이즈 기본 이동을 덮어씀
+	// 해제 시 페이즈 기본 이동을 따르고, 속도 배수만 적용
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	bool bOverrideMovementMode = false;
+
+	// Waypoints는 페이즈의 MovementRouteId를 사용
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bOverrideMovementMode"))
 	EBossPhaseMovementMode MovementMode = EBossPhaseMovementMode::Stop;
+
+	// 패턴이 "활성 구간"이라고 알리는 동안 곱할 이동 속도 배수 (1 = 기본)
+	// 활성 구간은 GA가 정함 (LaserBeam은 발사 중)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0.0"))
+	float ActiveMoveSpeedMultiplier = 1.f;
 };

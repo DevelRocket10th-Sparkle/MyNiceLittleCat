@@ -96,6 +96,11 @@ protected:
 
 	void EndWithResult(bool bWasCancelled);
 
+private :
+	
+	// 레이저 이동 속도 되돌리기
+	void RestoreMoveSpeed();
+
 protected:
 	// 현재 실행용으로 복사한 패턴 설정
 	UPROPERTY(BlueprintReadOnly, Category = "Pattern")
@@ -139,4 +144,9 @@ protected:
 	bool bOwnsMovementLock = false;
 
 	bool bOwnsRotationLock = false;
+
+private :
+	
+	float LaserMoveSpeedMultiplier = 1.f;
+	bool bOverrodeMoveSpeed = false;
 };

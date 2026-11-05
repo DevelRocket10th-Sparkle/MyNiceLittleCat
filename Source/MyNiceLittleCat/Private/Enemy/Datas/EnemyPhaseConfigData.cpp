@@ -117,3 +117,55 @@ bool UEnemyPhaseConfigData::IsLogOnlyPhase(int32 Index) const
 	return Phases.IsValidIndex(Index) && (Phases[Index].bLogOnly
 		|| Phases[Index].Kind == EBossPhaseKind::LogOnly || (bLogOnlyAfterFirstPhase && Index > 0));
 }
+
+EBossPhaseMovementMode FBossPhaseDefinition::ResolveMovementMode(FName PatternId) const
+{
+	if (!PatternId.IsNone())
+	{
+		if (const FBossPatternMovementOverride* Found =
+			PatternMovementOverrides.FindByPredicate(
+				[PatternId](const FBossPatternMovementOverride& Entry)
+				{
+					return Entry.PatternId == PatternId;
+				}
+			))
+		{
+			if (Found->bOverrideMovementMode)
+			{
+				return Found->MovementMode;
+			}
+		}
+	}
+
+	return MovementMode;
+}
+
+float FBossPhaseDefinition::ResolveActiveMoveSpeedMultiplier(FName PatternId) const
+{
+	if (!PatternId.IsNone())
+	{
+		if (const FBossPatternMovementOverride* Found =
+			PatternMovementOverrides.FindByPredicate(
+				[PatternId](const FBossPatternMovementOverride& Entry)
+				{
+					return Entry.PatternId == PatternId;
+				}
+			))
+		{
+			return Found->ActiveMoveSpeedMultiplier;
+		}
+	}
+
+	return 1.f;
+}
+
+bool FBossPhaseDefinition::UsesWaypoints() const
+{
+	return MovementMode == EBossPhaseMovementMode::Waypoints
+		|| PatternMovementOverrides.ContainsByPredicate(
+			[](const FBossPatternMovementOverride& Entry)
+			{
+				return Entry.bOverrideMovementMode && Entry.MovementMode == EBossPhaseMovementMode::Waypoints;
+			}
+		);
+}
