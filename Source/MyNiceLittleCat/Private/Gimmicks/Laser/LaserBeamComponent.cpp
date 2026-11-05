@@ -14,6 +14,7 @@
 #include "Interfaces/LaserReceiverInterface.h"
 #include "Gimmicks/Boss/DamageTypes/DamageType_ReflectedLaser.h"
 #include "Gimmicks/Reflection/ReflectionMath.h"
+#include "Gimmicks/Stage/Laser/GimmickMirror.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
@@ -527,6 +528,9 @@ void ULaserBeamComponent::TraceBeamSegments(TArray<FLaserBeamSegment>& OutSegmen
 	float RemainingRange = FMath::Max(0.f, MaxRange);
 	int32 ReflectionCount = 0;
 
+	// 기믹 거울에서 가운데 평면 반사로 출발한 구간은 그 거울 안에서 시작하므로 다음 검사에서 무시
+	const AActor* IgnoreNextActor = nullptr;
+
 	while ((RemainingRange > KINDA_SMALL_NUMBER) && (false == SegmentDirection.IsNearlyZero()))
 	{
 		const FVector TraceEnd = SegmentStart + SegmentDirection * RemainingRange;
@@ -535,6 +539,11 @@ void ULaserBeamComponent::TraceBeamSegments(TArray<FLaserBeamSegment>& OutSegmen
 		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(LaserBeam), false);
 		if (0 == ReflectionCount)
 			QueryParams.AddIgnoredActor(GetOwner());
+		if (IgnoreNextActor)
+		{
+			QueryParams.AddIgnoredActor(IgnoreNextActor);
+			IgnoreNextActor = nullptr;
+		}
 
 		FHitResult Hit;
 
@@ -633,6 +642,32 @@ void ULaserBeamComponent::TraceBeamSegments(TArray<FLaserBeamSegment>& OutSegmen
 
 		ReflectedDirection = ReflectedDirection.GetSafeNormal();
 		if (true == ReflectedDirection.IsNearlyZero()) break;
+
+		// [추가: 최요환 2026-11-05] 기믹 거울(AGimmickMirror)은 판 표면이 아니라 판 가운데 평면에서 반사.
+		// 표면 반사는 반사 지점이 중심보다 (판 절반 두께 + 빔 반지름)만큼 앞이라 거울마다 빛줄기가 옆으로 밀려(45°에서 약 13cm)
+		// 거울 여러 개를 잇는 퍼즐에서 오차가 쌓임. 펫 반사판 등 다른 반사면은 기존 그대로 (가상 반사판 프리뷰 포함)
+		if (false == bHitVirtualSurface && nullptr != Cast<AGimmickMirror>(Hit.GetActor()) && Hit.GetComponent())
+		{
+			const USceneComponent* MirrorPlane = Hit.GetComponent();
+			const FVector PlaneNormal = MirrorPlane->GetForwardVector();
+			const float Denominator = FVector::DotProduct(SegmentDirection, PlaneNormal);
+			if (false == FMath::IsNearlyZero(Denominator))
+			{
+				const float T = FVector::DotProduct(MirrorPlane->GetComponentLocation() - SegmentStart, PlaneNormal) / Denominator;
+				if (T > 0.f)
+				{
+					const FVector CenterPoint = SegmentStart + SegmentDirection * T;
+					Segment.End = CenterPoint;
+					RemainingRange -= T;
+
+					SegmentStart = CenterPoint;
+					SegmentDirection = ReflectedDirection;
+					IgnoreNextActor = Hit.GetActor();
+					++ReflectionCount;
+					continue;
+				}
+			}
+		}
 
 		RemainingRange -= FVector::Distance(SegmentStart, Segment.End);
 
