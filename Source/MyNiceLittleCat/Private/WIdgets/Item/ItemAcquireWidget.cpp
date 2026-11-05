@@ -16,6 +16,12 @@ FText UItemAcquireWidget::MakeItemLine(const FItemStack& Stack)
 	{
 		return FText::GetEmpty();
 	}
+
+	// 능력 해금 아이템은 개수가 의미 없으므로 이름만 표시
+	if (Stack.Item->ItemType == EItemType::Ability)
+	{
+		return Stack.Item->GetDisplayNameOrDefault();
+	}
 	return FText::Format(INVTEXT("{0} ×{1}"), Stack.Item->GetDisplayNameOrDefault(), FText::AsNumber(Stack.Count));
 }
 

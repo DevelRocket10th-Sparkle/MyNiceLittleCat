@@ -20,6 +20,8 @@
 /// 관통 모드 bPierceNonTargets: 반사판(반사형·파괴형일 때)만 빔을 막고 나머지 액터는 통과하며,
 /// 빔 경로 전체에서 DamageTargetClasses에 맞는 첫 액터에 피해를 줌. 보스 격자 레이저용 (보스·펫·코인에 막히지 않고 플레이어만 맞힘)
 /// 맞은 면 법선(GetHitNormal)·트레이스 결과(GetHitResult)·구간 목록(GetBeamSegments)을 제공합니다.
+/// 빔 끝(마지막 구간이 막힌 액터)이 ILaserReceiverInterface 구현체면 닿아 있는 동안 매 틱 ReceiveLaserHit,
+/// 떠나거나 꺼지면 EndLaserHit를 호출합니다 (피해와 별개, 스테이지 수신기·빛에 타는 물체용).
 /// 피해 타입은 인스턴스마다 바꿀 수 있습니다 (보스 기본 UDamageType_BossLaser, 함정은 필요하면 별도 타입 지정)
 /// TODO(합의): 보스 GA에서 호출하는 방식(예고·추적 등)은 보스 담당과 확정 필요
 /// TODO(합의): 플레이어가 TakeDamage → ApplyPlayerHit를 처리하게 되면 플레이어도 ApplyDamage로 통일 (지금은 직접 호출)
@@ -31,6 +33,7 @@
 #include "Engine/EngineTypes.h"
 #include "Engine/HitResult.h"
 #include "CollisionQueryParams.h"
+#include "Gimmicks/Laser/LaserBeamColor.h"
 #include "LaserBeamComponent.generated.h"
 
 class ULaserBeamComponent;
@@ -190,6 +193,45 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Damage")
 	void SetDamageTargetClasses(const TArray<TSubclassOf<AActor>>& NewClasses) { DamageTargetClasses = NewClasses; }
 
+	// 반사형으로 바꿈 (스테이지 발사기 등 레이저를 가진 액터가 기본값을 정할 때)
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Reflection")
+	void SetEnableReflection(bool bEnable) { bEnableReflection = bEnable; }
+
+	// 발사 중 매 틱 컴포넌트 정면을 발사 방향으로 쓸지 (회전하는 발사기 등)
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam")
+	void SetFollowComponentRotation(bool bFollow) { bFollowComponentRotation = bFollow; }
+
+	// 빔을 막는 오브젝트 타입 교체 (퍼즐용 빛이 Pawn을 무시하게 할 때 등)
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Trace")
+	void SetTraceObjectTypes(const TArray<TEnumAsByte<EObjectTypeQuery>>& NewObjectTypes) { TraceObjectTypes = NewObjectTypes; }
+
+	UFUNCTION(BlueprintPure, Category = "LaserBeam|Trace")
+	const TArray<TEnumAsByte<EObjectTypeQuery>>& GetTraceObjectTypes() const { return TraceObjectTypes; }
+
+	// 빛 색 (색 필터·색 수신기용). White가 아니면 빔 이펙트도 이 색으로 표시
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Color")
+	void SetBeamColorType(ELaserBeamColor NewColor) { BeamColorType = NewColor; }
+
+	UFUNCTION(BlueprintPure, Category = "LaserBeam|Color")
+	ELaserBeamColor GetBeamColorType() const { return BeamColorType; }
+
+	// 빛 장치(중계·분광기·필터)를 몇 번 거쳐 나온 빛인지 (발사기 = 0). 장치끼리 빛을 주고받는 고리가 끝없이 켜져 있지 않게 장치가 확인
+	void SetChainDepth(int32 NewDepth) { ChainDepth = FMath::Max(NewDepth, 0); }
+
+	UFUNCTION(BlueprintPure, Category = "LaserBeam|Color")
+	int32 GetChainDepth() const { return ChainDepth; }
+
+	// 색 종류로 표시 (White도 흰빛으로, 반사 여부와 상관없이 같은 색). 스테이지 퍼즐용 빛은 발사기·빛 장치가 켬
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Color")
+	void SetUseColorTypeDisplay(bool bUse) { bUseColorTypeDisplay = bUse; }
+
+	// 위험 표시 (플레이어에게 피해를 주는 빛): HazardColor로 굵게 깜빡임. 스테이지 발사기 bDamagePlayer가 켬
+	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Visual")
+	void SetHazardDisplay(bool bHazard) { bHazardDisplay = bHazard; }
+
+	UFUNCTION(BlueprintPure, Category = "LaserBeam|Visual")
+	bool IsHazardDisplay() const { return bHazardDisplay; }
+
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
 	bool IsLaserActive() const { return bLaserActive; }
 
@@ -219,7 +261,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "LaserBeam")
 	TArray<FLaserBeamSegment> GetBeamSegments() const { return BeamSegments; }
 
-	// VirtualSurface가 없으면 기존 실제 경로만 계산
+	// VirtualSurface가 없으면 기존 실제 경로만 계산.
+	// VirtualSurface가 있으면(펫 반사판 설치 프리뷰) 빔이 빛 장치(중계·분광기·필터)에 닿을 때 장치 출력 경로도 뒤에 이어 붙임
 	void CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegments,
 		const struct FVirtualReflectiveSurface* VirtualSurface = nullptr) const;
 
@@ -246,6 +289,12 @@ protected:
 	// 빔에 막힌 액터에 피해 (관통 모드면 빔 경로 위의 피해 대상)
 	void ApplyLaserDamage();
 
+	// 빔 끝의 수신기(ILaserReceiverInterface)에 닿음 통지, 바뀌었으면 이전 수신기에 끝 통지
+	void UpdateLaserReceiver();
+
+	// 지금 닿아 있는 수신기에 끝 통지 (StopLaser·EndPlay)
+	void EndLaserReceiver();
+
 	// 관통 모드: 빔 구간들을 훑어 DamageTargetClasses에 맞는 첫 액터와 그 구간을 찾음
 	AActor* FindPierceDamageTarget(FLaserBeamSegment& OutSegment) const;
 
@@ -258,6 +307,24 @@ protected:
 
 	// 빔 구간 수만큼 이펙트를 켜고 위치·굵기·색 갱신, 충돌 이펙트 위치 갱신
 	void UpdateBeamEffects();
+
+	// 구간 빔 이펙트 색 (빛 색 우선, White면 원본/반사 색)
+	FLinearColor GetSegmentDisplayColor(const FLaserBeamSegment& Segment) const;
+
+	// 이 레이저 하나의 경로 (반사 포함, 장치 출력은 제외)
+	// StartOverride·DirectionOverride가 있으면 컴포넌트 위치·정면 대신 사용 (프리뷰에서 통과형 장치의 출력 경로 계산용)
+	void TraceBeamSegments(TArray<FLaserBeamSegment>& OutSegments, const struct FVirtualReflectiveSurface* VirtualSurface,
+		const FVector* StartOverride = nullptr, const FVector* DirectionOverride = nullptr) const;
+
+	// 프리뷰: 마지막 구간이 빛 장치에 닿았으면 장치 출력 레이저 경로를 이어 붙임 (InColor = 장치에 들어가는 빛 색)
+	void AppendDevicePreviewSegments(TArray<FLaserBeamSegment>& OutSegments, const struct FVirtualReflectiveSurface* VirtualSurface,
+		ELaserBeamColor InColor, int32 Depth) const;
+
+	// 프리뷰가 이어 붙일 최대 장치 수 (장치끼리 빛을 주고받는 고리 방지)
+	static constexpr int32 MaxPreviewDeviceDepth = 8;
+
+	// 위험 표시 깜빡임 밝기 (위험 표시가 아니면 1)
+	float GetHazardPulse() const;
 
 	// 이펙트 끄기 (컴포넌트는 다음 발사 때 재사용)
 	void DeactivateBeamEffects();
@@ -318,6 +385,33 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Visual")
 	FLaserBeamVisualSettings VisualSettings;
 
+	// 빛 색 (White = 색 없음, bUseColorTypeDisplay가 꺼져 있으면 빔 이펙트는 VisualSettings 색)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Color")
+	ELaserBeamColor BeamColorType = ELaserBeamColor::White;
+
+	// true면 빔 이펙트를 색 종류 표시색으로 (White = 흰빛, VisualSettings 색 무시)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Color")
+	bool bUseColorTypeDisplay = false;
+
+	// true면 위험 표시 (HazardColor, 굵게, 깜빡임). 색 종류보다 우선
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Visual|Hazard")
+	bool bHazardDisplay = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Visual|Hazard", meta = (EditCondition = "bHazardDisplay"))
+	FLinearColor HazardColor = FLinearColor(1.f, 0.3f, 0.f);
+
+	// 위험 빛 굵기 배율
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Visual|Hazard", meta = (ClampMin = "0.1", EditCondition = "bHazardDisplay"))
+	float HazardWidthScale = 1.8f;
+
+	// 초당 깜빡임 횟수
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Visual|Hazard", meta = (ClampMin = "0.0", EditCondition = "bHazardDisplay"))
+	float HazardPulseRate = 3.f;
+
+	// 깜빡일 때 가장 어두운 밝기 (1 = 깜빡이지 않음)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Visual|Hazard", meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "bHazardDisplay"))
+	float HazardMinBrightness = 0.2f;
+
 	// 디버그 라인 표시 (Development 빌드에서도 비용이 있으니 확인할 때만 켬)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Debug")
 	bool bDrawDebugBeam = false;
@@ -364,6 +458,8 @@ private:
 
 	bool bLaserActive = false;
 
+	int32 ChainDepth = 0;
+
 	// 0 이하면 시간 제한 없음
 	float RemainingTime = 0.f;
 
@@ -371,6 +467,9 @@ private:
 	TWeakObjectPtr<AActor> LastDamagedActor;
 
 	float LastDamageTime = -1.f;
+
+	// 빔 끝에 닿아 있는 수신기 (ILaserReceiverInterface 구현체)
+	TWeakObjectPtr<AActor> CurrentReceiver;
 
 	// 레이저 모음 배열
 	UPROPERTY(Transient)

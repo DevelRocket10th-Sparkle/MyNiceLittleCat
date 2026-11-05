@@ -81,12 +81,20 @@ public:
 	UEnemyPatternComponent* GetPatternComponent() const;
 	UFUNCTION(BlueprintPure, Category = "Enemy|Melee")
 	UEnemyMeleeTraceComponent* GetMeleeTraceComponent() const { return MeleeTraceComponent; }
+
+	// 패턴 중 이동 속도 배수 적용
+	// MaxWalk/FlySpeed = BaseMoveSpeed * Multiplier
+	void SetPatternMoveSpeedMultiplier(float Multiplier);
+	// 패턴 중 이동 속도 배수를 1로 복귀
+	void ClearPatternMoveSpeedMultiplier();
+
 	// 공격 GA가 이동 요청을 막는 동안 유지하는 참조 횟수 증가
 	void AcquireAttackMovementLock() { ++AttackMovementLockCount; }
 	// 공격 GA 종료 시 자신이 획득한 이동 제한 해제
 	void ReleaseAttackMovementLock() { AttackMovementLockCount = FMath::Max(0, AttackMovementLockCount - 1); }
 	// Getter: 일반 경로 이동이 제한되는지 확인
 	bool IsAttackMovementLocked() const { return AttackMovementLockCount > 0; }
+
 	// 공격 중 Controller 및 루트 모션 회전을 막는 참조 횟수 증가
 	void AcquireRotationLock() { ++RotationLockCount; }
 	// 공격 종료 시 자신이 획득한 회전 제한 해제
@@ -196,5 +204,9 @@ protected :
 	/* 밀려나기 */
 	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float PlayerPushMultiplier = 1.f;	// 보스는 0으로 설정하기
+
+private :
+	
+	float BaseMoveSpeed = 0.f;	// ApplyEnemyConfig에서 EnemyConfig->MoveSpeed 저장
 
 };

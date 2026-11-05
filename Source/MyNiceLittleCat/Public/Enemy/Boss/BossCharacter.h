@@ -18,7 +18,7 @@ class UEnemyPhaseComponent;
 class ABossCharacter;
 
 // BP Test용
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBossPhaseEndedSignal, ABossCharacter*, Boss, FName, EndedPhaseId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBossPhaseStartedSignal, ABossCharacter*, Boss, FName, StartedPhaseId);
 
 /**
  * 
@@ -99,7 +99,7 @@ public :
 	// BP Test용
 	// 현재 페이즈 종료 후, 다음 페이즈 전환 연출 전에 호출
 	UPROPERTY(BlueprintAssignable, Category = "Test")
-	FBossPhaseEndedSignal OnPhaseStarted;
+	FBossPhaseStartedSignal OnPhaseStarted;
 
 	// 보스방 관리자가 보스 사망을 받아 클리어 처리하는 이벤트
 	UPROPERTY(BlueprintAssignable, Category = "Boss")
