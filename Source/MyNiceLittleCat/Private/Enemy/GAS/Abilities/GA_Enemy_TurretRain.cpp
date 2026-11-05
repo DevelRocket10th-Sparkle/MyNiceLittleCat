@@ -134,7 +134,6 @@ void UGA_Enemy_TurretRain::DropNext()
 		}), Settings->ActiveSeconds, false);
 
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 	}
 	else
 	{

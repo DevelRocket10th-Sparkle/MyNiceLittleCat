@@ -9,6 +9,7 @@
 #include "Engine/World.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
+#include "NiagaraFunctionLibrary.h"
 
 ATurret::ATurret()
 {
@@ -105,9 +106,10 @@ void ATurret::TickHostile(float DeltaTime)
 
 	const float AimDot = FVector::DotProduct(Head->GetForwardVector(), Desired.Vector());
 	const float Now = GetWorld()->GetTimeSeconds();
-	if (AimDot >= FMath::Cos(FMath::DegreesToRadians(AimToleranceDeg)) && Now - LastFireTime >= HostileFireInterval)
+	if (AimDot >= FMath::Cos(FMath::DegreesToRadians(AimToleranceDeg)) && Now >= NextHostileFireTime)
 	{
 		LastFireTime = Now;
+		NextHostileFireTime = Now + FMath::FRandRange(HostileFireIntervalMin, FMath::Max(HostileFireIntervalMin, HostileFireIntervalMax));
 		SpawnProjectile(true);
 	}
 }
@@ -186,7 +188,17 @@ void ATurret::SpawnProjectile(bool bHostileShot)
 	Proj->SetHostile(bHostileShot);
 	Proj->SetDamageEffect(DamageEffectClass);
 	Proj->FinishSpawning(SpawnTM);;
-	if (FireSound) UGameplayStatics::PlaySoundAtLocation(this, FireSound, Muzzle->GetComponentLocation());
+	if (MuzzleFlashEffect)
+	{
+		// 총구에 붙여서 헤드가 돌아도 따라감
+		UNiagaraFunctionLibrary::SpawnSystemAttached(MuzzleFlashEffect, Muzzle, NAME_None,
+			FVector::ZeroVector, FRotator::ZeroRotator, MuzzleFlashScale,
+			EAttachLocation::SnapToTarget, true, ENCPoolMethod::AutoRelease);
+	}
+	if (FireSound && !bHostileShot)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, FireSound, Muzzle->GetComponentLocation());
+	}
 	JellyElapsed = 0.f;
 }
 
@@ -202,7 +214,7 @@ void ATurret::Land()
 {
 	bLanded = true;
 	LandedTime = GetWorld()->GetTimeSeconds();
-
+	NextHostileFireTime = LandedTime + ArmDelay + FMath::FRandRange(0.f, HostileFireIntervalMax);
 	if (Mesh->IsSimulatingPhysics())
 	{
 		Mesh->SetPhysicsLinearVelocity(FVector::ZeroVector);

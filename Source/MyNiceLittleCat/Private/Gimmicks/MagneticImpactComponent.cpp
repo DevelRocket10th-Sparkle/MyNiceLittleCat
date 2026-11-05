@@ -6,6 +6,9 @@
 #include "GameplayEffect.h"
 #include "GameplayTagContainer.h"
 #include "GameFramework/Character.h"
+#include "AIController.h"
+#include "Navigation/PathFollowingComponent.h"
+#include "TimerManager.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -71,6 +74,22 @@ void UMagneticImpactComponent::HandleHit(UPrimitiveComponent* HitComp, AActor* O
 	// 넉백 (물체가 날아가던 방향으로)
 	if (ACharacter* Character = Cast<ACharacter>(OtherActor))
 	{
+		if (AAIController* AI = Cast<AAIController>(Character->GetController()))
+			{
+			if (UPathFollowingComponent* Path = AI->GetPathFollowingComponent())
+				{
+				Path->PauseMove();
+				TWeakObjectPtr<UPathFollowingComponent> WeakPath(Path);
+				FTimerHandle ResumeHandle;
+				GetWorld()->GetTimerManager().SetTimer(ResumeHandle, FTimerDelegate::CreateLambda([WeakPath]()
+				{
+					if (WeakPath.IsValid() && WeakPath->GetStatus() == EPathFollowingStatus::Paused)
+						{
+						WeakPath->ResumeMove();
+						}
+					 }), 0.5f, false);
+				}
+			}
 		const FVector Dir = LastVelocity.GetSafeNormal2D();
 		//Character->LaunchCharacter(Dir * KnockbackStrength + FVector(0.f, 0.f, KnockbackUpward), true, true);
 		const float Mass = Character->GetCharacterMovement() ? FMath::Max(Character->GetCharacterMovement()->Mass, 1.f) : 100.f;

@@ -18,6 +18,7 @@ class ATurretProjectile;
 class APetCharacter;
 class USoundBase;
 class UGameplayEffect;
+class UNiagaraSystem;
 
 UCLASS()
 class MYNICELITTLECAT_API ATurret : public AActor
@@ -80,6 +81,12 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Turret")
 	TObjectPtr<USoundBase> FireSound;
 
+	UPROPERTY(EditAnywhere, Category = "Turret|FX")
+	TObjectPtr<UNiagaraSystem> MuzzleFlashEffect;
+
+	UPROPERTY(EditAnywhere, Category = "Turret|FX")
+	FVector MuzzleFlashScale = FVector(1.f);
+
 	// 적대 상태: 플레이어를 조준·자동 사격. 플레이어가 한 번 잡으면 아군으로 바뀜
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Turret|Hostile")
 	bool bHostile = true;
@@ -92,6 +99,13 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Turret|Hostile")
 	float HostileFireInterval = 1.5f;
+
+	// 적대 상태 발사 간격 랜덤 범위
+	UPROPERTY(EditAnywhere, Category = "Turret|Hostile", meta = (ClampMin = "0.05", Units = "s"))
+	float HostileFireIntervalMin = 0.6f;
+
+	UPROPERTY(EditAnywhere, Category = "Turret|Hostile", meta = (ClampMin = "0.05", Units = "s"))
+	float HostileFireIntervalMax = 1.4f;
 
 	// 이 각도 안으로 조준됐을 때만 발사
 	UPROPERTY(EditAnywhere, Category = "Turret|Hostile")
@@ -121,6 +135,7 @@ private:
 	bool bLanded = false;
 	float LandedTime = -1.f;
 	float LastFireTime = -1000.f;
+	float NextHostileFireTime = 0.f;
 	float JellyElapsed = -1.f;
 	int32 CurrentAmmo = 0;
 	FVector HeadBaseScale = FVector::OneVector;
