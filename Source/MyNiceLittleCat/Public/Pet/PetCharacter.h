@@ -126,6 +126,9 @@ public:
 
 	// 자성 사용 중 이 캡슐 위치에 배치해도 되는지 검사
 	bool CanUseMagnetPosition(const FVector& CapsuleLocation);
+
+	// 자성 모드의 자기장 영역 표시용 메시 (모양 갱신은 GameplayAbility_PetMagnet이 담당)
+	class UProceduralMeshComponent* GetMagnetFieldMesh() const { return MagnetFieldMesh; }
 private:
 	void GrantModeAbilities();
 	void TryCompleteNavigationRecovery();
@@ -189,6 +192,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Pet|Recovery",
 		meta = (ClampMin = "10.0", Units = "cm"))
 	float RecoveryRadiusStep = 100.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pet|Magnet")
+	TObjectPtr<class UProceduralMeshComponent> MagnetFieldMesh; // 자기장 부채꼴 표시
 private:
 	// 초기화 됨?
 	UPROPERTY(Transient)

@@ -17,6 +17,8 @@
 #include "Engine/HitResult.h"
 #include "CollisionQueryParams.h"
 #include "CollisionShape.h"
+#include "ProceduralMeshComponent.h"
+
 APetCharacter::APetCharacter()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -54,6 +56,14 @@ APetCharacter::APetCharacter()
 	// 말풍선
 	SpeechBubble = CreateDefaultSubobject<USpeechBubbleComponent>(TEXT("SpeechBubble"));
 	SpeechBubble->SetupAttachment(GetRootComponent()); // 캡슐 기준이라 메시 애니메이션에 흔들리지 않음
+
+	// 자기장 표시 메시: 보이기만 하고 아무것도 막지 않아야 함
+	// 의도: 충돌이 켜져 있으면 자기장 트레이스/카메라/이동을 방해할 수 있음
+	MagnetFieldMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("MagnetFieldMesh"));
+	MagnetFieldMesh->SetupAttachment(RootComponent);
+	MagnetFieldMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	MagnetFieldMesh->SetCastShadow(false);
+	MagnetFieldMesh->SetVisibility(false); // 자성 모드일 때만 보임
 
 	// Collision 관련
 	// 지형 충돌은 캡슐에서 담당
