@@ -18,21 +18,11 @@
 #include "Gimmicks/InteractableBase.h"
 #include "Interfaces/ReflectiveSurfaceInterface.h"
 #include "Interfaces/GimmickResettableInterface.h"
+#include "Gimmicks/Stage/GimmickRotateMode.h"
 #include "GimmickMirror.generated.h"
 
 class UBoxComponent;
 class UStaticMeshComponent;
-
-UENUM(BlueprintType)
-enum class EGimmickMirrorRotateMode : uint8
-{
-	// 고정
-	Fixed,
-	// E로 상호작용할 때마다 회전
-	Interact,
-	// 신호가 켜질 때마다 회전
-	Signal
-};
 
 UCLASS()
 class MYNICELITTLECAT_API AGimmickMirror : public AInteractableBase, public IReflectiveSurfaceInterface, public IGimmickResettableInterface

@@ -312,7 +312,9 @@ protected:
 	FLinearColor GetSegmentDisplayColor(const FLaserBeamSegment& Segment) const;
 
 	// 이 레이저 하나의 경로 (반사 포함, 장치 출력은 제외)
-	void TraceBeamSegments(TArray<FLaserBeamSegment>& OutSegments, const struct FVirtualReflectiveSurface* VirtualSurface) const;
+	// StartOverride·DirectionOverride가 있으면 컴포넌트 위치·정면 대신 사용 (프리뷰에서 통과형 장치의 출력 경로 계산용)
+	void TraceBeamSegments(TArray<FLaserBeamSegment>& OutSegments, const struct FVirtualReflectiveSurface* VirtualSurface,
+		const FVector* StartOverride = nullptr, const FVector* DirectionOverride = nullptr) const;
 
 	// 프리뷰: 마지막 구간이 빛 장치에 닿았으면 장치 출력 레이저 경로를 이어 붙임 (InColor = 장치에 들어가는 빛 색)
 	void AppendDevicePreviewSegments(TArray<FLaserBeamSegment>& OutSegments, const struct FVirtualReflectiveSurface* VirtualSurface,

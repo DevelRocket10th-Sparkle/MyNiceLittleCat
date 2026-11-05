@@ -492,14 +492,24 @@ void ULaserBeamComponent::AppendDevicePreviewSegments(TArray<FLaserBeamSegment>&
 			continue;
 		}
 
+		// 통과형 장치(필터)는 들어온 빛을 따라 이어지므로 장치가 알려준 시작점·방향으로
 		TArray<FLaserBeamSegment> OutputSegments;
-		Output->TraceBeamSegments(OutputSegments, VirtualSurface);
+		FVector RayStart, RayDirection;
+		if (Receiver->GetPreviewOutputRay(Output, EndHit, RayStart, RayDirection))
+		{
+			Output->TraceBeamSegments(OutputSegments, VirtualSurface, &RayStart, &RayDirection);
+		}
+		else
+		{
+			Output->TraceBeamSegments(OutputSegments, VirtualSurface);
+		}
 		Output->AppendDevicePreviewSegments(OutputSegments, VirtualSurface, OutColor, Depth + 1);
 		OutSegments.Append(OutputSegments);
 	}
 }
 
-void ULaserBeamComponent::TraceBeamSegments(TArray<FLaserBeamSegment>& OutSegments, const FVirtualReflectiveSurface* VirtualSurface) const
+void ULaserBeamComponent::TraceBeamSegments(TArray<FLaserBeamSegment>& OutSegments, const FVirtualReflectiveSurface* VirtualSurface,
+	const FVector* StartOverride, const FVector* DirectionOverride) const
 {
 	OutSegments.Reset();
 
@@ -511,9 +521,9 @@ void ULaserBeamComponent::TraceBeamSegments(TArray<FLaserBeamSegment>& OutSegmen
 
 	const FCollisionObjectQueryParams ObjectParams = MakeTraceObjectParams();
 
-	FVector SegmentStart = GetComponentLocation();
-	FVector SegmentDirection = (true == bFollowComponentRotation) ? 
-		MakeFireDirection(GetForwardVector()).GetSafeNormal() : FireDirection.GetSafeNormal();
+	FVector SegmentStart = StartOverride ? *StartOverride : GetComponentLocation();
+	FVector SegmentDirection = DirectionOverride ? MakeFireDirection(*DirectionOverride).GetSafeNormal()
+		: (true == bFollowComponentRotation) ? MakeFireDirection(GetForwardVector()).GetSafeNormal() : FireDirection.GetSafeNormal();
 	float RemainingRange = FMath::Max(0.f, MaxRange);
 	int32 ReflectionCount = 0;
 

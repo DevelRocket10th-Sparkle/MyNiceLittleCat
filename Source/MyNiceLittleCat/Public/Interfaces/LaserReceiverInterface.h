@@ -44,4 +44,10 @@ public:
 	{
 		return false;
 	}
+
+	// (C++ 전용) 프리뷰에서 출력 레이저가 컴포넌트 위치·정면 대신 쓸 시작점·방향 (통과형 필터처럼 들어온 빛을 따라 이어지는 장치만 true)
+	virtual bool GetPreviewOutputRay(const ULaserBeamComponent* Output, const FHitResult& Hit, FVector& OutStart, FVector& OutDirection) const
+	{
+		return false;
+	}
 };
