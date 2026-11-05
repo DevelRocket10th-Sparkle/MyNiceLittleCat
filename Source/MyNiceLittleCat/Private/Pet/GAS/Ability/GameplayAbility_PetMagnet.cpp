@@ -15,6 +15,25 @@
 #include "ProceduralMeshComponent.h"
 #include "Materials/MaterialInterface.h"
 
+namespace
+{
+    // 해당 섹션이 같은 정점 수로 이미 만들어져 있으면 true
+    // 의도: 정점 수가 같으면 Create(프록시 재생성) 대신 Update(정점만 갱신)를 써서 매 틱 비용을 줄이기 위함
+    bool CanUpdateMeshSection(UProceduralMeshComponent* Mesh, int32 SectionIndex, int32 VertexCount)
+    {
+        const FProcMeshSection* Section = Mesh->GetProcMeshSection(SectionIndex);
+        return nullptr != Section && Section->ProcVertexBuffer.Num() == VertexCount;
+    }
+
+    // 머티리얼이 실제로 바뀔 때만 지정
+    // 의도: 같은 머티리얼을 매 틱 다시 넣으면서 렌더 상태를 갱신하는 낭비를 막기 위함
+    void SetMaterialIfChanged(UProceduralMeshComponent* Mesh, int32 ElementIndex, UMaterialInterface* Material)
+    {
+        if (nullptr != Material && Mesh->GetMaterial(ElementIndex) != Material)
+            Mesh->SetMaterial(ElementIndex, Material);
+    }
+}
+
 UGameplayAbility_PetMagnet::UGameplayAbility_PetMagnet()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
@@ -573,7 +592,6 @@ void UGameplayAbility_PetMagnet::UpdateMagnetFieldMesh()
     Vertices.Reserve(RayCount + 1);
     Normals.Reserve(RayCount + 1);
     UVs.Reserve(RayCount + 1);
-    Triangles.Reserve((RayCount - 1) * 3);
     VertexColors.Reserve(RayCount + 1);
 
     // 0번 정점(중심): A = 0 → 머티리얼에서 "중심에서 끝까지 비율"의 시작점
@@ -600,21 +618,29 @@ void UGameplayAbility_PetMagnet::UpdateMagnetFieldMesh()
         VertexColors.Add(FLinearColor(bBlocked ? 1.f : 0.f, 0.f, 0.f, 1.f));
     }
 
-    // 중심(0)과 이웃한 끝점 두 개로 삼각형을 만듦 = 삼각형 팬
-    for (int32 Index = 1; Index < RayCount; ++Index)
+    if (CanUpdateMeshSection(FieldMesh, 0, Vertices.Num()))
+        // 이미 같은 모양의 섹션이 있음 → 정점 위치/UV/색만 갱신 (삼각형 연결은 그대로)
+        FieldMesh->UpdateMeshSection_LinearColor(0, Vertices, Normals, UVs, VertexColors, TArray<FProcMeshTangent>());
+    else
     {
-        Triangles.Add(0);
-        Triangles.Add(Index + 1);
-        Triangles.Add(Index);
+        // 처음 켰을 때(또는 정점 수가 바뀌었을 때)만 삼각형을 만들고 섹션 생성
+        Triangles.Reserve((RayCount - 1) * 3);
+
+        // 중심(0)과 이웃한 끝점 두 개로 삼각형을 만듦 = 삼각형 팬
+        for (int32 Index = 1; Index < RayCount; ++Index)
+        {
+            Triangles.Add(0);
+            Triangles.Add(Index + 1);
+            Triangles.Add(Index);
+        }
+
+        // 충돌은 만들지 않음(마지막 인자 false)
+        FieldMesh->CreateMeshSection_LinearColor(0, Vertices, Triangles, Normals, UVs, VertexColors, TArray<FProcMeshTangent>(), false);
     }
 
-    // 충돌은 만들지 않음(마지막 인자 false)
-    FieldMesh->CreateMeshSection_LinearColor(0, Vertices, Triangles, Normals, UVs, VertexColors, TArray<FProcMeshTangent>(), false);
-
-    // 극성이 바뀌면 바로 색이 바뀌도록 매 틱 현재 극성의 머티리얼 적용
+    // 극성이 바뀌었을 때만 머티리얼 교체
     UMaterialInterface* FieldMaterial = CurrentPolarity == EPetMagnetPolarity::N ? FieldMaterialN.Get() : FieldMaterialS.Get();
-    if (nullptr != FieldMaterial)
-        FieldMesh->SetMaterial(0, FieldMaterial);
+    SetMaterialIfChanged(FieldMesh, 0, FieldMaterial);
 
     // 바닥 부채꼴과 같은 원점·광선 결과로 테두리 커튼 생성
     UpdateMagnetCurtainSection(FieldMesh, WorldOrigin, Directions, ReachLengths);
@@ -679,7 +705,6 @@ void UGameplayAbility_PetMagnet::UpdateMagnetCurtainSection(UProceduralMeshCompo
     Normals.Reserve(PointCount * 2);
     UVs.Reserve(PointCount * 2);
     VertexColors.Reserve(PointCount * 2);
-    Triangles.Reserve((PointCount - 1) * 6);
 
     const FVector HeightOffset = FVector::UpVector * CurtainHeight;
     float DistanceAlong = 0.f; // 테두리를 따라 지금까지 온 거리 → U 좌표
@@ -714,25 +739,29 @@ void UGameplayAbility_PetMagnet::UpdateMagnetCurtainSection(UProceduralMeshCompo
         VertexColors.Add(Color);
     }
 
-    // ---- 3) 이웃한 두 점의 바닥/꼭대기 4개로 사각형(삼각형 2개) ----
-    for (int32 Index = 0; Index < PointCount - 1; ++Index)
+    if (CanUpdateMeshSection(FieldMesh, 1, Vertices.Num()))
+        // 커튼도 정점 수가 항상 같으므로 정점만 갱신
+        FieldMesh->UpdateMeshSection_LinearColor(1, Vertices, Normals, UVs, VertexColors, TArray<FProcMeshTangent>());
+    else
     {
-        const int32 Bottom0 = Index * 2;
-        const int32 Top0 = Bottom0 + 1;
-        const int32 Bottom1 = Bottom0 + 2;
-        const int32 Top1 = Bottom0 + 3;
+        // ---- 이웃한 두 점의 바닥/꼭대기 4개로 사각형(삼각형 2개) ----
+        Triangles.Reserve((PointCount - 1) * 6);
 
-        Triangles.Append({ Bottom0, Top0, Bottom1 });
-        Triangles.Append({ Top0, Top1, Bottom1 });
+        for (int32 Index = 0; Index < PointCount - 1; ++Index)
+        {
+            const int32 Bottom0 = Index * 2;
+            const int32 Top0 = Bottom0 + 1;
+            const int32 Bottom1 = Bottom0 + 2;
+            const int32 Top1 = Bottom0 + 3;
+
+            Triangles.Append({ Bottom0, Top0, Bottom1 });
+            Triangles.Append({ Top0, Top1, Bottom1 });
+        }
+
+        FieldMesh->CreateMeshSection_LinearColor(1, Vertices, Triangles, Normals, UVs, VertexColors, TArray<FProcMeshTangent>(), false);
     }
 
-    FieldMesh->CreateMeshSection_LinearColor(1, Vertices, Triangles, Normals, UVs, VertexColors, TArray<FProcMeshTangent>(), false);
-
-    // 극성에 맞는 커튼 머티리얼 (섹션 1 = 머티리얼 슬롯 1)
-    UMaterialInterface* CurtainMaterial = CurtainMaterialN.Get();
-    if (CurrentPolarity != EPetMagnetPolarity::N)
-        CurtainMaterial = CurtainMaterialS.Get();
-
-    if (nullptr != CurtainMaterial)
-        FieldMesh->SetMaterial(1, CurtainMaterial);
+    // 극성에 맞는 커튼 머티리얼 (바뀔 때만 교체)
+    UMaterialInterface* CurtainMaterial = CurrentPolarity == EPetMagnetPolarity::N ? CurtainMaterialN.Get() : CurtainMaterialS.Get();
+    SetMaterialIfChanged(FieldMesh, 1, CurtainMaterial);
 }
