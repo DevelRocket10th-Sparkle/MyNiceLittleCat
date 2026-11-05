@@ -221,11 +221,21 @@ void AGimmickChest::FinishAcquireSequence()
 
 	const bool bWasActive = bSequenceActive;
 	bSequenceActive = false;
+	const TArray<FItemStack> FinishedItems = MoveTemp(PendingAcquired);
 	PendingAcquired.Reset();
 
 	if (bWasActive)
 	{
 		K2_OnAcquireFinished(PendingOpener.Get());
+
+		// 게임이 다시 움직인 뒤 능력 획득 알림 (펫 능력 설명 등)
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UInventorySubsystem* Inventory = GameInstance->GetSubsystem<UInventorySubsystem>())
+			{
+				Inventory->NotifyAcquireFinished(FinishedItems);
+			}
+		}
 	}
 	PendingOpener.Reset();
 }

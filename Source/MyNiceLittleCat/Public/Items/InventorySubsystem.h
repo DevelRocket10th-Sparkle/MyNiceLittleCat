@@ -9,6 +9,7 @@
 /// 능력 해금(2026-11-05): 능력 아이템(ItemType Ability + AbilityTag)을 가지고 있으면 HasAbility(태그)가 true.
 ///   처음 얻는 순간 OnAbilityUnlocked(태그, 아이템) 알림 (세이브에서 읽어 올 때는 알리지 않음).
 ///   능력을 실제로 켜고 끄는 쪽(펫 다이얼 등)은 각 담당이 HasAbility·OnAbilityUnlocked로 연결.
+///   OnAbilityAcquireFinished(태그, 아이템) = 획득 연출(보물 상자의 획득 UI)이 닫히고 게임이 다시 움직이는 시점. 펫의 능력 설명(말풍선 등)은 여기에 연결.
 ///   테스트: 프로젝트 설정 > Item > bTestUnlockAllAbilities면 HasAbility가 항상 true
 
 #pragma once
@@ -66,6 +67,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory", meta = (WorldContext = "WorldContextObject"))
 	UItemAcquireWidget* ShowAcquireUI(const UObject* WorldContextObject, const TArray<FItemStack>& InItems, bool bWaitForClose = false);
 
+	// 획득 연출이 끝났을 때 획득 경로(보물 상자 등)가 호출. 받은 아이템 중 능력 해금 아이템마다 OnAbilityAcquireFinished 알림
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Ability")
+	void NotifyAcquireFinished(const TArray<FItemStack>& AcquiredItems);
+
 public:
 	UPROPERTY(BlueprintAssignable, Category = "Inventory")
 	FOnInventoryItemChanged OnItemChanged;
@@ -77,6 +82,10 @@ public:
 	// 능력 해금 아이템을 처음 얻었을 때 (펫 능력 설명·다이얼 갱신 등)
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Ability")
 	FOnInventoryAbilityUnlocked OnAbilityUnlocked;
+
+	// 능력 해금 아이템의 획득 연출(획득 UI)이 닫히고 게임이 다시 움직이는 시점 (펫 능력 설명 시작용)
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Ability")
+	FOnInventoryAbilityUnlocked OnAbilityAcquireFinished;
 
 private:
 	void LoadFromSave();
