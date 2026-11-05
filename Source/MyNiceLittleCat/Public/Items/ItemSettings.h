@@ -30,4 +30,8 @@ public:
 
 	UPROPERTY(Config, EditAnywhere, Category = "AcquireUI")
 	int32 AcquireWidgetZOrder = 50;
+
+	// 테스트용: 능력 아이템 없이도 모든 능력이 열린 것으로 (UInventorySubsystem::HasAbility가 항상 true). 실제 게임에서는 끔
+	UPROPERTY(Config, EditAnywhere, Category = "Test")
+	bool bTestUnlockAllAbilities = false;
 };

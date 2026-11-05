@@ -112,7 +112,38 @@ int32 UInventorySubsystem::AddItem(UItemData* Item, int32 Count)
 	SetCount(Item, NewCount);
 
 	UE_LOG(LogTemp, Log, TEXT("[Inventory] +%d %s (%d -> %d)"), NewCount - OldCount, *Item->GetName(), OldCount, NewCount);
+
+	// 능력 해금 아이템을 처음 얻음 (세이브 로드는 AddItem을 거치지 않아 알리지 않음)
+	if (OldCount <= 0 && NewCount > 0 && Item->ItemType == EItemType::Ability && Item->AbilityTag.IsValid())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[Inventory] 능력 해금: %s"), *Item->AbilityTag.ToString());
+		OnAbilityUnlocked.Broadcast(Item->AbilityTag, Item);
+	}
+
 	return NewCount - OldCount;
+}
+
+bool UInventorySubsystem::HasAbility(FGameplayTag AbilityTag) const
+{
+	if (GetDefault<UItemSettings>()->bTestUnlockAllAbilities)
+	{
+		return true;
+	}
+
+	if (!AbilityTag.IsValid())
+	{
+		return false;
+	}
+
+	for (const TPair<TObjectPtr<UItemData>, int32>& Pair : Items)
+	{
+		const UItemData* Item = Pair.Key;
+		if (Item && Pair.Value > 0 && Item->ItemType == EItemType::Ability && Item->AbilityTag.MatchesTagExact(AbilityTag))
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 TArray<FItemStack> UInventorySubsystem::AddItems(const UObject* WorldContextObject, const TArray<FItemStack>& InItems, bool bShowAcquireUI)
