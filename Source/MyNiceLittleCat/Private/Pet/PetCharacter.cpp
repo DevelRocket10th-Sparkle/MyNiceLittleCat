@@ -427,7 +427,7 @@ bool APetCharacter::CanResumeFollowingAt(const FVector& CapsuleLocation)
 	return IsValid(Path) && Path->IsValid() && false == Path->IsPartial();
 }
 
-bool APetCharacter::TryFindSafeRecoveryLocation(const FVector& PreferredLocation, FVector& OutLocation)
+bool APetCharacter::TryFindSafeRecoveryLocation(const FVector& PreferredLocation, FVector& OutLocation, bool bRequireLineOfSight)
 {
 	OutLocation = FVector::ZeroVector;
 
@@ -526,6 +526,10 @@ bool APetCharacter::TryFindSafeRecoveryLocation(const FVector& PreferredLocation
 
 	for (const FVector& CandidateLocation : Candidates)
 	{
+		// 자성 해제용이면 벽 너머 후보는 제외
+		if (true == bRequireLineOfSight && false == HasClearLineFromPlayer(CandidateLocation))
+			continue;
+
 		if (true == CanResumeFollowingAt(CandidateLocation))
 		{
 			OutLocation = CandidateLocation;
@@ -659,4 +663,33 @@ bool APetCharacter::CanUseMagnetPosition(const FVector& CapsuleLocation)
 		return false;
 
 	return FVector::DistSquared2D(GroundHit.ImpactPoint, NavLocation.Location) <= FMath::Square(5.f);
+}
+
+bool APetCharacter::HasClearLineFromPlayer(const FVector& Location) const
+{
+	const APawn* Player = GetPartnerPlayer();
+	if (false == IsValid(GetWorld()) || false == IsValid(Player) || true == Location.ContainsNaN())
+		return false;
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PetPlayerLineCheck), false, this);
+	QueryParams.AddIgnoredActor(Player);
+
+	// 자기장 차폐와 같은 기준(World Static)으로 막혔는지 판단
+	FHitResult Hit;
+	const bool bBlocked = GetWorld()->LineTraceSingleByObjectType(Hit, Player->GetActorLocation(), Location,
+		FCollisionObjectQueryParams(ECC_WorldStatic), QueryParams);
+
+	return false == bBlocked;
+}
+
+bool APetCharacter::IsMagnetPlacementValidAt(const FVector& CapsuleLocation)
+{
+	// 자리 자체가 안전(충돌·지면·NavMesh)하고, 플레이어와 사이에 벽이 없어야 해요
+	return true == CanUseMagnetPosition(CapsuleLocation) && true == HasClearLineFromPlayer(CapsuleLocation);
+}
+
+bool APetCharacter::CanDropPetAt(const FVector& CapsuleLocation)
+{
+	// 놓는 순간에는 더 엄격하게: 플레이어까지 실제로 걸어갈 수 있어야 해요
+	return true == HasClearLineFromPlayer(CapsuleLocation) && true == CanResumeFollowingAt(CapsuleLocation);
 }

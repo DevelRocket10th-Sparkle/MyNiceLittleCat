@@ -58,6 +58,10 @@ protected:
     FVector CalculateCarryOffset(const UPrimitiveComponent* Body) const;
     void ReleaseHeldTarget(float ReleaseSpeed, float UpwardRatio = 0.f);
 
+    // 들고 있던 물체를 마지막으로 정상이었던 위치에 내려놓음
+    // 의도: 펫이 벽 속, 벽 너머로 갔을 때 물체가 따라가서 벽을 통과하는 것을 막기 위함
+    void DropHeldTargetAtLastValidLocation();
+
     // 극변환 시 애니메이션 몽타주
     void PlayPolarityChangeAnimation();
     void StopPolarityChangeAnimation();
@@ -100,6 +104,10 @@ protected:
 
     UPROPERTY(Transient)
     TWeakObjectPtr<class UPrimitiveComponent> HeldBody;
+
+    // 펫이 정상 위치였을 때 들고 있던 물체의 마지막 위치
+    FVector LastValidHeldLocation = FVector::ZeroVector;
+    bool bHasLastValidHeldLocation = false;
 
     bool bAttachedToCarryPoint = false;
     bool bSavedSimulatePhysics = false;

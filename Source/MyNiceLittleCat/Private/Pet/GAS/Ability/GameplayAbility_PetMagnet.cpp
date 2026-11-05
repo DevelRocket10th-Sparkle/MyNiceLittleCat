@@ -77,15 +77,33 @@ void UGameplayAbility_PetMagnet::EndAbility(const FGameplayAbilitySpecHandle Han
     StopPolarityChangeAnimation();
 
     // 우클릭 해제·모드 변경 등 모든 종료 경로에서 정리
-    ReleaseHeldTarget(100.f);
+    
+    // 비정상 위치에서 끝나면 던지지 않고 마지막 정상 위치에 내려놓기
+    const APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
+    if (true == IsValid(Pet) && false == Pet->IsMagnetPlacementValid())
+        DropHeldTargetAtLastValidLocation();
+    else
+        ReleaseHeldTarget(100.f);
+
     HideMagnetFieldMesh(); // 모드 종료 시 자기장 표시 제거
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
 void UGameplayAbility_PetMagnet::HandleMagnetTick(float DeltaTime)
 {
-    if(true == bDrawMagnetDebug)
+    // 펫이 벽 속, 허공, 벽 너머에 있으면 자기장 정지
+    // 의도: 공전은 자유롭게 두되, 그 자리에서 자성을 쓰는 악용(물체 벽 통과 등)은 막음
+    const APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
+    if (true == IsValid(Pet) && false == Pet->IsMagnetPlacementValid())
+    {
+        DropHeldTargetAtLastValidLocation();
+        HideMagnetFieldMesh();
+        return;
+    }
+
+    if (true == bDrawMagnetDebug) 
         DrawMagnetDebugRange();
+
     UpdateMagnetFieldMesh();
 
     TArray<AActor*> Candidates;
@@ -96,6 +114,13 @@ void UGameplayAbility_PetMagnet::HandleMagnetTick(float DeltaTime)
 
     UpdateHeldTarget(DeltaTime);
     ApplyNearbyRepulsion(Candidates);
+
+    // 정상 위치일 때 물체 위치를 계속 기억 -> 비정상이 되면 여기로 내려놔요!!!!!!
+    if (const AActor* Target = HeldTarget.Get())
+    {
+        LastValidHeldLocation = Target->GetActorLocation();
+        bHasLastValidHeldLocation = true;
+    }
 }
 
 void UGameplayAbility_PetMagnet::DrawMagnetDebugRange() const
@@ -526,6 +551,30 @@ void UGameplayAbility_PetMagnet::ReleaseHeldTarget(float ReleaseSpeed, float Upw
     HeldTarget.Reset();
     HeldBody.Reset();
     bAttachedToCarryPoint = false;
+    bHasLastValidHeldLocation = false; // 다음 물체에 이전 위치가 남지 않도록
+}
+
+void UGameplayAbility_PetMagnet::DropHeldTargetAtLastValidLocation()
+{
+    AActor* Target = HeldTarget.Get();
+    if (false == IsValid(Target)) return;
+
+    // ReleaseHeldTarget이 기억값을 지우므로 먼저 복사
+    const bool bHasSavedLocation = bHasLastValidHeldLocation;
+    const FVector SavedLocation = LastValidHeldLocation;
+
+    // 던지지 않고(속도 0) 놓기
+    ReleaseHeldTarget(0.f);
+
+    if (true == bHasSavedLocation)
+        Target->SetActorLocation(SavedLocation, false, nullptr, ETeleportType::TeleportPhysics);
+
+    // 물리 물체라면 남아 있던 속도 제거
+    if (UPrimitiveComponent* Body = Cast<UPrimitiveComponent>(Target->GetRootComponent()))
+    {
+        if (true == Body->IsSimulatingPhysics())
+            Body->SetPhysicsLinearVelocity(FVector::ZeroVector);
+    }
 }
 
 void UGameplayAbility_PetMagnet::PlayPolarityChangeAnimation()

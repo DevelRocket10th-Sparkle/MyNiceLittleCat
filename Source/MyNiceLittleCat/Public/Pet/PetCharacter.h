@@ -116,7 +116,7 @@ public:
 	bool CanResumeFollowingAt(const FVector& CapsuleLocation);
 
 	// 성공했을 때만 OutLocation에 안전한 캡슐 중심 위치를 반환
-	bool TryFindSafeRecoveryLocation(const FVector& PreferredLocation, FVector& OutLocation);
+	bool TryFindSafeRecoveryLocation(const FVector& PreferredLocation, FVector& OutLocation, bool bRequireLineOfSight = false);
 
 	void ResumeNavigationSafely(EMovementMode RestoreMode, uint8 RestoreCustomMode = 0);
 
@@ -126,6 +126,20 @@ public:
 
 	// 자성 사용 중 이 캡슐 위치에 배치해도 되는지 검사
 	bool CanUseMagnetPosition(const FVector& CapsuleLocation);
+
+	// 플레이어와 위치 사이에 World Static(벽)이 없는지
+	// 의도: 경로가 돌아서라도 이어지면 통과되는 문제를 막고, "벽 너머" 배치를 확실히 거르기 위함
+	bool HasClearLineFromPlayer(const FVector& Location) const;
+
+	// 자성 공전 중: 이 자리에서 자기장을 써도 되는지 (벽 속·허공·벽 너머가 아닌지)
+	bool IsMagnetPlacementValidAt(const FVector& CapsuleLocation);
+
+	// 자성 해제 시: 이 자리에 펫을 그대로 내려놔도 되는지 (플레이어까지 경로 + 벽 없음)
+	bool CanDropPetAt(const FVector& CapsuleLocation);
+
+	// 공전 Task가 매 틱 기록 → 자성 능력이 읽어서 자기장을 끄고 켬
+	void SetMagnetPlacementValid(bool bValid) { bMagnetPlacementValid = bValid; }
+	bool IsMagnetPlacementValid() const { return bMagnetPlacementValid; }
 
 	// 자성 모드의 자기장 영역 표시용 메시 (모양 갱신은 GameplayAbility_PetMagnet이 담당)
 	class UProceduralMeshComponent* GetMagnetFieldMesh() const { return MagnetFieldMesh; }
@@ -195,6 +209,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pet|Magnet")
 	TObjectPtr<class UProceduralMeshComponent> MagnetFieldMesh; // 자기장 부채꼴 표시
+
+	// 지금 펫 위치에서 자기장을 써도 되는지 (PetMagnetPositionTask가 갱신)
+	UPROPERTY(Transient, VisibleInstanceOnly, Category = "Pet|Magnet")
+	bool bMagnetPlacementValid = true;
 private:
 	// 초기화 됨?
 	UPROPERTY(Transient)
