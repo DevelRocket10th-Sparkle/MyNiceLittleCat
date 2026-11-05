@@ -35,15 +35,6 @@ struct MYNICELITTLECAT_API FPetMagnetPositionTaskInstanceData
     UPROPERTY()
     bool bHasSavedMovement = false;
 
-    UPROPERTY()
-    FVector SafeLocation = FVector::ZeroVector;
-
-    bool bHasSafeLocation = false;
-    float TimeUntilSafeSearch = 0.f;
-
-    UPROPERTY(EditAnywhere, Category = "Parameter", meta = (ClampMin = "1.0", Units = "cm"))
-    float MaxSafeDistanceFromPlayer = 200.f;
-
     // 플레이어 발 높이를 기준으로 위아래 바닥 탐색 범위
     UPROPERTY(EditAnywhere, Category = "Parameter", meta = (ClampMin = "1.0", Units = "cm")) 
     float GroundSearchHeight = 100.f;
