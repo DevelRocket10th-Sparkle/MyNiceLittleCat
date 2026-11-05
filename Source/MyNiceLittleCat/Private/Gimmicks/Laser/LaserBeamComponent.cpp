@@ -11,8 +11,10 @@
 #include "Engine/World.h"
 #include "DrawDebugHelpers.h"
 #include "Interfaces/ReflectiveSurfaceInterface.h"
+#include "Interfaces/LaserReceiverInterface.h"
 #include "Gimmicks/Boss/DamageTypes/DamageType_ReflectedLaser.h"
 #include "Gimmicks/Reflection/ReflectionMath.h"
+#include "Gimmicks/Stage/Laser/GimmickMirror.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
@@ -128,6 +130,7 @@ void ULaserBeamComponent::StopLaser()
 	}
 
 	bLaserActive = false;
+	EndLaserReceiver();
 	HitActor.Reset();
 	LastHit = FHitResult();
 	BeamSegments.Reset();
@@ -219,7 +222,62 @@ void ULaserBeamComponent::UpdateBeam()
 	if (bLaserActive)
 	{
 		UpdateBeamEffects();
+		UpdateLaserReceiver();
 	}
+}
+
+void ULaserBeamComponent::UpdateLaserReceiver()
+{
+	// 빔 끝 = 마지막 구간이 막힌 실제 액터 (설치 예정 반사판 미리보기는 제외)
+	AActor* NewReceiver = nullptr;
+	const FLaserBeamSegment* LastSegment = BeamSegments.IsEmpty() ? nullptr : &BeamSegments.Last();
+	if (LastSegment && LastSegment->Hit.bBlockingHit && false == LastSegment->bHitVirtualSurface)
+	{
+		AActor* BlockingActor = LastSegment->Hit.GetActor();
+		if (IsValid(BlockingActor) && BlockingActor->Implements<ULaserReceiverInterface>())
+		{
+			NewReceiver = BlockingActor;
+		}
+	}
+
+	if (CurrentReceiver.IsValid() && CurrentReceiver.Get() != NewReceiver)
+	{
+		AActor* OldReceiver = CurrentReceiver.Get();
+		CurrentReceiver.Reset();
+		ILaserReceiverInterface::Execute_EndLaserHit(OldReceiver, this);
+	}
+
+	CurrentReceiver = NewReceiver;
+	if (NewReceiver)
+	{
+		// 콜백에서 경로가 바뀌어도 안전하도록 복사해서 전달
+		const FHitResult Hit = LastSegment->Hit;
+		ILaserReceiverInterface::Execute_ReceiveLaserHit(NewReceiver, this, Hit, LastSegment->ReflectionCount);
+	}
+}
+
+void ULaserBeamComponent::EndLaserReceiver()
+{
+	if (AActor* OldReceiver = CurrentReceiver.Get())
+	{
+		CurrentReceiver.Reset();
+		ILaserReceiverInterface::Execute_EndLaserHit(OldReceiver, this);
+	}
+	CurrentReceiver.Reset();
+}
+
+FLinearColor ULaserBeamComponent::GetSegmentDisplayColor(const FLaserBeamSegment& Segment) const
+{
+	// 위험 빛이 가장 우선, 색 빛(또는 색 종류 표시)은 반사 여부와 상관없이 그 색, 색 없는 빛은 VisualSettings의 원본/반사 색
+	if (bHazardDisplay)
+	{
+		return HazardColor;
+	}
+	if (bUseColorTypeDisplay || BeamColorType != ELaserBeamColor::White)
+	{
+		return GetLaserBeamDisplayColor(BeamColorType);
+	}
+	return (0 == Segment.ReflectionCount) ? VisualSettings.BeamColor : VisualSettings.ReflectedBeamColor;
 }
 
 void ULaserBeamComponent::SetVisualSettings(const FLaserBeamVisualSettings& NewSettings)
@@ -247,9 +305,23 @@ UNiagaraComponent* ULaserBeamComponent::CreateEffectComponent(UNiagaraSystem* Sy
 		/*bAutoDestroy*/ false, /*bAutoActivate*/ false, ENCPoolMethod::None, /*bPreCullCheck*/ false);
 }
 
+float ULaserBeamComponent::GetHazardPulse() const
+{
+	const UWorld* World = GetWorld();
+	if (!bHazardDisplay || !World || HazardPulseRate <= 0.f)
+	{
+		return 1.f;
+	}
+
+	const float Wave = 0.5f + 0.5f * FMath::Sin(World->GetTimeSeconds() * HazardPulseRate * UE_TWO_PI);
+	return FMath::Lerp(HazardMinBrightness, 1.f, Wave);
+}
+
 void ULaserBeamComponent::UpdateBeamEffects()
 {
-	const float BeamWidth = FMath::Max(BeamRadius * 2.f * VisualSettings.BeamWidthScale, VisualSettings.MinBeamWidth);
+	const float WidthScale = bHazardDisplay ? HazardWidthScale : 1.f;
+	const float BeamWidth = FMath::Max(BeamRadius * 2.f * VisualSettings.BeamWidthScale * WidthScale, VisualSettings.MinBeamWidth);
+	const float Pulse = GetHazardPulse();
 
 	int32 UsedCount = 0;
 	if (VisualSettings.BeamEffect)
@@ -272,7 +344,10 @@ void ULaserBeamComponent::UpdateBeamEffects()
 				BeamEffectComponents[UsedCount] = Effect;
 			}
 
-			const FLinearColor& Color = (0 == Segment.ReflectionCount) ? VisualSettings.BeamColor : VisualSettings.ReflectedBeamColor;
+			FLinearColor Color = GetSegmentDisplayColor(Segment);
+			Color.R *= Pulse;
+			Color.G *= Pulse;
+			Color.B *= Pulse;
 
 			// 이펙트를 구간 시작점으로 옮김: 시작점 파라미터 없이 시스템 위치를 빔 시작으로 쓰는 이펙트(NS_Laser_Basic 등)도
 			// 반사 구간이 반사 지점에서 시작하도록 (붙인 채로 두면 모든 구간이 발사 위치에서 시작해 보임)
@@ -292,13 +367,13 @@ void ULaserBeamComponent::UpdateBeamEffects()
 		}
 	}
 
-	// 반사가 줄어 남는 구간 이펙트는 끔
+	// 반사가 줄어 남는 구간 이펙트는 끔 (입자가 계속 사는 빔 이펙트도 바로 사라지게 즉시 끔)
 	for (int32 Index = UsedCount; Index < BeamEffectComponents.Num(); ++Index)
 	{
 		UNiagaraComponent* Effect = BeamEffectComponents[Index];
 		if (IsValid(Effect) && Effect->IsActive())
 		{
-			Effect->Deactivate();
+			Effect->DeactivateImmediate();
 		}
 	}
 
@@ -328,7 +403,10 @@ void ULaserBeamComponent::UpdateBeamEffects()
 		? (-LastSegment->Direction).Rotation() : ImpactNormal.Rotation();
 	ImpactEffectComponent->SetWorldLocationAndRotation(FVector(LastSegment->Hit.ImpactPoint), ImpactRotation);
 
-	const FLinearColor& ImpactColor = (0 == LastSegment->ReflectionCount) ? VisualSettings.BeamColor : VisualSettings.ReflectedBeamColor;
+	FLinearColor ImpactColor = GetSegmentDisplayColor(*LastSegment);
+	ImpactColor.R *= Pulse;
+	ImpactColor.G *= Pulse;
+	ImpactColor.B *= Pulse;
 	ImpactEffectComponent->SetVariableLinearColor(ResolveBeamColorParam(VisualSettings.ImpactEffect, VisualSettings.BeamColorParam), ImpactColor);
 
 	if (!ImpactEffectComponent->IsActive())
@@ -343,7 +421,7 @@ void ULaserBeamComponent::DeactivateBeamEffects()
 	{
 		if (IsValid(Effect))
 		{
-			Effect->Deactivate();
+			Effect->DeactivateImmediate();
 		}
 	}
 
@@ -373,6 +451,67 @@ void ULaserBeamComponent::DestroyBeamEffects()
 
 void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegments, const FVirtualReflectiveSurface* VirtualSurface) const
 {
+	TraceBeamSegments(OutSegments, VirtualSurface);
+
+	// [추가: 최요환 2026-11-02] 반사판 설치 프리뷰가 빛 장치(필터 등)에서 끊기지 않게 장치 출력 경로를 이어 붙임
+	if (nullptr != VirtualSurface)
+	{
+		AppendDevicePreviewSegments(OutSegments, VirtualSurface, BeamColorType, 0);
+	}
+}
+
+void ULaserBeamComponent::AppendDevicePreviewSegments(TArray<FLaserBeamSegment>& OutSegments, const FVirtualReflectiveSurface* VirtualSurface,
+	ELaserBeamColor InColor, int32 Depth) const
+{
+	if (OutSegments.IsEmpty() || Depth >= MaxPreviewDeviceDepth)
+	{
+		return;
+	}
+
+	// 배열에 이어 붙이면 참조가 무효가 될 수 있어 복사
+	const FHitResult EndHit = OutSegments.Last().Hit;
+	const int32 LastReflectionCount = OutSegments.Last().ReflectionCount;
+
+	// 빛 장치는 C++ 구현체라 Cast로 확인 (BP 수신기는 프리뷰 출력이 없음)
+	const ILaserReceiverInterface* Receiver = Cast<ILaserReceiverInterface>(EndHit.GetActor());
+	if (!EndHit.bBlockingHit || !Receiver)
+	{
+		return;
+	}
+
+	TArray<ULaserBeamComponent*> Outputs;
+	ELaserBeamColor OutColor = InColor;
+	if (!Receiver->GetPreviewOutputLasers(InColor, EndHit, LastReflectionCount, Outputs, OutColor))
+	{
+		return;
+	}
+
+	for (const ULaserBeamComponent* Output : Outputs)
+	{
+		if (!IsValid(Output) || Output == this)
+		{
+			continue;
+		}
+
+		// 통과형 장치(필터)는 들어온 빛을 따라 이어지므로 장치가 알려준 시작점·방향으로
+		TArray<FLaserBeamSegment> OutputSegments;
+		FVector RayStart, RayDirection;
+		if (Receiver->GetPreviewOutputRay(Output, EndHit, RayStart, RayDirection))
+		{
+			Output->TraceBeamSegments(OutputSegments, VirtualSurface, &RayStart, &RayDirection);
+		}
+		else
+		{
+			Output->TraceBeamSegments(OutputSegments, VirtualSurface);
+		}
+		Output->AppendDevicePreviewSegments(OutputSegments, VirtualSurface, OutColor, Depth + 1);
+		OutSegments.Append(OutputSegments);
+	}
+}
+
+void ULaserBeamComponent::TraceBeamSegments(TArray<FLaserBeamSegment>& OutSegments, const FVirtualReflectiveSurface* VirtualSurface,
+	const FVector* StartOverride, const FVector* DirectionOverride) const
+{
 	OutSegments.Reset();
 
 	UWorld* World = GetWorld();
@@ -383,11 +522,14 @@ void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegmen
 
 	const FCollisionObjectQueryParams ObjectParams = MakeTraceObjectParams();
 
-	FVector SegmentStart = GetComponentLocation();
-	FVector SegmentDirection = (true == bFollowComponentRotation) ? 
-		MakeFireDirection(GetForwardVector()).GetSafeNormal() : FireDirection.GetSafeNormal();
+	FVector SegmentStart = StartOverride ? *StartOverride : GetComponentLocation();
+	FVector SegmentDirection = DirectionOverride ? MakeFireDirection(*DirectionOverride).GetSafeNormal()
+		: (true == bFollowComponentRotation) ? MakeFireDirection(GetForwardVector()).GetSafeNormal() : FireDirection.GetSafeNormal();
 	float RemainingRange = FMath::Max(0.f, MaxRange);
 	int32 ReflectionCount = 0;
+
+	// 기믹 거울에서 가운데 평면 반사로 출발한 구간은 그 거울 안에서 시작하므로 다음 검사에서 무시
+	const AActor* IgnoreNextActor = nullptr;
 
 	while ((RemainingRange > KINDA_SMALL_NUMBER) && (false == SegmentDirection.IsNearlyZero()))
 	{
@@ -397,6 +539,11 @@ void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegmen
 		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(LaserBeam), false);
 		if (0 == ReflectionCount)
 			QueryParams.AddIgnoredActor(GetOwner());
+		if (IgnoreNextActor)
+		{
+			QueryParams.AddIgnoredActor(IgnoreNextActor);
+			IgnoreNextActor = nullptr;
+		}
 
 		FHitResult Hit;
 
@@ -495,6 +642,32 @@ void ULaserBeamComponent::CalculateBeamPath(TArray<FLaserBeamSegment>& OutSegmen
 
 		ReflectedDirection = ReflectedDirection.GetSafeNormal();
 		if (true == ReflectedDirection.IsNearlyZero()) break;
+
+		// [추가: 최요환 2026-11-05] 기믹 거울(AGimmickMirror)은 판 표면이 아니라 판 가운데 평면에서 반사.
+		// 표면 반사는 반사 지점이 중심보다 (판 절반 두께 + 빔 반지름)만큼 앞이라 거울마다 빛줄기가 옆으로 밀려(45°에서 약 13cm)
+		// 거울 여러 개를 잇는 퍼즐에서 오차가 쌓임. 펫 반사판 등 다른 반사면은 기존 그대로 (가상 반사판 프리뷰 포함)
+		if (false == bHitVirtualSurface && nullptr != Cast<AGimmickMirror>(Hit.GetActor()) && Hit.GetComponent())
+		{
+			const USceneComponent* MirrorPlane = Hit.GetComponent();
+			const FVector PlaneNormal = MirrorPlane->GetForwardVector();
+			const float Denominator = FVector::DotProduct(SegmentDirection, PlaneNormal);
+			if (false == FMath::IsNearlyZero(Denominator))
+			{
+				const float T = FVector::DotProduct(MirrorPlane->GetComponentLocation() - SegmentStart, PlaneNormal) / Denominator;
+				if (T > 0.f)
+				{
+					const FVector CenterPoint = SegmentStart + SegmentDirection * T;
+					Segment.End = CenterPoint;
+					RemainingRange -= T;
+
+					SegmentStart = CenterPoint;
+					SegmentDirection = ReflectedDirection;
+					IgnoreNextActor = Hit.GetActor();
+					++ReflectionCount;
+					continue;
+				}
+			}
+		}
 
 		RemainingRange -= FVector::Distance(SegmentStart, Segment.End);
 
