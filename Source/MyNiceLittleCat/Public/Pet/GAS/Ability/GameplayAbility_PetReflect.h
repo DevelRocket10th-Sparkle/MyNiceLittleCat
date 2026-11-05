@@ -36,6 +36,12 @@ protected:
 
     bool UpdateDragRotation();
 
+    // 플레이어가 밟은 높이 기준으로 커서 아래 바닥을 찾음 (프리뷰·설치 위치용)
+    bool TryGetPlacementCursorHit(FHitResult& OutHit);
+
+    // 플레이어 바닥 높이 (점프 중에는 마지막으로 서 있던 높이)
+    bool TryGetPlayerFloorZ(float& OutFloorZ);
+
     bool BeginPlacementMove();
 
     UFUNCTION()
@@ -72,6 +78,15 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, Category = "Reflect|Placement", meta = (ClampMin = "0.0", Units = "cm"))
     float PlacementGroundClearance = 2.f;
+
+    // 플레이어 발 높이와 이만큼까지 차이 나는 바닥에만 프리뷰·설치 가능
+// 의도: 테이블 등 다른 높이에 프리뷰가 떠서 헷갈리는 것 방지, 작은 턱 정도는 허용
+    UPROPERTY(EditDefaultsOnly, Category = "Reflect|Placement", meta = (ClampMin = "1.0", Units = "cm"))
+    float MaxPlacementHeightDifference = 20.f;
+
+    // 점프·낙하 중에 쓸 마지막 바닥 높이
+    float LastPlayerFloorZ = 0.f;
+    bool bHasPlayerFloorZ = false;
 
     UPROPERTY(EditDefaultsOnly, Category = "Reflect|Preview")
     FLinearColor ValidPreviewColor = FLinearColor(0.05f, 0.4f, 1.f);

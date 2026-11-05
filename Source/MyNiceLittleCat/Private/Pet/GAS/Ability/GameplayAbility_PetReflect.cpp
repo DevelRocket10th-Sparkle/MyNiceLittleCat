@@ -13,6 +13,7 @@
 #include "Gimmicks/Reflection/ReflectionMath.h"
 //#include "UObject/UObjectIterator.h"
 #include "DrawDebugHelpers.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 UGameplayAbility_PetReflect::UGameplayAbility_PetReflect()
 {
@@ -67,6 +68,7 @@ void UGameplayAbility_PetReflect::ActivateAbility(const FGameplayAbilitySpecHand
     PreviewMesh->SetVisibility(false);
 
     PreviewMesh->SetWorldScale3D(FVector(PreviewScale));
+    PreviewMesh->SetTranslucentSortPriority(10); //! 다른 반투명 이펙트보다 나중에(위에) 그려지도록
     PreviewMesh->RegisterComponent();
 
     PreviewMID = PreviewMesh->CreateDynamicMaterialInstance(0, PreviewMaterial.Get());
@@ -159,7 +161,8 @@ void UGameplayAbility_PetReflect::HandleReflectTick(float DeltaTime)
     }
     else
     {
-        if (false == PC->TryGetPetCursorHit(Hit))
+        // 플레이어 바닥 높이 기준으로 위치를 잡음
+        if (false == TryGetPlacementCursorHit(Hit))
         {
             bCanPlaceReflector = false;
             Mesh->SetVisibility(false);
@@ -187,12 +190,12 @@ void UGameplayAbility_PetReflect::HandleReflectTick(float DeltaTime)
 
     DrawDebugLine(GetWorld(),
         GroundLocation - WidthDirection * HalfWidth, GroundLocation + WidthDirection * HalfWidth,
-        FColor::White, false, -1.f, 0, 2.f);
+        FColor::White, false, -1.f, SDPG_Foreground, 2.f);
 
     // 반사판 앞면 방향
     DrawDebugDirectionalArrow(GetWorld(),
         GroundLocation, GroundLocation + PlacementRotation.Vector() * 60.f,
-        15.f, FColor::Yellow, false, -1.f, 0, 2.f);
+        15.f, FColor::Yellow, false, -1.f, SDPG_Foreground, 2.f);
 
     // 프리뷰 반사 방향
     DrawLaserReflectionPreview();
@@ -230,7 +233,7 @@ void UGameplayAbility_PetReflect::HandleModeUseInput(EPetModeUseInputPhase Phase
     {
         APlayerMainController* PC = GetPartnerPlayerController();
 
-        if (false == IsValid(PC) || false == PC->TryGetPetCursorHit(DragStartHit))
+        if (false == IsValid(PC) || false == TryGetPlacementCursorHit(DragStartHit))
             return;
 
         PlacementRotation = FRotator(0.f, Pet->GetAimDirection().Rotation().Yaw, 0.f);
@@ -283,8 +286,7 @@ bool UGameplayAbility_PetReflect::UpdateDragRotation()
 
     FVector RayOrigin;
     FVector RayDirection;
-    if (false == PC->DeprojectMousePositionToWorld(RayOrigin, RayDirection))
-        return false;
+    if (false == PC->DeprojectMousePositionToWorld(RayOrigin, RayDirection)) return false;
 
     if (FMath::IsNearlyZero(RayDirection.Z)) return false;
 
@@ -303,6 +305,62 @@ bool UGameplayAbility_PetReflect::UpdateDragRotation()
         return true;
 
     PlacementRotation = FRotator(0.f, Direction.Rotation().Yaw, 0.f);
+    return true;
+}
+
+bool UGameplayAbility_PetReflect::TryGetPlacementCursorHit(FHitResult& OutHit)
+{
+    OutHit = FHitResult();
+
+    APlayerMainController* PC = GetPartnerPlayerController();
+    if (false == IsValid(PC) || false == IsValid(GetWorld())) return false;
+
+    float FloorZ = 0.f;
+    if (false == TryGetPlayerFloorZ(FloorZ)) return false;
+
+    FVector RayOrigin;
+    FVector RayDirection;
+    if (false == PC->DeprojectMousePositionToWorld(RayOrigin, RayDirection)) return false;
+
+    // 커서 Ray가 아래를 향하지 않으면 바닥 평면과 만나지 않음
+    if (RayDirection.Z >= -KINDA_SMALL_NUMBER) return false;
+
+    // 커서 Ray와 "플레이어 바닥 높이의 수평면"의 교점
+    // 의도: 커서가 테이블 등 다른 물체에 걸려도 플레이어가 밟은 높이 기준으로 위치를 잡음
+    const double Distance = (FloorZ - RayOrigin.Z) / RayDirection.Z;
+    const FVector PlanePoint = RayOrigin + RayDirection * Distance;
+
+    FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PetReflectCursor));
+    QueryParams.AddIgnoredActor(PC->GetPawn());
+
+    if (AActor* Pet = GetAvatarActorFromActorInfo())
+        QueryParams.AddIgnoredActor(Pet);
+
+    // 교점 위아래 허용 오차 안의 실제 바닥만 인정 (범위 밖 높이 = 설치 불가 → 프리뷰 숨김)
+    const FVector TraceStart = PlanePoint + FVector::UpVector * MaxPlacementHeightDifference;
+    const FVector TraceEnd = PlanePoint - FVector::UpVector * MaxPlacementHeightDifference;
+
+    return GetWorld()->LineTraceSingleByChannel(OutHit, TraceStart, TraceEnd, ECC_Visibility, QueryParams);
+}
+
+bool UGameplayAbility_PetReflect::TryGetPlayerFloorZ(float& OutFloorZ)
+{
+    APlayerMainController* PC = GetPartnerPlayerController();
+    const ACharacter* PlayerCharacter = IsValid(PC) ? Cast<ACharacter>(PC->GetPawn()) : nullptr;
+    if (false == IsValid(PlayerCharacter)) return false;
+
+    const UCharacterMovementComponent* Movement = PlayerCharacter->GetCharacterMovement();
+    if (false == IsValid(Movement)) return false;
+
+    // 땅을 밟고 있을 때만 기준 높이 갱신
+    // 의도: 점프 중에 프리뷰 높이가 같이 떠오르거나 빨개지지 않도록
+    if (true == Movement->IsMovingOnGround() || false == bHasPlayerFloorZ)
+    {
+        LastPlayerFloorZ = Movement->GetActorFeetLocation().Z;
+        bHasPlayerFloorZ = true;
+    }
+
+    OutFloorZ = LastPlayerFloorZ;
     return true;
 }
 
