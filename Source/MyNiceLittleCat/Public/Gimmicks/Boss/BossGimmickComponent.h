@@ -152,9 +152,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick|CounterDamage", meta = (ClampMin = "0.0"))
 	float CoinDamage = 5.f;
 
-	// 반사 레이저 피해량 (레이저 DamageInterval마다)
+	// 반사 레이저 피해량 (ReflectedLaserDamageInterval마다)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick|CounterDamage", meta = (ClampMin = "0.0"))
 	float ReflectedLaserDamage = 3.f;
+
+	// 반사 레이저 피해 최소 간격(초). 반사된 빛이 계속 닿아도 이 간격마다 한 번만 피해
+	// (빔이 잠깐 끊겼다 다시 닿아도, 레이저가 여러 개여도 보스 기준으로 셈)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick|CounterDamage", meta = (ClampMin = "0.0"))
+	float ReflectedLaserDamageInterval = 1.f;
 
 	// 배리어(현재 페이즈 배리어 또는 매니저가 넘긴 배리어 중 하나라도)가 켜져 있으면 반격 피해 무시
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick|CounterDamage")
@@ -163,6 +168,9 @@ protected:
 	bool IsAnyBarrierActive() const;
 
 private:
+	// 마지막 반사 레이저 피해 시각 (-1 = 아직 없음)
+	float LastReflectedLaserDamageTime = -1.f;
+
 	// 매니저가 넘긴 PhaseId별 레벨 액터
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "BossGimmick")
 	TMap<FName, TObjectPtr<AActor>> PhaseActors;

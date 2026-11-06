@@ -230,6 +230,14 @@ bool UBossGimmickComponent::TryApplyCounterDamage(AActor* Source, EBossCounterDa
 		return false;
 	}
 
+	const bool bReflectedLaser = Type == EBossCounterDamageType::ReflectedLaser;
+	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+	if (bReflectedLaser && ReflectedLaserDamageInterval > 0.f && LastReflectedLaserDamageTime >= 0.f
+		&& Now - LastReflectedLaserDamageTime < ReflectedLaserDamageInterval)
+	{
+		return false;
+	}
+
 	const float Damage = DamageOverride > 0.f ? DamageOverride
 		: (Type == EBossCounterDamageType::MagneticCoin ? CoinDamage : ReflectedLaserDamage);
 	UAbilitySystemComponent* BossASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetOwner());
@@ -265,6 +273,11 @@ bool UBossGimmickComponent::TryApplyCounterDamage(AActor* Source, EBossCounterDa
 
 		const FGameplayEffectSpec Spec(DamageEffect, Context, 1.f);
 		BossASC->ApplyGameplayEffectSpecToSelf(Spec);
+	}
+
+	if (bReflectedLaser)
+	{
+		LastReflectedLaserDamageTime = Now;
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[BossGimmick] 반격 피해 %s %.1f (출처 %s)"),

@@ -714,20 +714,11 @@ void ULaserBeamComponent::ApplyLaserDamage()
 		}
 	}
 
-	// 반사된 빛이 보스에 맞으면 보스 반격 피해 (피해량·페이즈·배리어 판정은 보스 쪽, 간격은 DamageInterval)
+	// 반사된 빛이 보스에 맞으면 보스 반격 피해 (피해량·페이즈·배리어·간격 판정은 보스 쪽 ReflectedLaserDamageInterval)
 	if (bCounterDamageBossOnReflect && Segment.ReflectionCount > 0 && Segment.Hit.bBlockingHit && IsValid(BlockingActor))
 	{
 		if (UBossGimmickComponent* BossGimmick = BlockingActor->FindComponentByClass<UBossGimmickComponent>())
 		{
-			const float Now = GetWorld()->GetTimeSeconds();
-			const bool bSameTarget = LastDamagedActor.Get() == BlockingActor;
-			if (bSameTarget && LastDamageTime >= 0.f && Now - LastDamageTime < DamageInterval)
-			{
-				return;
-			}
-			LastDamageTime = Now;
-			LastDamagedActor = BlockingActor;
-
 			if (BossGimmick->TryApplyCounterDamage(GetOwner(), EBossCounterDamageType::ReflectedLaser))
 			{
 				OnLaserDamaged.Broadcast(this, BlockingActor, 0.f);
