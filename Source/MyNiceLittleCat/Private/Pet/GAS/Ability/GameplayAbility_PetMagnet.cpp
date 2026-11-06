@@ -14,6 +14,8 @@
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "ProceduralMeshComponent.h"
 #include "Materials/MaterialInterface.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "AIController.h"
 
 namespace
 {
@@ -424,8 +426,27 @@ void UGameplayAbility_PetMagnet::BeginAttractTarget(AActor* Target)
     Body->SetSimulatePhysics(false);
     Target->SetActorEnableCollision(false);
 
-    // 월드 기준 회전을 초기화한 자세로 끌어오기
-    Target->SetActorRotation(FRotator::ZeroRotator);
+    // 캐릭터는 CMC가 중력·AI 이동으로 위치를 계속 바꾸므로 잡혀 있는 동안 정지
+    // 의도: 끌려오는 동안 떨림, 놓을 때 쌓인 낙하 속도로 바닥에 처박히는 것 방지
+    bSavedTargetMovement = false;
+    if (ACharacter* Character = Cast<ACharacter>(Target))
+    {
+        if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
+        {
+            SavedTargetMovementMode = Movement->MovementMode;
+            bSavedTargetMovement = true;
+
+            Movement->StopMovementImmediately();
+            Movement->DisableMovement();
+        }
+
+        if (AAIController* AI = Cast<AAIController>(Character->GetController()))
+            AI->StopMovement();
+    }
+
+    // 월드 기준 회전을 초기화한 자세로 끌어오기 (캐릭터는 바라보던 방향 유지)
+    if(false == Target->IsA<ACharacter>())
+        Target->SetActorRotation(FRotator::ZeroRotator);
 }
 
 void UGameplayAbility_PetMagnet::UpdateHeldTarget(float DeltaTime)
@@ -476,8 +497,13 @@ void UGameplayAbility_PetMagnet::UpdateHeldTarget(float DeltaTime)
     const FVector CarryOffset = CalculateCarryOffset(Body);
     const FVector Destination = CarryPoint->GetComponentLocation() + CarryOffset;
 
+    // 자성 액터별 끌림 속도 배율
+    float AttractMultiplier = 1.f;
+    if (const UMagneticComponent* Magnetic = Target->FindComponentByClass<UMagneticComponent>())
+        AttractMultiplier = Magnetic->GetAttractSpeedMultiplier();
+
     const FVector NextLocation = FMath::VInterpConstantTo(
-        Target->GetActorLocation(), Destination, DeltaTime, AttractionSpeed);
+        Target->GetActorLocation(), Destination, DeltaTime, AttractionSpeed * AttractMultiplier);
     Target->SetActorLocation(NextLocation, false);
 
     constexpr float AttachDistance = 10.f;
@@ -536,6 +562,18 @@ void UGameplayAbility_PetMagnet::ReleaseHeldTarget(float ReleaseSpeed, float Upw
                 Body->AddImpulse(Direction * ReleaseSpeed, NAME_None, true);
             }
         }
+
+        // 잡을 때 멈춘 캐릭터 이동 복원
+        // 공중에서 놓일 수 있으므로 Falling으로 시작하면 CMC가 알아서 착지 처리
+        if (true == bSavedTargetMovement)
+        {
+            if (ACharacter* Character = Cast<ACharacter>(Target))
+            {
+                if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
+                    Movement->SetMovementMode(SavedTargetMovementMode == MOVE_None ? MOVE_Walking : MOVE_Falling);
+            }
+        }
+        bSavedTargetMovement = false;
 
         // 캐릭터는 CharacterMovement를 통해 발사
         if (ACharacter* Character = Cast<ACharacter>(Target);

@@ -68,6 +68,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Magnetic|Launch")
 	float GetLaunchSpeedMultiplier() const { return FMath::Max(0.f, LaunchSpeedMultiplier); }
+
+	UFUNCTION(BlueprintPure, Category = "Magnetic|Attract")
+	float GetAttractSpeedMultiplier() const { return FMath::Max(0.f, AttractSpeedMultiplier); }
+
 public:
 	UPROPERTY(BlueprintAssignable, Category = "Magnetic")
 	FOnMagneticPolarityChanged OnPolarityChanged;
@@ -164,6 +168,10 @@ protected:
 	// 펫 등 외부에서 발사할 때 적용하는 속도 배율
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Launch", meta = (ClampMin = "0.0"))
 	float LaunchSpeedMultiplier = 1.f;
+
+	// 펫 자석에 끌려와 붙을 때 적용하는 속도 배율
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Attract", meta = (ClampMin = "0.0"))
+	float AttractSpeedMultiplier = 1.f;
 
 private:
 	UPROPERTY(Transient)

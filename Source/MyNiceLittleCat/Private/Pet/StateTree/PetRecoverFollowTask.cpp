@@ -24,8 +24,13 @@ EStateTreeRunStatus FPetRecoverFollowTask::EnterState(FStateTreeExecutionContext
     if (false == IsValid(Movement) || false == IsValid(Capsule))
         return FailRecovery(Data.Pet.Get());
 
-    // 착지할 곳이 없으면 비행을 시작하지 않음
-    if (false == Pet->TryFindSafeRecoveryLocation(Pet->GetActorLocation(), Data.LandingLocation))
+    // 착지할 곳이 없으면 비행을 시작하지 않아요!!
+    // 의도: 벽 너머에서 날아오는 경우가 많으므로 플레이어가 보이는 쪽 착지점을 우선으로 찾고,
+    //       그런 곳이 없을 때만 기존 방식(시야 무시)으로 다시 찾음
+    const FVector PetLocation = Pet->GetActorLocation();
+    const bool bFoundVisibleLanding = Pet->TryFindSafeRecoveryLocation(PetLocation, Data.LandingLocation, true);
+    const bool bFoundAnyLanding = bFoundVisibleLanding || Pet->TryFindSafeRecoveryLocation(PetLocation, Data.LandingLocation);
+    if (false == bFoundAnyLanding) 
         return FailRecovery(Data.Pet.Get());
 
     // 기존 위치 복구 타이머와 비행이 동시에 움직이지 않게 함
@@ -102,7 +107,12 @@ EStateTreeRunStatus FPetRecoverFollowTask::Tick(FStateTreeExecutionContext& Cont
     {
         FVector NewLandingLocation;
 
-        if (false == Pet->TryFindSafeRecoveryLocation(Pet->GetActorLocation(), NewLandingLocation))
+        // 다시 찾을 때도 플레이어가 보이는 쪽을 우선
+        const FVector CurrentLocation = Pet->GetActorLocation();
+        const bool bFoundVisibleLanding = Pet->TryFindSafeRecoveryLocation(CurrentLocation, NewLandingLocation, true);
+        const bool bFoundAnyLanding = bFoundVisibleLanding || Pet->TryFindSafeRecoveryLocation(CurrentLocation, NewLandingLocation);
+
+        if (false == bFoundAnyLanding)
             return FailRecovery(Data.Pet.Get());
 
         // 새 착지점까지 현재 위치에서 다시 비행
