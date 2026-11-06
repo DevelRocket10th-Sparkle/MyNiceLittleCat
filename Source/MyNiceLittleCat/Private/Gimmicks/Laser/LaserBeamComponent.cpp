@@ -15,6 +15,7 @@
 #include "Gimmicks/Boss/DamageTypes/DamageType_ReflectedLaser.h"
 #include "Gimmicks/Reflection/ReflectionMath.h"
 #include "Gimmicks/Stage/Laser/GimmickMirror.h"
+#include "Gimmicks/Boss/BossGimmickComponent.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
@@ -710,6 +711,28 @@ void ULaserBeamComponent::ApplyLaserDamage()
 				LastDamageTime = -1.f;
 				return;
 			}
+		}
+	}
+
+	// 반사된 빛이 보스에 맞으면 보스 반격 피해 (피해량·페이즈·배리어 판정은 보스 쪽, 간격은 DamageInterval)
+	if (bCounterDamageBossOnReflect && Segment.ReflectionCount > 0 && Segment.Hit.bBlockingHit && IsValid(BlockingActor))
+	{
+		if (UBossGimmickComponent* BossGimmick = BlockingActor->FindComponentByClass<UBossGimmickComponent>())
+		{
+			const float Now = GetWorld()->GetTimeSeconds();
+			const bool bSameTarget = LastDamagedActor.Get() == BlockingActor;
+			if (bSameTarget && LastDamageTime >= 0.f && Now - LastDamageTime < DamageInterval)
+			{
+				return;
+			}
+			LastDamageTime = Now;
+			LastDamagedActor = BlockingActor;
+
+			if (BossGimmick->TryApplyCounterDamage(GetOwner(), EBossCounterDamageType::ReflectedLaser))
+			{
+				OnLaserDamaged.Broadcast(this, BlockingActor, 0.f);
+			}
+			return;
 		}
 	}
 
