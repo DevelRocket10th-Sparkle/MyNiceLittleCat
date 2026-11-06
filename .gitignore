@@ -101,6 +101,7 @@ mcp.json
 # 그 외
 .codex/*
 Content/_ExternalAssets/*
+Content/__ExternalActors__/*
 /Content/__ExternalObjects__/_ExternalAssets/ThirdPerson/Lvl_ThirdPerson
 /Content/__ExternalActors__/_ExternalAssets/ThirdPerson/Lvl_ThirdPerson
 /Content/LevelPrototyping
