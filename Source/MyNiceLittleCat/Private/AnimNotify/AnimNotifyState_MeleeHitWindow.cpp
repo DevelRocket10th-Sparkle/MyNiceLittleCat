@@ -148,21 +148,28 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
 
         if (!Target || Target->IsA<APetCharacter>() || Target->ActorHasTag(DeflectTag) || HitActors.Contains(Target)) continue;
 
-        if (HitEffect)
+        // 데미지 받을 수 있는 대상(ASC 있음)에만 이펙트
+        if (HitEffect && UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Target))
         {
-            // 시작부터 겹쳐 있던 히트(bStartPenetrating)는 ImpactPoint가 부정확하므로 대상 표면의 가장 가까운 점 사용
             FVector Point = Hit.ImpactPoint;
-            if (Hit.bStartPenetrating && Hit.GetComponent())
+
+            // 시작부터 겹친 히트는 ImpactPoint가 부정확 → 대상 중심에서 공격자 쪽 표면 근처로
+            if (Hit.bStartPenetrating || Point.IsNearlyZero())
             {
-                Hit.GetComponent()->GetClosestPointOnCollision(MeshComp->GetComponentLocation(), Point);
+                FVector Origin, Extent;
+                Target->GetActorBounds(true, Origin, Extent);
+                const FVector ToAttacker = (Attacker->GetActorLocation() - Origin).GetSafeNormal2D();
+                Point = Origin + ToAttacker * FMath::Min(Extent.X, Extent.Y);
             }
+
+            // 몸에 파묻히지 않게 카메라 쪽으로 살짝만
             if (const APlayerCameraManager* Cam = UGameplayStatics::GetPlayerCameraManager(MeshComp->GetWorld(), 0))
             {
-                Point += (Cam->GetCameraLocation() - Point).GetSafeNormal() * 500.f;
+                Point += (Cam->GetCameraLocation() - Point).GetSafeNormal() * 40.f;
             }
-            const FRotator Facing = (-Hit.ImpactNormal).Rotation();   // 이펙트가 타격 방향을 향하게
-            UNiagaraFunctionLibrary::SpawnSystemAtLocation(MeshComp->GetWorld(), HitEffect, Point, Facing, HitEffectScale);
 
+            const FRotator Facing = (-Hit.ImpactNormal).Rotation();
+            UNiagaraFunctionLibrary::SpawnSystemAtLocation(MeshComp->GetWorld(), HitEffect, Point, Facing, HitEffectScale);
         }
 
         HitActors.Add(Target);
