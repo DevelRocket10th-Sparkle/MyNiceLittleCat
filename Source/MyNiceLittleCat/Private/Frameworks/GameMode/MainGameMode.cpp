@@ -194,13 +194,29 @@ void AMainGameMode::SetupPet(AController* Controller)
 			return;
 		}
 
-		// 펫 스폰하기
-		const FVector SpawnLocation = PlayerPawn->GetActorLocation() + PlayerPawn->GetActorRightVector() * 300.f;
+		// 펫 스폰하기: 기본은 플레이어 오른쪽 300, 막혀 있으면 왼쪽 → 뒤 → 앞 순서로 시도
+		// (좁은 복도 가운데서 시작하면 오른쪽이 벽이라 스폰이 실패하던 문제)
+		const FVector PlayerLocation = PlayerPawn->GetActorLocation();
+		const FVector Right = PlayerPawn->GetActorRightVector();
+		const FVector Forward = PlayerPawn->GetActorForwardVector();
+		const FVector SpawnOffsets[] = { Right * 300.f, -Right * 300.f, -Forward * 300.f, Forward * 300.f };
 
 		FActorSpawnParameters SpawnParams;
 		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
 
-		Pet = GetWorld()->SpawnActor<APetCharacter>(PetClass, SpawnLocation, PlayerPawn->GetActorRotation(), SpawnParams);
+		for (const FVector& Offset : SpawnOffsets)
+		{
+			Pet = GetWorld()->SpawnActor<APetCharacter>(PetClass, PlayerLocation + Offset, PlayerPawn->GetActorRotation(), SpawnParams);
+			if (IsValid(Pet))
+			{
+				break;
+			}
+		}
+
+		if (!IsValid(Pet))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[MainGameMode] 플레이어 주변 4곳 모두 막혀 펫을 스폰하지 못함 (%s)"), *PlayerLocation.ToString());
+		}
 	}
 
 	if (!IsValid(Pet))
