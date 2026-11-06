@@ -367,6 +367,9 @@ void UGameplayAbility_PetMagnet::ApplyNearbyRepulsion(const TArray<AActor*>& Can
     const AActor* Pet = GetAvatarActorFromActorInfo();
     if (false == IsValid(Pet)) return;
 
+    // 목표 속도와의 차이에 곱하는 반응 계수 (클수록 빨리 목표 속도에 도달)
+    constexpr float ResponseRate = 10.f;
+
     for (AActor* Candidate : Candidates)
     {
         if (false == IsValid(Candidate) || Candidate == HeldTarget.Get())
@@ -380,17 +383,46 @@ void UGameplayAbility_PetMagnet::ApplyNearbyRepulsion(const TArray<AActor*>& Can
         if (CurrentPolarity != TargetPolarity)
             continue;
 
-        //! 임시 물체 연결부 -> 루트 메시의 물리에 힘을 줘요
-        UPrimitiveComponent* Body = Cast<UPrimitiveComponent>(Candidate->GetRootComponent());
-
-        if (false == IsValid(Body) || false == Body->IsSimulatingPhysics())
-            continue;
-
+        // 밀어낼 방향: 펫 → 대상 (수평)
         FVector Direction = Candidate->GetActorLocation() - Pet->GetActorLocation();
         Direction = Direction.GetSafeNormal2D();
 
         if (true == Direction.IsNearlyZero())
             Direction = Pet->GetActorForwardVector().GetSafeNormal2D();
+
+        // [캐릭터] 물리 시뮬레이션이 없으므로 CharacterMovement에 힘을 줌
+        // 의도: 물리 물체와 같은 규칙(목표 속도에 못 미친 만큼만 가속)으로 밀어서 체감을 맞춤
+        if (ACharacter* Character = Cast<ACharacter>(Candidate))
+        {
+            UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
+
+            // 끌어당기는 중이라 이동이 꺼진(MOVE_None) 캐릭터는 제외
+            if (false == IsValid(Movement) || MOVE_None == Movement->MovementMode)
+                continue;
+
+            const float OutwardSpeed = FVector::DotProduct(Movement->Velocity, Direction);
+            const float SpeedGap = NearbyRepelSpeed - OutwardSpeed;
+
+            // 이미 충분히 빠르게 밀려나는 중이면 추가 힘을 주지 않음
+            if (SpeedGap <= 0.f) continue;
+
+            //Xconst float Acceleration = FMath::Clamp(SpeedGap * ResponseRate, 0.f, NearbyRepelMaxAcceleration);
+
+            //X CMC의 AddForce는 질량으로 나누므로, 질량을 곱해서 물리 물체와 같은 가속도로 맞춤
+            //XMovement->AddForce(Direction * Acceleration * Movement->Mass);
+
+            // 캐릭터는 걷기 제동(BrakingDecelerationWalking)이 힘을 매 프레임 상쇄하므로
+            // 힘 대신 바깥 방향 속도를 목표 속도(NearbyRepelSpeed)까지 직접 채워 줌
+            // 의도: 제동보다 약한 힘으로는 전혀 밀리지 않는 문제 해결
+            Movement->Velocity += Direction * SpeedGap;
+            continue;
+        }
+
+        // [물리 물체] 루트 메시의 물리에 힘을 줘요
+        UPrimitiveComponent* Body = Cast<UPrimitiveComponent>(Candidate->GetRootComponent());
+
+        if (false == IsValid(Body) || false == Body->IsSimulatingPhysics())
+            continue;
 
         const float OutwardSpeed = FVector::DotProduct(Body->GetPhysicsLinearVelocity(), Direction);
         const float SpeedGap = NearbyRepelSpeed - OutwardSpeed;
@@ -398,12 +430,10 @@ void UGameplayAbility_PetMagnet::ApplyNearbyRepulsion(const TArray<AActor*>& Can
         // 이미 충분히 빠르게 날아가는 물체에는 추가 힘을 주지 않음
         if (SpeedGap <= 0.f) continue;
 
-        constexpr float ResponseRate = 10.f;
         const float Acceleration = FMath::Clamp(SpeedGap * ResponseRate, 0.f, NearbyRepelMaxAcceleration);
         Body->AddForce(Direction * Acceleration, NAME_None, true);
     }
 }
-
 bool UGameplayAbility_PetMagnet::IsMagnetCandidate(const AActor* _actor) const
 {
     EPetMagnetPolarity TargetPolarity;
