@@ -170,6 +170,16 @@ void UGameplayAbility_PetMagnet::DrawMagnetDebugRange() const
 
         PreviousPoint = Point;
     }
+
+    // 펫 주변 원형 자기장 범위 (판정과 같은 중심 = 펫 위치, 표시 높이는 부채꼴과 동일)
+    if (NearbyFieldRadius > 0.f)
+    {
+        FVector CircleCenter = Pet->GetActorLocation();
+        CircleCenter.Z = Origin.Z;
+
+        DrawDebugCircle(GetWorld(), CircleCenter, NearbyFieldRadius, 32, Color, false, 0.f, 0, 2.f,
+            FVector(1.f, 0.f, 0.f), FVector(0.f, 1.f, 0.f), false);
+    }
 #endif
 }
 
@@ -236,8 +246,11 @@ void UGameplayAbility_PetMagnet::CollectMagnetTargetsInRange(TArray<AActor*>& Ou
 
     TArray<FOverlapResult> Overlaps;
 
+    // 부채꼴(Origin 기준)과 펫 주변 원(펫 위치 기준)을 모두 덮는 크기
+    const float SearchExtent = FMath::Max(RangeLength, NearbyFieldRadius + FMath::Abs(ForwardOffset));
+
     GetWorld()->OverlapMultiByObjectType(Overlaps, Origin, FQuat::Identity, ObjectTypes,
-        FCollisionShape::MakeBox(FVector(RangeLength, RangeLength, TargetHeightTolerance)), QueryParams);
+        FCollisionShape::MakeBox(FVector(SearchExtent, SearchExtent, TargetHeightTolerance)), QueryParams);
 
     const float RangeSquared = FMath::Square(RangeLength);
     const float MinimumDot = FMath::Cos(FMath::DegreesToRadians(HalfAngleDegrees));
@@ -265,16 +278,28 @@ void UGameplayAbility_PetMagnet::CollectMagnetTargetsInRange(TArray<AActor*>& Ou
         if (ToTarget.SizeSquared() > RangeSquared)
             continue;
 
-        if (false == ToTarget.IsNearlyZero())
+        // 펫 주변 원 안이면 부채꼴(거리·각도) 검사 생략
+        const FVector PetLocation = Pet->GetActorLocation();
+        const bool bInNearbyField = NearbyFieldRadius > 0.f &&
+            FVector::DistSquared2D(PetLocation, Candidate->GetActorLocation()) <= FMath::Square(NearbyFieldRadius);
+
+        if (false == bInNearbyField)
         {
-            const float Dot = FVector::DotProduct(Forward, ToTarget.GetSafeNormal());
-            if (Dot < MinimumDot)
+            ToTarget.Z = 0.f;
+            if (ToTarget.SizeSquared() > RangeSquared)
                 continue;
+
+            if (false == ToTarget.IsNearlyZero())
+            {
+                const float Dot = FVector::DotProduct(Forward, ToTarget.GetSafeNormal());
+                if (Dot < MinimumDot)
+                    continue;
+            }
         }
 
         // 부채꼴 안에 있어도 벽 뒤에 있으면 자기장이 닿지 않음
-        // 의도: 트레이스는 비용이 있으므로 거리·각도 검사를 모두 통과한 후보에만 수행
-        if (true == IsShieldedByWall(Origin, Candidate))
+        // 근처 원은 펫 위치에서 검사 → 펫 앞 지점(Origin)이 벽 너머에 걸쳐도 오판하지 않게
+        if (true == IsShieldedByWall(bInNearbyField ? PetLocation : Origin, Candidate))
             continue;
 
         OutTargets.Add(Candidate);
