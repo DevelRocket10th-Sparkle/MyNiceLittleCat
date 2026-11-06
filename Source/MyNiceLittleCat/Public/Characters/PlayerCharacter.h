@@ -21,6 +21,8 @@ class UStaticMeshComponent;
 class UPlayerAttributeSet;
 class UGA_MeleeAttack;
 class UPlayerConfig;
+class UNiagaraSystem;
+class UNiagaraComponent;
 struct FInputActionValue;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPlayerDied);
@@ -125,6 +127,7 @@ private:
 	void StartHitReaction(FVector HitDirection);
 	void ToggleHitFlash();
 	void EndInvincibility();
+	void EndHitStun();
 	void DropWeapon();
 
 	UFUNCTION()
@@ -141,6 +144,7 @@ protected:
 	FTimerHandle DodgeUpdateTimer;
 	FTimerHandle DodgeEndTimer;
 	FTimerHandle InvincibilityTimerHandle;
+	FTimerHandle HitStunTimerHandle;
 	FTimerHandle BlinkTimerHandle;
 
 	UPROPERTY(EditAnywhere, Category = "Hit Reaction")
@@ -155,7 +159,10 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Hit Reaction",
 		meta = (ClampMin = "0.0"))
-	float InvincibilityDuration = 0.75f;
+	float InvincibilityDuration = 0.55f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Hit Reaction", meta = (ClampMin = "0", Units = "s"))
+	float HitStunDuration = 0.4f;
 
 	UPROPERTY(EditAnywhere, Category = "Hit Reaction",
 		meta = (ClampMin = "0.01"))
@@ -249,6 +256,15 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Weapon")
 	TObjectPtr<UStaticMeshComponent> WeaponMesh;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Dodge", meta = (ClampMin = "1"))
+	int32 MaxConsecutiveDodges = 2;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Dodge", meta = (ClampMin = "0", Units = "s"))
+	float DodgeCooldown = 1.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Dodge", meta = (ClampMin = "0", Units = "s"))
+	float DodgeChainWindow = 0.5f;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<UStaticMeshComponent> PotionMesh;
 
@@ -260,6 +276,12 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Heal", meta = (ClampMin = "0"))
 	int32 MaxPotions = 3;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Heal|FX")
+	TObjectPtr<UNiagaraSystem> HealEffect;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Heal|FX")
+	FVector HealEffectOffset = FVector::ZeroVector;
 
 	/* Enemy 밀어내기 관련 */
 
@@ -293,6 +315,11 @@ private:
 	bool bHitFlashVisible = true;
 	bool bIsDead = false;
 	bool bIsDeflected = false;
+	bool bSuppressHealEffect = false;
+
+	int32 ConsecutiveDodges = 0;
+	float LastDodgeEndTime = -100.f;
+	float DodgeLockedUntil = 0.f;
 
 	TEnumAsByte<ECollisionResponse> SavedCapsuleProjectileResponse = ECR_Block;
 

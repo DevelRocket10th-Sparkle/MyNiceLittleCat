@@ -16,6 +16,8 @@
 #include "GameplayTagContainer.h"
 #include "Components/CapsuleComponent.h"
 #include "Frameworks/Save/GameProgressSubsystem.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraComponent.h"
 
 #include "Characters/Datas/PlayerConfig.h"
 #include "Characters/GAS/PlayerAttributeSet.h"
@@ -377,6 +379,13 @@ void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
         &APlayerCharacter::EndInvincibility,
         InvincibilityDuration,
         false);
+    
+    GetWorldTimerManager().SetTimer(
+        HitStunTimerHandle,
+        this,
+        &APlayerCharacter::EndHitStun,
+        FMath::Max(HitStunDuration, 0.01f),
+        false);
 
     if (GetMesh())
     {
@@ -460,7 +469,15 @@ void APlayerCharacter::SwitchTarget(const FInputActionValue& Value)
 void APlayerCharacter::StartDodge()
 {
     if (bIsDead || bIsDodging || !DodgeMontage || !bIsAbleToDodge || bIsDeflected) return;
-
+    // 내부 쿨다운: 연속 회피를 다 쓴 뒤 잠김
+    const float Now = GetWorld()->GetTimeSeconds();
+    if (Now < DodgeLockedUntil) return;
+    
+       // 텀을 두고 회피하면 연속 횟수 초기화
+       if (Now - LastDodgeEndTime > DodgeChainWindow)
+       {
+           ConsecutiveDodges = 0;
+       }
     bIsDodging = true;
 
     FVector Direction = GetLastMovementInputVector();
@@ -480,6 +497,7 @@ void APlayerCharacter::StartDodge()
     {
         SetActorRotation(DodgeDirection.Rotation());
         AnimInstance->Montage_Play(DodgeMontage);
+        ++ConsecutiveDodges;
     }
 
     UCharacterMovementComponent* MoveComp = GetCharacterMovement();
@@ -529,6 +547,13 @@ void APlayerCharacter::UpdateDodge()
 
 void APlayerCharacter::EndDodge()
 {
+    LastDodgeEndTime = GetWorld()->GetTimeSeconds();
+    if (ConsecutiveDodges >= MaxConsecutiveDodges)
+    {
+        DodgeLockedUntil = LastDodgeEndTime + DodgeCooldown;
+        ConsecutiveDodges = 0;
+    }
+
     bIsDodging = false;
 	bIsAbleToAttack = true;
     if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
@@ -624,9 +649,23 @@ void APlayerCharacter::OnMeleeAttackInput(const FInputActionValue& Value)
 
 void APlayerCharacter::OnHealthChanged(const FOnAttributeChangeData& Data)
 {
-    if (bIsDead || Data.NewValue > 0.f) return;
+    //if (bIsDead || Data.NewValue > 0.f) return;
 
-    Die();
+    //Die();
+    if (bIsDead) return;
+    
+       if (Data.NewValue <= 0.f)
+       {
+            Die();
+            return;
+       }
+    
+        // 체력이 올랐을 때만 (0 이하에서 오른 건 리스폰이라 제외)
+       if (HealEffect && !bSuppressHealEffect && Data.OldValue > 0.f && Data.NewValue > Data.OldValue)
+       {
+            UNiagaraFunctionLibrary::SpawnSystemAttached(HealEffect, GetRootComponent(), NAME_None,
+               HealEffectOffset, FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset, true);
+       }
 }
 
 void APlayerCharacter::Die()
@@ -643,6 +682,7 @@ void APlayerCharacter::Die()
 
     GetWorldTimerManager().ClearTimer(InvincibilityTimerHandle);
     GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
+    GetWorldTimerManager().ClearTimer(HitStunTimerHandle);
 
     UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
 
@@ -775,11 +815,20 @@ void APlayerCharacter::EndInvincibility()
     }
 
     bIsInvincible = false;
+    //bIsAbleToAttack = true;
+    //bIsAbleToDodge = true;
+    //bIsAbleToMove = true;
+    //UE_LOG(LogTemp, Warning,
+    //    TEXT("[HitReaction] 무적 시간 종료"));
+}
+
+void APlayerCharacter::EndHitStun()
+{
+    if (bIsDead) return;
+
     bIsAbleToAttack = true;
     bIsAbleToDodge = true;
     bIsAbleToMove = true;
-    //UE_LOG(LogTemp, Warning,
-    //    TEXT("[HitReaction] 무적 시간 종료"));
 }
 
 void APlayerCharacter::DropWeapon()
