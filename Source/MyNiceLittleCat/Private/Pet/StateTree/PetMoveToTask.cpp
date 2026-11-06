@@ -16,6 +16,7 @@ EStateTreeRunStatus FPetMoveToTask::EnterState(FStateTreeExecutionContext& Conte
     Data.AbilityMoveRequestId.Invalidate();
     Data.Movement.Reset();
     Data.bHasSavedMoveSpeed = false;
+    Data.bHasSavedAcceleration = false;
 
     if (false == IsValid(Data.Pet.Get()))
         return EStateTreeRunStatus::Failed;
@@ -77,6 +78,24 @@ EStateTreeRunStatus FPetMoveToTask::EnterState(FStateTreeExecutionContext& Conte
             Data.bHasSavedMoveSpeed = true;
 
             Movement->MaxWalkSpeed = Data.MoveSpeedOverride;
+        }
+    }
+
+    // 가속·감속 덮어쓰기 (둘 중 하나라도 설정했을 때만)
+    if (Data.MaxAccelerationOverride > 0.f || Data.BrakingDecelerationOverride > 0.f)
+    {
+        if (UCharacterMovementComponent* Movement = Data.Pet->GetCharacterMovement())
+        {
+            Data.Movement = Movement;
+            Data.OriginalMaxAcceleration = Movement->MaxAcceleration;
+            Data.OriginalBrakingDeceleration = Movement->BrakingDecelerationWalking;
+            Data.bHasSavedAcceleration = true;
+
+            if (Data.MaxAccelerationOverride > 0.f)
+                Movement->MaxAcceleration = Data.MaxAccelerationOverride;
+
+            if (Data.BrakingDecelerationOverride > 0.f)
+                Movement->BrakingDecelerationWalking = Data.BrakingDecelerationOverride;
         }
     }
 
@@ -144,6 +163,17 @@ void FPetMoveToTask::ExitState(FStateTreeExecutionContext& Context, const FState
             Movement->MaxWalkSpeed = Data.OriginalMaxWalkSpeed;
     }
 
+    // 설치 이동이 끝나면 가속·감속도 원래대로 (다른 이동에 영향 없도록)
+    if (true == Data.bHasSavedAcceleration)
+    {
+        if (UCharacterMovementComponent* Movement = Data.Movement.Get())
+        {
+            Movement->MaxAcceleration = Data.OriginalMaxAcceleration;
+            Movement->BrakingDecelerationWalking = Data.OriginalBrakingDeceleration;
+        }
+    }
+
+    Data.bHasSavedAcceleration = false;
     Data.bHasSavedMoveSpeed = false;
     Data.Movement.Reset();
 

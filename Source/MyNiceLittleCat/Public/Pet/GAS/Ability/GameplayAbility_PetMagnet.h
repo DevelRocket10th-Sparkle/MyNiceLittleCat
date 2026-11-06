@@ -162,4 +162,8 @@ protected:
     // 의도: 부채꼴 크기·벽 차폐로 둘레가 바뀌어도 무늬 밀도가 일정하게 유지되도록
     UPROPERTY(EditDefaultsOnly, Category = "Magnet|Visual|Curtain", meta = (ClampMin = "1.0", Units = "cm"))
     float CurtainUVTileLength = 100.f;
+
+    // 캐릭터를 잡았을 때 원래 이동 모드 (놓을 때 복원)
+    TEnumAsByte<EMovementMode> SavedTargetMovementMode = MOVE_Walking;
+    bool bSavedTargetMovement = false;
 };

@@ -13,8 +13,8 @@ AGimmickLaserFilter::AGimmickLaserFilter()
 	OutputLaser->SetupAttachment(Mesh);
 	OutputLaser->SetRelativeLocation(FVector(0.f, 0.f, BeamHeight));
 
-	// 통과형 렌즈는 들어온 방향 그대로 이어지므로 비스듬한 빛도 넉넉히 받음 (옆 15°만 막음)
-	InputHalfAngle = 75.f;
+	// 통과형 렌즈는 들어온 방향 그대로 이어지므로 비스듬한 빛도 넉넉히 받음 (렌즈 면에 거의 나란한 옆 5°만 막음)
+	InputHalfAngle = 85.f;
 }
 
 void AGimmickLaserFilter::GetOutputLasers(TArray<ULaserBeamComponent*>& OutLasers) const

@@ -66,6 +66,21 @@ struct MYNICELITTLECAT_API FPetFollowTaskInstanceData
 
     FVector ProgressAnchor = FVector::ZeroVector;
     float NoProgressTime = 0.f;
+
+    // 걸어서 도착하는 예상 시간이 이 값보다 길면 비행 복귀 (0이면 사용 안 함)
+    // 의도: 벽 너머에서 빙 돌아오느라 오래 걸리는 상황을 시간 기준으로 판단
+    UPROPERTY(EditAnywhere, Category = "Parameter|Fly", meta = (ClampMin = "0.0", Units = "s"))
+    float FlyIfArrivalTimeOver = 2.5f;
+
+    // 직선 거리가 이보다 가까우면 비행하지 않음 (바로 옆에서 날아오는 어색함 방지)
+    UPROPERTY(EditAnywhere, Category = "Parameter|Fly", meta = (ClampMin = "0.0", Units = "cm"))
+    float MinFlyDistance = 400.f;
+
+    // 비행 판단 주기 (경로 길이 계산을 매 틱 하지 않음)
+    UPROPERTY(EditAnywhere, Category = "Parameter|Fly", meta = (ClampMin = "0.1", Units = "s"))
+    float FlyCheckInterval = 0.5f;
+
+    float TimeUntilFlyCheck = 0.f;
 };
 
 // 추종 Task (StateTree에서 실행하는 Task)
@@ -88,4 +103,7 @@ struct MYNICELITTLECAT_API FPetFollowTask : public FStateTreeTaskCommonBase
 
     // 틱이요   
     virtual EStateTreeRunStatus Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const override;
+
+private:
+    static bool ShouldFlyToPlayer(const FInstanceDataType& Data, const class UPathFollowingComponent& PathFollowing, float StraightDistance);
 };

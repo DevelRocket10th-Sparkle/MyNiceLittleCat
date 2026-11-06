@@ -4,6 +4,7 @@
 #include "StateTreeExecutionContext.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "NavigationPath.h"
 
 EStateTreeRunStatus FPetFollowTask::EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
 {
@@ -19,6 +20,9 @@ EStateTreeRunStatus FPetFollowTask::EnterState(FStateTreeExecutionContext& Conte
     Data.RetryTimeRemaining = 0.f;
     Data.bWaitingToRetry = false;
     Data.bMoveRequestFailed = false;
+
+    // 진입 직후(착지·설치 복귀 직후)에 바로 다시 날지 않도록 한 주기 대기
+    Data.TimeUntilFlyCheck = Data.FlyCheckInterval;
 
     // 펫이 없다 : Task 실패
     if (false == IsValid(Data.Pet.Get()))
@@ -190,6 +194,25 @@ EStateTreeRunStatus FPetFollowTask::Tick(FStateTreeExecutionContext& Context, co
         }
     }
 
+    //! 너무 오래 걸릴 경로면 비행 복귀
+    Data.TimeUntilFlyCheck -= DeltaTime;
+
+    if (Data.FlyIfArrivalTimeOver > 0.f && Data.TimeUntilFlyCheck <= 0.f && MoveStatus == EPathFollowingStatus::Moving)
+    {
+        Data.TimeUntilFlyCheck = Data.FlyCheckInterval;
+        if (true == ShouldFlyToPlayer(Data, *RecoveryPathFollowing, Distance))
+        {
+            FVector LandingLocation;
+
+            // 플레이어가 보이는 쪽 착지점이 있을 때만 비행
+            if (true == Data.Pet->TryFindSafeRecoveryLocation(CurrentLocation, LandingLocation, true))
+            {
+                Data.Pet->RequestBehavior(EPetBehavior::RecoverFollow);
+                return EStateTreeRunStatus::Running;
+            }
+        }
+    }
+
     //! 이동 재요청
     Data.TimeUntilNextCheck -= DeltaTime;
 
@@ -269,4 +292,23 @@ EStateTreeRunStatus FPetFollowTask::Tick(FStateTreeExecutionContext& Context, co
     }
 
     return EStateTreeRunStatus::Running;
+}
+
+bool FPetFollowTask::ShouldFlyToPlayer(const FInstanceDataType& Data, const UPathFollowingComponent& PathFollowing, float StraightDistance)
+{
+    // 가까우면 돌아가도 금방이므로 걸어감
+    if (StraightDistance < Data.MinFlyDistance) return false;
+
+    const FNavPathSharedPtr Path = PathFollowing.GetPath();
+    if (false == Path.IsValid() || false == Path->IsValid()) return false;
+
+    // 플레이어까지 경로가 이어지지 않으면 걸어서는 도착 불가
+    if (true == Path->IsPartial()) return true;
+
+    // 남은 경로 길이 ÷ 최고 속도 = 예상 도착 시간
+    // 의도: 최고 속도로 달려도 오래 걸릴 때만 날도록 느슨하게 계산
+    const float RemainingLength = Path->GetLengthFromPosition(Data.Pet->GetActorLocation(), PathFollowing.GetNextPathIndex());
+    const float EstimatedTime = RemainingLength / FMath::Max(Data.MaxFollowSpeed, 1.f);
+
+    return EstimatedTime > Data.FlyIfArrivalTimeOver;
 }

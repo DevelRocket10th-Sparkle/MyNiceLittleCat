@@ -112,8 +112,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pet|Carry")
 	AActor* GetCarriedActor() const;
 
-	// CapsuleLocation: 검사할 펫 캡슐 중심의 월드 위치
-	bool CanResumeFollowingAt(const FVector& CapsuleLocation);
+		// MaxPathLength: 0이면 경로 길이 제한 없음 (기존 호출은 그대로 동작)
+	bool CanResumeFollowingAt(const FVector& CapsuleLocation, float MaxPathLength = 0.f);
 
 	// 성공했을 때만 OutLocation에 안전한 캡슐 중심 위치를 반환
 	bool TryFindSafeRecoveryLocation(const FVector& PreferredLocation, FVector& OutLocation, bool bRequireLineOfSight = false);
@@ -206,6 +206,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Pet|Recovery",
 		meta = (ClampMin = "10.0", Units = "cm"))
 	float RecoveryRadiusStep = 100.f;
+
+	// 착지 후보에서 플레이어까지 "걸어서" 갈 수 있는 최대 경로 길이 (0이면 제한 없음)
+	// 의도: 보이긴 하지만 난간·구멍 건너편이라 빙 돌아야 하는 자리에 착지해
+	//       비행 → 착지 → 다시 비행이 반복되는 것을 방지
+	UPROPERTY(EditDefaultsOnly, Category = "Pet|Recovery", meta = (ClampMin = "0.0", Units = "cm"))
+	float RecoveryMaxPathLength = 800.f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pet|Magnet")
 	TObjectPtr<class UProceduralMeshComponent> MagnetFieldMesh; // 자기장 부채꼴 표시

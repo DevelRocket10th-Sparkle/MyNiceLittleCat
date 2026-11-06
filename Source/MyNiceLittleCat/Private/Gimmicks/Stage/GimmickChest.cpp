@@ -5,6 +5,7 @@
 
 #include "Gimmicks/Stage/GimmickChest.h"
 #include "Gimmicks/GimmickMoverComponent.h"
+#include "Gimmicks/InteractionVolumeComponent.h"
 #include "Items/InventorySubsystem.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
@@ -34,6 +35,12 @@ AGimmickChest::AGimmickChest()
 	LidMesh->SetupAttachment(LidMover);
 	LidMesh->SetMobility(EComponentMobility::Movable);
 	LidMesh->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+
+	// 기본 = 100cm 큐브 앞(+X)
+	InteractionVolume = CreateDefaultSubobject<UInteractionVolumeComponent>(TEXT("InteractionVolume"));
+	InteractionVolume->SetupAttachment(Mesh);
+	InteractionVolume->SetRelativeLocation(FVector(90.f, 0.f, 0.f));
+	InteractionVolume->SetBoxExtent(FVector(40.f, 50.f, 60.f));
 }
 
 void AGimmickChest::BeginPlay()
@@ -221,11 +228,21 @@ void AGimmickChest::FinishAcquireSequence()
 
 	const bool bWasActive = bSequenceActive;
 	bSequenceActive = false;
+	const TArray<FItemStack> FinishedItems = MoveTemp(PendingAcquired);
 	PendingAcquired.Reset();
 
 	if (bWasActive)
 	{
 		K2_OnAcquireFinished(PendingOpener.Get());
+
+		// 게임이 다시 움직인 뒤 능력 획득 알림 (펫 능력 설명 등)
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UInventorySubsystem* Inventory = GameInstance->GetSubsystem<UInventorySubsystem>())
+			{
+				Inventory->NotifyAcquireFinished(FinishedItems);
+			}
+		}
 	}
 	PendingOpener.Reset();
 }

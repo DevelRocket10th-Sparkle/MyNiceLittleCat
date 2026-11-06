@@ -9,6 +9,7 @@
 /// 한 번 열면 끝 (다시 열 수 없음, 안내 UI도 사라짐). 상태 저장(bSaveState)이 기본으로 켜져 있어
 /// 체크포인트에서 저장한 뒤에는 열린 채로 시작하고, 이때는 아이템을 다시 주지 않고 연출도 없습니다 (아이템도 같은 세이브에 들어 있음).
 /// Mesh(루트) = 몸통, 뚜껑은 LidMover 아래 LidMesh에 붙입니다 (회전 중심 = LidMover = 뒤쪽 경첩). 메시는 BP에서 지정합니다.
+/// InteractionVolume(상자 앞 박스)에 플레이어가 닿아야만 열 수 있습니다 (울타리 옆·뒤에서 열기 방지, 2026-11-05).
 /// 연출(소리·이펙트)은 On Chest Opened / On Acquire Revealed / On Acquire Finished 이벤트에 연결합니다.
 
 #pragma once
@@ -22,6 +23,7 @@
 class UGimmickMoverComponent;
 class UItemAcquireWidget;
 class UInputComponent;
+class UInteractionVolumeComponent;
 
 UCLASS()
 class MYNICELITTLECAT_API AGimmickChest : public AInteractableBase
@@ -74,6 +76,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> LidMesh;
+
+	// 상호작용 감지 영역 (상자 앞). 플레이어가 여기에 닿아야만 열 수 있음 → 울타리 옆·뒤에서 열기 방지. 위치·크기는 BP에서 조절
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UInteractionVolumeComponent> InteractionVolume;
 
 	// 들어 있는 아이템
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|Chest")

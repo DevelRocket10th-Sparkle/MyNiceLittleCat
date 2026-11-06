@@ -363,7 +363,7 @@ AActor* APetCharacter::GetCarriedActor() const
 	return (true == IsValid(MagnetAbility)) ? MagnetAbility->GetCarriedActor() : nullptr;
 }
 
-bool APetCharacter::CanResumeFollowingAt(const FVector& CapsuleLocation)
+bool APetCharacter::CanResumeFollowingAt(const FVector& CapsuleLocation, float MaxPathLength)
 {
 	UWorld* World = GetWorld();
 	UCapsuleComponent* Capsule = GetCapsuleComponent();
@@ -424,7 +424,12 @@ bool APetCharacter::CanResumeFollowingAt(const FVector& CapsuleLocation)
 	UNavigationPath* Path = UNavigationSystemV1::FindPathToLocationSynchronously(
 			World, FeetLocation, PlayerFeetLocation, this);
 
-	return IsValid(Path) && Path->IsValid() && false == Path->IsPartial();
+	//return IsValid(Path) && Path->IsValid() && false == Path->IsPartial();
+	if (false == IsValid(Path) || false == Path->IsValid() || true == Path->IsPartial())
+		return false;
+
+	// 경로가 있어도 너무 길면(빙 돌아야 하는 자리) 실패
+	return MaxPathLength <= 0.f || Path->GetPathLength() <= MaxPathLength;
 }
 
 bool APetCharacter::TryFindSafeRecoveryLocation(const FVector& PreferredLocation, FVector& OutLocation, bool bRequireLineOfSight)
@@ -530,7 +535,8 @@ bool APetCharacter::TryFindSafeRecoveryLocation(const FVector& PreferredLocation
 		if (true == bRequireLineOfSight && false == HasClearLineFromPlayer(CandidateLocation))
 			continue;
 
-		if (true == CanResumeFollowingAt(CandidateLocation))
+		// 착지 후 걸어서 금방 플레이어에게 갈 수 있는 자리만 허용
+		if (true == CanResumeFollowingAt(CandidateLocation, RecoveryMaxPathLength))
 		{
 			OutLocation = CandidateLocation;
 			return true;

@@ -150,6 +150,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|Signal", meta = (EditCondition = "bReceiveSignals"))
 	bool bInvertSignal = false;
 
+	// 신호 조건이 한 번 맞아 켜지면 그 뒤로 신호가 꺼져도 계속 켜짐 (예: 두 Hold 수신기를 동시에 켜야 열리고, 빛을 치워도 열린 채인 문).
+	// 체크포인트 뒤에도 유지하려면 bSaveState와 함께 사용
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|Signal", meta = (EditCondition = "bReceiveSignals"))
+	bool bLatchWhenSignaled = false;
+
 	// 신호를 받을 때 보낸 기믹 → 이 기믹으로 흘러가는 이펙트 (비면 연출 없이 바로 적용).
 	// User 파라미터: 끝점(SignalLinkEndParam, 월드 위치)·색(SignalLinkColorParam)·호 높이(SignalLinkArcHeightParam). 예: NS_SignalLink
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|Signal|Link Effect", meta = (EditCondition = "bReceiveSignals"))
