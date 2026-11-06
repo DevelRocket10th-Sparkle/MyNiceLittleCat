@@ -13,6 +13,10 @@
 #include "Gimmicks/Reflection/ReflectionMath.h"
 //#include "UObject/UObjectIterator.h"
 #include "DrawDebugHelpers.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
+#include "Components/WidgetComponent.h"
+#include "WIdgets/Interaction/InteractionPromptWidget.h"
 
 UGameplayAbility_PetReflect::UGameplayAbility_PetReflect()
 {
@@ -67,6 +71,7 @@ void UGameplayAbility_PetReflect::ActivateAbility(const FGameplayAbilitySpecHand
     PreviewMesh->SetVisibility(false);
 
     PreviewMesh->SetWorldScale3D(FVector(PreviewScale));
+    PreviewMesh->SetTranslucentSortPriority(10); //! 다른 반투명 이펙트보다 나중에(위에) 그려지도록
     PreviewMesh->RegisterComponent();
 
     PreviewMID = PreviewMesh->CreateDynamicMaterialInstance(0, PreviewMaterial.Get());
@@ -86,6 +91,29 @@ void UGameplayAbility_PetReflect::ActivateAbility(const FGameplayAbilitySpecHand
 
     // 모드 선택 직후 바로 위치 갱신
     HandleReflectTick(0.f);
+
+    // 철거 안내 UI: 프리뷰 메시처럼 펫 소유, 위치는 반사판 위로 직접 옮김
+    if (nullptr != RemovePromptWidgetClass)
+    {
+        RemovePrompt = NewObject<UWidgetComponent>(Pet, NAME_None, RF_Transient);
+        RemovePrompt->SetWidgetSpace(EWidgetSpace::Screen);
+        RemovePrompt->SetWidgetClass(RemovePromptWidgetClass);
+        RemovePrompt->SetDrawAtDesiredSize(true);
+        RemovePrompt->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        RemovePrompt->SetGenerateOverlapEvents(false);
+        RemovePrompt->SetCastShadow(false);
+        RemovePrompt->SetVisibility(false);
+        RemovePrompt->RegisterComponent();
+        RemovePrompt->InitWidget();
+    }
+    HoveredReflector.Reset();
+
+    // Q 입력은 자성 모드와 같은 Pet.SpecialAction 이벤트로 받음 (반사 모드 동안만 대기)
+    const FGameplayTag SpecialActionTag = FGameplayTag::RequestGameplayTag(TEXT("Pet.SpecialAction"));
+    UAbilityTask_WaitGameplayEvent* SpecialActionTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+        this, SpecialActionTag, nullptr, false, true);
+    SpecialActionTask->EventReceived.AddDynamic(this, &UGameplayAbility_PetReflect::HandleSpecialAction);
+    SpecialActionTask->ReadyForActivation();
 }
 
 void UGameplayAbility_PetReflect::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
@@ -113,6 +141,13 @@ void UGameplayAbility_PetReflect::EndAbility(const FGameplayAbilitySpecHandle Ha
     PendingPlacementTransform = FTransform::Identity;
     DragStartHit = FHitResult();
 
+    // 모드가 바뀌면 하이라이트·안내 UI 정리 (반사 모드일 때만 보이도록)
+    SetHoveredReflector(nullptr);
+
+    if (true == IsValid(RemovePrompt.Get()))
+        RemovePrompt->DestroyComponent();
+    RemovePrompt = nullptr;
+
     if (true == IsValid(PreviewMesh.Get()))
         PreviewMesh->DestroyComponent();
 
@@ -125,8 +160,19 @@ void UGameplayAbility_PetReflect::EndAbility(const FGameplayAbilitySpecHandle Ha
 
 void UGameplayAbility_PetReflect::HandleReflectTick(float DeltaTime)
 {
+    // 펫이 설치하러 가는 중에도 철거는 가능해야 하므로 가장 먼저 갱신
+    UpdateRemoveHover();
+
     UStaticMeshComponent* Mesh = PreviewMesh.Get();
     if (false == IsValid(Mesh)) return;
+
+    // 철거할 반사판을 가리키는 동안은 설치 프리뷰를 숨겨서 헷갈리지 않게
+    if (true == HoveredReflector.IsValid())
+    {
+        bCanPlaceReflector = false;
+        Mesh->SetVisibility(false);
+        return;
+    }
 
     if (true == bHasPendingPlacement)
     {
@@ -159,7 +205,8 @@ void UGameplayAbility_PetReflect::HandleReflectTick(float DeltaTime)
     }
     else
     {
-        if (false == PC->TryGetPetCursorHit(Hit))
+        // 플레이어 바닥 높이 기준으로 위치를 잡음
+        if (false == TryGetPlacementCursorHit(Hit))
         {
             bCanPlaceReflector = false;
             Mesh->SetVisibility(false);
@@ -187,12 +234,12 @@ void UGameplayAbility_PetReflect::HandleReflectTick(float DeltaTime)
 
     DrawDebugLine(GetWorld(),
         GroundLocation - WidthDirection * HalfWidth, GroundLocation + WidthDirection * HalfWidth,
-        FColor::White, false, -1.f, 0, 2.f);
+        FColor::White, false, -1.f, SDPG_Foreground, 2.f);
 
     // 반사판 앞면 방향
     DrawDebugDirectionalArrow(GetWorld(),
         GroundLocation, GroundLocation + PlacementRotation.Vector() * 60.f,
-        15.f, FColor::Yellow, false, -1.f, 0, 2.f);
+        15.f, FColor::Yellow, false, -1.f, SDPG_Foreground, 2.f);
 
     // 프리뷰 반사 방향
     DrawLaserReflectionPreview();
@@ -230,7 +277,7 @@ void UGameplayAbility_PetReflect::HandleModeUseInput(EPetModeUseInputPhase Phase
     {
         APlayerMainController* PC = GetPartnerPlayerController();
 
-        if (false == IsValid(PC) || false == PC->TryGetPetCursorHit(DragStartHit))
+        if (false == IsValid(PC) || false == TryGetPlacementCursorHit(DragStartHit))
             return;
 
         PlacementRotation = FRotator(0.f, Pet->GetAimDirection().Rotation().Yaw, 0.f);
@@ -283,8 +330,7 @@ bool UGameplayAbility_PetReflect::UpdateDragRotation()
 
     FVector RayOrigin;
     FVector RayDirection;
-    if (false == PC->DeprojectMousePositionToWorld(RayOrigin, RayDirection))
-        return false;
+    if (false == PC->DeprojectMousePositionToWorld(RayOrigin, RayDirection)) return false;
 
     if (FMath::IsNearlyZero(RayDirection.Z)) return false;
 
@@ -303,6 +349,62 @@ bool UGameplayAbility_PetReflect::UpdateDragRotation()
         return true;
 
     PlacementRotation = FRotator(0.f, Direction.Rotation().Yaw, 0.f);
+    return true;
+}
+
+bool UGameplayAbility_PetReflect::TryGetPlacementCursorHit(FHitResult& OutHit)
+{
+    OutHit = FHitResult();
+
+    APlayerMainController* PC = GetPartnerPlayerController();
+    if (false == IsValid(PC) || false == IsValid(GetWorld())) return false;
+
+    float FloorZ = 0.f;
+    if (false == TryGetPlayerFloorZ(FloorZ)) return false;
+
+    FVector RayOrigin;
+    FVector RayDirection;
+    if (false == PC->DeprojectMousePositionToWorld(RayOrigin, RayDirection)) return false;
+
+    // 커서 Ray가 아래를 향하지 않으면 바닥 평면과 만나지 않음
+    if (RayDirection.Z >= -KINDA_SMALL_NUMBER) return false;
+
+    // 커서 Ray와 "플레이어 바닥 높이의 수평면"의 교점
+    // 의도: 커서가 테이블 등 다른 물체에 걸려도 플레이어가 밟은 높이 기준으로 위치를 잡음
+    const double Distance = (FloorZ - RayOrigin.Z) / RayDirection.Z;
+    const FVector PlanePoint = RayOrigin + RayDirection * Distance;
+
+    FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PetReflectCursor));
+    QueryParams.AddIgnoredActor(PC->GetPawn());
+
+    if (AActor* Pet = GetAvatarActorFromActorInfo())
+        QueryParams.AddIgnoredActor(Pet);
+
+    // 교점 위아래 허용 오차 안의 실제 바닥만 인정 (범위 밖 높이 = 설치 불가 → 프리뷰 숨김)
+    const FVector TraceStart = PlanePoint + FVector::UpVector * MaxPlacementHeightDifference;
+    const FVector TraceEnd = PlanePoint - FVector::UpVector * MaxPlacementHeightDifference;
+
+    return GetWorld()->LineTraceSingleByChannel(OutHit, TraceStart, TraceEnd, ECC_Visibility, QueryParams);
+}
+
+bool UGameplayAbility_PetReflect::TryGetPlayerFloorZ(float& OutFloorZ)
+{
+    APlayerMainController* PC = GetPartnerPlayerController();
+    const ACharacter* PlayerCharacter = IsValid(PC) ? Cast<ACharacter>(PC->GetPawn()) : nullptr;
+    if (false == IsValid(PlayerCharacter)) return false;
+
+    const UCharacterMovementComponent* Movement = PlayerCharacter->GetCharacterMovement();
+    if (false == IsValid(Movement)) return false;
+
+    // 땅을 밟고 있을 때만 기준 높이 갱신
+    // 의도: 점프 중에 프리뷰 높이가 같이 떠오르거나 빨개지지 않도록
+    if (true == Movement->IsMovingOnGround() || false == bHasPlayerFloorZ)
+    {
+        LastPlayerFloorZ = Movement->GetActorFeetLocation().Z;
+        bHasPlayerFloorZ = true;
+    }
+
+    OutFloorZ = LastPlayerFloorZ;
     return true;
 }
 
@@ -545,4 +647,106 @@ void UGameplayAbility_PetReflect::DrawLaserReflectionPreview() const
         }
     }
 #endif
+}
+
+void UGameplayAbility_PetReflect::UpdateRemoveHover()
+{
+    // 드래그로 설치 방향을 정하는 중에는 철거 안내를 띄우지 않음
+    APetReflector* NewHovered = (true == bDraggingPlacement) ? nullptr : FindHoveredReflector();
+    SetHoveredReflector(NewHovered);
+
+    if (true == IsValid(NewHovered) && true == IsValid(RemovePrompt.Get()))
+        RemovePrompt->SetWorldLocation(NewHovered->GetActorLocation() + RemovePromptOffset);
+}
+
+APetReflector* UGameplayAbility_PetReflect::FindHoveredReflector() const
+{
+    APlayerMainController* PC = GetPartnerPlayerController();
+    if (false == IsValid(PC)) return nullptr;
+
+    FVector RayOrigin;
+    FVector RayDirection;
+    if (false == PC->DeprojectMousePositionToWorld(RayOrigin, RayDirection)) return nullptr;
+
+    constexpr float TraceDistance = 100000.f;
+    const FVector RayEnd = RayOrigin + RayDirection * TraceDistance;
+
+    // 펫이 설치한 반사판 중 커서 광선에 가장 가까이 맞는 것
+    APetReflector* Best = nullptr;
+    float BestDistance = TNumericLimits<float>::Max();
+
+    for (const TWeakObjectPtr<APetReflector>& Entry : PlacedReflectors)
+    {
+        APetReflector* Reflector = Entry.Get();
+        if (false == IsValid(Reflector) || true == Reflector->IsActorBeingDestroyed()) continue;
+
+        FHitResult Hit;
+        if (false == Reflector->TraceCursorRay(RayOrigin, RayEnd, Hit)) continue;
+
+        const float Distance = FVector::Dist(RayOrigin, Hit.ImpactPoint);
+        if (Distance < BestDistance)
+        {
+            BestDistance = Distance;
+            Best = Reflector;
+        }
+    }
+
+    if (false == IsValid(Best)) return nullptr;
+
+    // 벽 너머 반사판 제외: 같은 광선으로 월드를 쏴서 반사판보다 앞에 다른 게 있으면 가려진 것
+    FHitResult WorldHit;
+    if (true == PC->TryGetPetCursorHit(WorldHit) && Best != WorldHit.GetActor())
+    {
+        constexpr float OcclusionTolerance = 1.f;
+        if (FVector::Dist(RayOrigin, WorldHit.ImpactPoint) + OcclusionTolerance < BestDistance)
+            return nullptr;
+    }
+
+    return Best;
+}
+
+void UGameplayAbility_PetReflect::SetHoveredReflector(APetReflector* NewReflector)
+{
+    APetReflector* OldReflector = HoveredReflector.Get();
+    if (OldReflector != NewReflector)
+    {
+        if (true == IsValid(OldReflector))
+            OldReflector->SetRemoveHighlighted(false);
+
+        if (true == IsValid(NewReflector))
+            NewReflector->SetRemoveHighlighted(true);
+
+        HoveredReflector = NewReflector;
+    }
+
+    // 대상이 수명 만료로 사라진 경우에도 UI가 남지 않도록 표시 여부는 매번 맞춤
+    UWidgetComponent* Prompt = RemovePrompt.Get();
+    if (false == IsValid(Prompt)) return;
+
+    const bool bShow = IsValid(NewReflector);
+    if (Prompt->IsVisible() == bShow) return;
+
+    Prompt->SetVisibility(bShow);
+
+    if (UInteractionPromptWidget* Widget = Cast<UInteractionPromptWidget>(Prompt->GetUserWidgetObject()))
+    {
+        if (true == bShow)
+        {
+            Widget->SetPrompt(RemovePromptKeyText, RemovePromptActionText);
+            Widget->NotifyShown();
+        }
+        else
+            Widget->NotifyHidden();
+    }
+}
+
+void UGameplayAbility_PetReflect::HandleSpecialAction(FGameplayEventData Payload)
+{
+    APetReflector* Reflector = HoveredReflector.Get();
+    if (false == IsValid(Reflector)) return;
+
+    // 펫은 하던 일 계속, 반사판만 즉시 제거
+    SetHoveredReflector(nullptr);
+    PlacedReflectors.Remove(Reflector);
+    Reflector->Destroy();
 }

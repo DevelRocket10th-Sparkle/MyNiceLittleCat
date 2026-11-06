@@ -269,7 +269,15 @@ void AGimmickActorBase::HandleSignalChanged(AActor* Source, bool bSignalOn)
 		return;
 	}
 
-	SetActivated(EvaluateSignals(), Source);
+	const bool bShouldActivate = EvaluateSignals();
+
+	// 한 번 켜진 뒤로는 신호가 꺼져도 유지
+	if (bLatchWhenSignaled && IsActivated() && !bShouldActivate)
+	{
+		return;
+	}
+
+	SetActivated(bShouldActivate, Source);
 }
 
 bool AGimmickActorBase::EvaluateSignals() const

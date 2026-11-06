@@ -123,6 +123,19 @@ int32 UInventorySubsystem::AddItem(UItemData* Item, int32 Count)
 	return NewCount - OldCount;
 }
 
+void UInventorySubsystem::NotifyAcquireFinished(const TArray<FItemStack>& AcquiredItems)
+{
+	for (const FItemStack& Stack : AcquiredItems)
+	{
+		const UItemData* Item = Stack.Item;
+		if (Item && Stack.Count > 0 && Item->ItemType == EItemType::Ability && Item->AbilityTag.IsValid())
+		{
+			UE_LOG(LogTemp, Log, TEXT("[Inventory] 능력 획득 연출 끝: %s"), *Item->AbilityTag.ToString());
+			OnAbilityAcquireFinished.Broadcast(Item->AbilityTag, Stack.Item);
+		}
+	}
+}
+
 bool UInventorySubsystem::HasAbility(FGameplayTag AbilityTag) const
 {
 	if (GetDefault<UItemSettings>()->bTestUnlockAllAbilities)
