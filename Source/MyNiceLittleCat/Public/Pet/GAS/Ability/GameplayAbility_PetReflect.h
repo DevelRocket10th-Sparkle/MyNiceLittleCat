@@ -56,6 +56,19 @@ protected:
     void CachePreviewLasers();
 
     void DrawLaserReflectionPreview() const;
+
+    // 철거: 커서가 가리키는 설치된 반사판 갱신 (매 틱)
+    void UpdateRemoveHover();
+
+    // 커서 아래에 있는, 펫이 설치한 반사판 (벽에 가려진 건 제외)
+    class APetReflector* FindHoveredReflector() const;
+
+    // 하이라이트·Q 안내 UI를 새 대상으로 교체
+    void SetHoveredReflector(class APetReflector* NewReflector);
+
+    // Q(Pet.SpecialAction) 입력 → 가리킨 반사판 철거
+    UFUNCTION()
+    void HandleSpecialAction(FGameplayEventData Payload);
     // =============================================================================
 protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reflect")
@@ -131,4 +144,24 @@ protected:
     // 이번 드래그에서 확인할 레이저 목록
     UPROPERTY(Transient)
     TArray<TWeakObjectPtr<class ULaserBeamComponent>> CachedPreviewLasers;
+
+    // 철거 안내 키 UI
+    UPROPERTY(EditDefaultsOnly, Category = "Reflect|Remove")
+    TSubclassOf<class UInteractionPromptWidget> RemovePromptWidgetClass;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Reflect|Remove")
+    FText RemovePromptKeyText = FText::FromString(TEXT("Q"));
+
+    UPROPERTY(EditDefaultsOnly, Category = "Reflect|Remove")
+    FText RemovePromptActionText = FText::FromString(TEXT("철거"));
+
+    // 반사판 중심 기준 안내 UI 위치
+    UPROPERTY(EditDefaultsOnly, Category = "Reflect|Remove")
+    FVector RemovePromptOffset = FVector(0.f, 0.f, 120.f);
+
+    UPROPERTY(Transient)
+    TObjectPtr<class UWidgetComponent> RemovePrompt;
+
+    // 지금 철거 대상으로 가리키는 반사판
+    TWeakObjectPtr<class APetReflector> HoveredReflector;
 };
