@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Styling/SlateBrush.h"
 #include "Pet/PetTypes.h"
 #include "PetModeDialWidget.generated.h"
 
@@ -20,6 +21,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Pet|Dial")
     void ResetSelection();
 
+    // 지금 펫이 쓰고 있는 모드 (해당 칸에 체크 배지를 그려요)
+    UFUNCTION(BlueprintCallable, Category = "Pet|Dial")
+    void SetCurrentMode(EPetMode _mode);
+
     // 후보가 있을 때만 true를 반환하는..
     UFUNCTION(BlueprintPure, Category = "Pet|Dial")
     bool TryGetSelectedMode(EPetMode& _outMode) const;
@@ -28,16 +33,17 @@ public:
     float GetDialDiameter() const;
 
 protected:
-    // (언리얼이 이 위젯을 그릴 때 호출되는 함수, 렌더링 명령을 기록. 실제 렌더링은 Slate가 해요) 
+    // 아이콘 텍스처로 브러시를 미리 만들어 둬요 (Paint 중에는 만들 수 없어서)
+    virtual void NativeConstruct() override;
+
+    // (언리얼이 이 위젯을 그릴 때 호출되는 함수, 렌더링 명령을 기록. 실제 렌더링은 Slate가 해요)
     // 전체 배치와 그리기 순서 결졍
     virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
         const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements,
         int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
 
 private:
-    // 실질적으로 부채꼴을 그리는 함수
-   static void DrawDialSector(FSlateWindowElementList& Elements, int32 Layer, const FGeometry& Geometry, const FVector2D& Center,
-        float InnerRadius, float OuterRadius, float StartDegrees, float EndDegrees, const FLinearColor& Color);
+    void RebuildIconBrushes();
 
 protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pet|Dial")
@@ -45,4 +51,11 @@ protected:
 
     UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Pet|Dial")
     int32 SelectedIndex = INDEX_NONE;
+
+    UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Pet|Dial")
+    EPetMode CurrentMode = EPetMode::Basic;
+
+private:
+    // Entries와 같은 순서의 아이콘 브러시
+    TArray<FSlateBrush> IconBrushes;
 };

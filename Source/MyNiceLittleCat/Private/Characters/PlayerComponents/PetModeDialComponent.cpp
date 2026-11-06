@@ -6,7 +6,7 @@ UPetModeDialComponent::UPetModeDialComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
-bool UPetModeDialComponent::OpenDial(const FVector2D& _centerInViewport)
+bool UPetModeDialComponent::OpenDial(const FVector2D& _centerInViewport, EPetMode _currentMode)
 {
 	if (true == bDialOpen) return true;
 
@@ -23,6 +23,7 @@ bool UPetModeDialComponent::OpenDial(const FVector2D& _centerInViewport)
 
 	DialCenter = _centerInViewport;
 	DialWidget->ResetSelection();
+	DialWidget->SetCurrentMode(_currentMode); // 현재 모드 칸에 체크 배지 표시
 	DialWidget->SetIsFocusable(false);
 
 	if (false == DialWidget->IsInViewport())

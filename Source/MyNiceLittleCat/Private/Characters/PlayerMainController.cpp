@@ -121,7 +121,9 @@ void APlayerMainController::HandleDialStarted()
 	if (false == TryClampDialCenterToViewport(PointerPosition)) return;
 		
 	// 다이얼 오픈?
-	if (false == PetModeDialComponent->OpenDial(PointerPosition)) return;
+	// 펫이 없으면 기본 모드로 취급해요
+	const EPetMode CurrentMode = PartnerPet.IsValid() ? PartnerPet->GetCurrentMode() : EPetMode::Basic;
+	if (false == PetModeDialComponent->OpenDial(PointerPosition, CurrentMode)) return;
 
 	// 다이얼의 중심이 이동했다면? 실제 커서도 옮겨줘야지요
 	if (false == PointerPosition.Equals(OriginalPointerPosition, 0.5))
