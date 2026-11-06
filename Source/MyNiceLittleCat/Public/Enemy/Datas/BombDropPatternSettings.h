@@ -30,6 +30,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BombDrop", meta = (ClampMin = "0"))
 	int32 MaxAliveBombs = 6;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BombDrop")
+	bool bRandomizePolarity = true;
+
 	/* 조준 */
 
 	// 1 = 착지 순간 플레이어가 있을 위치로 예측, 0 = 현재 위치 (0.5 정도면 살짝 덜 정확해서 피할 여지가 생김)

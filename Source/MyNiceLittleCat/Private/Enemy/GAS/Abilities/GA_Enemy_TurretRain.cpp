@@ -13,6 +13,8 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "TimerManager.h"
 
+#include "Gimmicks/Magnetic/MagneticComponent.h"
+
 UGA_Enemy_TurretRain::UGA_Enemy_TurretRain()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
@@ -51,7 +53,7 @@ void UGA_Enemy_TurretRain::ActivateAbility(const FGameplayAbilitySpecHandle Hand
 	BackgroundTurrets.RemoveAll([](const TObjectPtr<ATurret>& T) { return !IsValid(T); });
 	if (Settings->bRunInBackground && BackgroundTurrets.Num() > 0)
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 		return;
 	}
 
@@ -102,6 +104,13 @@ void UGA_Enemy_TurretRain::DropNext()
 		if (ATurret* Turret = GetWorld()->SpawnActor<ATurret>(Settings->TurretClass,
 			Ground + FVector(0.f, 0.f, Settings->DropHeight), Facing, Params))
 		{
+			if (Settings->bRandomizePolarity)
+			{
+				if (UMagneticComponent* Magnetic = Turret->FindComponentByClass<UMagneticComponent>(); Magnetic && Magnetic->IsMagnetEnabled())
+				{
+					Magnetic->SetPolarity(FMath::RandBool() ? EMagneticPolarity::N : EMagneticPolarity::S);
+				}
+			}
 			if (UPrimitiveComponent* Body = Cast<UPrimitiveComponent>(Turret->GetRootComponent()); Body && Body->IsSimulatingPhysics())
 			{
 				Body->SetPhysicsLinearVelocity(FVector(0.f, 0.f, -Settings->DropSpeed));

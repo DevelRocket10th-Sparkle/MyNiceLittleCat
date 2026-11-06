@@ -44,6 +44,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TurretRain", meta = (ClampMin = "0.5", Units = "s"))
 	float ActiveSeconds = 8.f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "TurretRain")
+	bool bRandomizePolarity = true;
+
 	// true: 포탑을 다 떨어뜨리면 패턴을 바로 끝냄 → 보스는 계속 추격·근접 공격하고, 포탑은 ActiveSeconds 뒤 스스로 파괴
 	//       이전 포탑이 남아 있는 동안 이 패턴은 실행되지 않음 (Cycles 무시)
 	// false: 포탑이 살아 있는 동안 패턴이 계속 실행됨 (보스는 다른 공격 못 함)

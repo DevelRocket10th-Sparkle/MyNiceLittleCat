@@ -83,7 +83,7 @@ void ATurret::Tick(float DeltaTime)
 	}
 
 	const bool bArmed = bLanded && GetWorld()->GetTimeSeconds() - LandedTime >= ArmDelay;
-	if (bHostile && !bCarried && bArmed)
+	if (bHostile && !bCarried && !IsBeingPulled() && bArmed)
 	{
 		TickHostile(DeltaTime);
 	}

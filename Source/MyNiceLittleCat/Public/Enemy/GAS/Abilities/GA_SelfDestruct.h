@@ -114,6 +114,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SelfDestruct|Explosion", meta = (ClampMin = "0.0"))
 	float Radius = 350.f;
 
+	// 폭발 범위 디버그 표시 (퓨즈 중: 노랑, 폭발 순간: 빨강)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SelfDestruct|Debug")
+	bool bDrawDebugRadius = true;
+
 	// 플레이어가 받는 대미지 (ApplyPlayerHit)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SelfDestruct|Explosion", meta = (ClampMin = "0.0"))
 	float PlayerDamage = 1.f;

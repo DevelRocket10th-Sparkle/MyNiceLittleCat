@@ -9,6 +9,7 @@
 #include "GameplayEffect.h"
 #include "GameplayTagContainer.h"
 
+#include "DrawDebugHelpers.h"
 #include "AIController.h"
 #include "BrainComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -110,6 +111,15 @@ void UGA_SelfDestruct::TickFuse()
 		const float Flash = FMath::Pow(0.5f + 0.5f * Wave, 3.f);
 		OverlayMID->SetScalarParameterValue(OverlayParameterName, Flash);
 	}
+
+	///Debug
+	///
+	if (bDrawDebugRadius)
+	{
+		const FColor Color = FLinearColor::LerpUsingHSV(FLinearColor::Yellow, FLinearColor::Red, Alpha).ToFColor(true);
+		DrawDebugSphere(GetWorld(), B->GetActorLocation(), Radius, 24, Color, false, 0.f, 0, 1.5f);
+	}
+	///
 }
 
 void UGA_SelfDestruct::DetonateNow()
@@ -128,6 +138,11 @@ void UGA_SelfDestruct::Explode(ABombEnemy* InBomb) const
 
 	UWorld* World = InBomb->GetWorld();
 	const FVector Center = InBomb->GetActorLocation();
+
+	if (bDrawDebugRadius)
+	{
+		DrawDebugSphere(World, Center, Radius, 24, FColor::Red, false, 1.f, 0, 3.f);
+	}
 
 	// 연쇄 폭발 시 서로 다시 터뜨리지 않도록 먼저 표시
 	InBomb->MarkExploded();

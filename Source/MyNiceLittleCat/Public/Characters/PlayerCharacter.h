@@ -127,6 +127,7 @@ private:
 	void StartHitReaction(FVector HitDirection);
 	void ToggleHitFlash();
 	void EndInvincibility();
+	void EndHitStun();
 	void DropWeapon();
 
 	UFUNCTION()
@@ -143,6 +144,7 @@ protected:
 	FTimerHandle DodgeUpdateTimer;
 	FTimerHandle DodgeEndTimer;
 	FTimerHandle InvincibilityTimerHandle;
+	FTimerHandle HitStunTimerHandle;
 	FTimerHandle BlinkTimerHandle;
 
 	UPROPERTY(EditAnywhere, Category = "Hit Reaction")
@@ -158,6 +160,9 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Hit Reaction",
 		meta = (ClampMin = "0.0"))
 	float InvincibilityDuration = 0.55f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Hit Reaction", meta = (ClampMin = "0", Units = "s"))
+	float HitStunDuration = 0.4f;
 
 	UPROPERTY(EditAnywhere, Category = "Hit Reaction",
 		meta = (ClampMin = "0.01"))

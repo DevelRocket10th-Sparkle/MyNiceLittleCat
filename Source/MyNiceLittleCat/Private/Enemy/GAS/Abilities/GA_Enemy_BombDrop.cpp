@@ -10,6 +10,8 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 
+#include "Gimmicks/Magnetic/MagneticComponent.h"
+
 UGA_Enemy_BombDrop::UGA_Enemy_BombDrop()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
@@ -47,7 +49,7 @@ void UGA_Enemy_BombDrop::ActivateAbility(const FGameplayAbilitySpecHandle Handle
 	// 이미 폭탄이 꽉 차 있으면 이번엔 실행하지 않음 (다른 공격이 선택되도록)
 	if (Settings->MaxAliveBombs > 0 && CountAliveBombs() >= Settings->MaxAliveBombs)
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 		return;
 	}
 
@@ -121,6 +123,13 @@ void UGA_Enemy_BombDrop::DropNext()
 
 		if (ABombEnemy* Bomb = GetWorld()->SpawnActor<ABombEnemy>(Settings->BombClass, SpawnLocation, Facing, Params))
 		{
+			if (Settings->bRandomizePolarity)
+			{
+				if (UMagneticComponent* Magnetic = Bomb->FindComponentByClass<UMagneticComponent>(); Magnetic && Magnetic->IsMagnetEnabled())
+				{
+					Magnetic->SetPolarity(FMath::RandBool() ? EMagneticPolarity::N : EMagneticPolarity::S);
+				}
+			}
 			// 런타임 스폰은 AutoPossessAI(PlacedInWorld)에 안 걸리므로 직접 AI 붙이기
 			if (!Bomb->GetController())
 			{

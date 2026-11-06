@@ -379,6 +379,13 @@ void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
         &APlayerCharacter::EndInvincibility,
         InvincibilityDuration,
         false);
+    
+    GetWorldTimerManager().SetTimer(
+        HitStunTimerHandle,
+        this,
+        &APlayerCharacter::EndHitStun,
+        FMath::Max(HitStunDuration, 0.01f),
+        false);
 
     if (GetMesh())
     {
@@ -675,6 +682,7 @@ void APlayerCharacter::Die()
 
     GetWorldTimerManager().ClearTimer(InvincibilityTimerHandle);
     GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
+    GetWorldTimerManager().ClearTimer(HitStunTimerHandle);
 
     UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
 
@@ -807,11 +815,20 @@ void APlayerCharacter::EndInvincibility()
     }
 
     bIsInvincible = false;
+    //bIsAbleToAttack = true;
+    //bIsAbleToDodge = true;
+    //bIsAbleToMove = true;
+    //UE_LOG(LogTemp, Warning,
+    //    TEXT("[HitReaction] 무적 시간 종료"));
+}
+
+void APlayerCharacter::EndHitStun()
+{
+    if (bIsDead) return;
+
     bIsAbleToAttack = true;
     bIsAbleToDodge = true;
     bIsAbleToMove = true;
-    //UE_LOG(LogTemp, Warning,
-    //    TEXT("[HitReaction] 무적 시간 종료"));
 }
 
 void APlayerCharacter::DropWeapon()

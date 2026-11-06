@@ -33,6 +33,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Turret")
 	bool IsCarried() const { return bCarried; }
 
+	bool IsBeingPulled() const { return !bCarried && !GetActorEnableCollision(); }
 protected:
 	virtual void BeginPlay() override;
 
