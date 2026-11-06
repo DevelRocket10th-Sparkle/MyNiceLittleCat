@@ -15,6 +15,8 @@
 /// - 레이저 교대: LaserAlternationPhaseIds 페이즈에서는 격자(UGA_BossLaserGrid)와 단일(UGA_BossLaserBeam) 레이저가 순번대로만 실행됨.
 ///   각 GA의 CanActivateAbility가 IsLaserTurnAllowed로 확인하고, 정상 종료 시 CompleteLaserTurn으로 순번을 넘김 (취소는 넘기지 않음).
 ///   페이즈 진입·정지 때 FirstLaserTurn으로 초기화
+/// - 반격 피해 (2026-11-06): 던진 자성 코인·반사된 레이저가 보스에 맞으면 TryApplyCounterDamage로 피해 GE(SetByCaller Data.Damage)를 보스 ASC에 적용.
+///   종류별 허용 페이즈(CoinDamagePhaseIds·ReflectedLaserDamagePhaseIds)에서만, 배리어가 켜져 있으면 무시 (bIgnoreWhileBarrierActive)
 /// TODO(합의): 보스 쪽에 패턴 순서·쿨다운 기능이 생기면 레이저 교대는 그쪽으로 옮김
 /// TODO(합의): PhaseId 이름(Barrier70 등)은 임시, 최종 보스 데이터 머지 후 테스트하며 조정
 
@@ -27,6 +29,8 @@
 
 class ABarrier;
 class UMagneticCoinPatternComponent;
+class UGameplayEffect;
+class UBossGimmickComponent;
 
 // 레이저 교대 페이즈에서 다음에 실행할 레이저 패턴
 UENUM(BlueprintType)
@@ -35,6 +39,16 @@ enum class EBossLaserTurn : uint8
 	Grid	UMETA(DisplayName = "Grid"),
 	Beam	UMETA(DisplayName = "Beam"),
 };
+
+// 플레이어가 보스 공격·기믹을 되돌려 주는 피해 종류
+UENUM(BlueprintType)
+enum class EBossCounterDamageType : uint8
+{
+	MagneticCoin	UMETA(DisplayName = "Magnetic Coin"),
+	ReflectedLaser	UMETA(DisplayName = "Reflected Laser"),
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FOnBossCounterDamaged, UBossGimmickComponent*, Component, AActor*, Source, EBossCounterDamageType, Type, float, Damage);
 
 UCLASS(ClassGroup = (Gimmick), meta = (BlueprintSpawnableComponent))
 class MYNICELITTLECAT_API UBossGimmickComponent : public UActorComponent, public IBossPhaseGimmickInterface
@@ -71,6 +85,19 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "BossGimmick|Laser")
 	EBossLaserTurn GetLaserTurn() const { return CurrentLaserTurn; }
+
+	// 지금 이 종류의 반격 피해를 받는지 (허용 페이즈 + 배리어 꺼짐)
+	UFUNCTION(BlueprintPure, Category = "BossGimmick|CounterDamage")
+	bool CanReceiveCounterDamage(EBossCounterDamageType Type) const;
+
+	// 반격 피해 적용. 받을 수 없는 상태면 false (코인은 false면 사라지지 않음)
+	// DamageOverride > 0이면 종류별 기본 피해량 대신 사용
+	UFUNCTION(BlueprintCallable, Category = "BossGimmick|CounterDamage")
+	bool TryApplyCounterDamage(AActor* Source, EBossCounterDamageType Type, float DamageOverride = -1.f);
+
+	// 반격 피해가 들어갔을 때 (연출·UI용)
+	UPROPERTY(BlueprintAssignable, Category = "BossGimmick|CounterDamage")
+	FOnBossCounterDamaged OnCounterDamaged;
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -109,7 +136,41 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick|Laser")
 	EBossLaserTurn FirstLaserTurn = EBossLaserTurn::Grid;
 
+	// 반격 피해 GE (SetByCaller Data.Damage로 피해량을 받는 GE). 비어 있으면 적 Damage 어트리뷰트에 피해량을 더하는 즉시 GE를 코드로 만들어 적용
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick|CounterDamage")
+	TSubclassOf<UGameplayEffect> CounterDamageEffectClass;
+
+	// 던진 자성 코인 피해를 받는 페이즈
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick|CounterDamage")
+	TArray<FName> CoinDamagePhaseIds = { TEXT("CombatPhase3") };
+
+	// 반사된 레이저 피해를 받는 페이즈 (2·3페이즈 같은 경험)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick|CounterDamage")
+	TArray<FName> ReflectedLaserDamagePhaseIds = { TEXT("CombatPhase2"), TEXT("CombatPhase3") };
+
+	// 코인 1개 피해량
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick|CounterDamage", meta = (ClampMin = "0.0"))
+	float CoinDamage = 5.f;
+
+	// 반사 레이저 피해량 (ReflectedLaserDamageInterval마다)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick|CounterDamage", meta = (ClampMin = "0.0"))
+	float ReflectedLaserDamage = 3.f;
+
+	// 반사 레이저 피해 최소 간격(초). 반사된 빛이 계속 닿아도 이 간격마다 한 번만 피해
+	// (빔이 잠깐 끊겼다 다시 닿아도, 레이저가 여러 개여도 보스 기준으로 셈)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick|CounterDamage", meta = (ClampMin = "0.0"))
+	float ReflectedLaserDamageInterval = 1.f;
+
+	// 배리어(현재 페이즈 배리어 또는 매니저가 넘긴 배리어 중 하나라도)가 켜져 있으면 반격 피해 무시
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossGimmick|CounterDamage")
+	bool bIgnoreWhileBarrierActive = true;
+
+	bool IsAnyBarrierActive() const;
+
 private:
+	// 마지막 반사 레이저 피해 시각 (-1 = 아직 없음)
+	float LastReflectedLaserDamageTime = -1.f;
+
 	// 매니저가 넘긴 PhaseId별 레벨 액터
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "BossGimmick")
 	TMap<FName, TObjectPtr<AActor>> PhaseActors;
