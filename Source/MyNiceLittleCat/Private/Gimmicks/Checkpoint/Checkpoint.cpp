@@ -8,6 +8,9 @@
 #include "Frameworks/Transition/ScreenTransitionSubsystem.h"
 #include "Components/ArrowComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/LightComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Particles/ParticleSystemComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -27,6 +30,10 @@ static APlayerController* GetPlayerControllerOf(AActor* InteractInstigator)
 
 ACheckpoint::ACheckpoint()
 {
+	// 켜짐·꺼짐 전환 중에만 틱
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
+
 	RespawnPoint = CreateDefaultSubobject<UArrowComponent>(TEXT("RespawnPoint"));
 	RespawnPoint->SetupAttachment(Mesh);
 	RespawnPoint->SetRelativeLocation(FVector(150.f, 0.f, 0.f));
@@ -37,12 +44,147 @@ void ACheckpoint::BeginPlay()
 {
 	Super::BeginPlay();
 
+	CacheStateVisuals();
+	OnActivationChanged.AddDynamic(this, &ACheckpoint::HandleStateVisualActivation);
+
 	if (UGameProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UGameProgressSubsystem>())
 	{
 		Progress->OnCheckpointChanged.AddDynamic(this, &ACheckpoint::HandleCheckpointChanged);
 
 		// 로드된 세이브의 체크포인트면 시작부터 활성 표시
 		SetActivated(Progress->IsCurrentCheckpoint(this, GetCheckpointId()), this);
+	}
+
+	// 시작 상태는 페이드 없이 바로
+	StateBlendTarget = IsActivated() ? 1.f : 0.f;
+	StateBlend = StateBlendTarget;
+	ApplyStateBlend();
+	SetActorTickEnabled(false);
+}
+
+void ACheckpoint::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	const float Step = StateBlendTime > 0.f ? DeltaSeconds / StateBlendTime : 1.f;
+	StateBlend = FMath::FInterpConstantTo(StateBlend, StateBlendTarget, Step, 1.f);
+	ApplyStateBlend();
+
+	if (FMath::IsNearlyEqual(StateBlend, StateBlendTarget))
+	{
+		SetActorTickEnabled(false);
+	}
+}
+
+void ACheckpoint::HandleStateVisualActivation(AGimmickActorBase* Gimmick, bool bNewActivated, AActor* ChangeInstigator)
+{
+	StateBlendTarget = bNewActivated ? 1.f : 0.f;
+	if (!HasActorBegunPlay() || StateBlendTime <= 0.f)
+	{
+		StateBlend = StateBlendTarget;
+		ApplyStateBlend();
+		return;
+	}
+	SetActorTickEnabled(true);
+}
+
+void ACheckpoint::CacheStateVisuals()
+{
+	if (bStateVisualsCached)
+	{
+		return;
+	}
+	bStateVisualsCached = true;
+
+	TInlineComponentArray<USceneComponent*> SceneComponents(this);
+	for (USceneComponent* Component : SceneComponents)
+	{
+		if (!IsValid(Component))
+		{
+			continue;
+		}
+
+		const bool bOn = !StateOnTag.IsNone() && Component->ComponentHasTag(StateOnTag);
+		if (bOn)
+		{
+			StateOnComponents.Add(Component);
+			if (ULightComponent* Light = Cast<ULightComponent>(Component))
+			{
+				StateLights.Add(Light);
+				StateLightBaseIntensities.Add(Light->Intensity);
+			}
+		}
+		if (!StateOffTag.IsNone() && Component->ComponentHasTag(StateOffTag))
+		{
+			StateOffComponents.Add(Component);
+		}
+
+		if (!StateGlowTag.IsNone() && !StateGlowParameterName.IsNone() && Component->ComponentHasTag(StateGlowTag))
+		{
+			if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Component))
+			{
+				for (int32 Index = 0; Index < Primitive->GetNumMaterials(); ++Index)
+				{
+					if (UMaterialInstanceDynamic* MID = Primitive->CreateDynamicMaterialInstance(Index))
+					{
+						StateGlowMaterials.Add(MID);
+					}
+				}
+			}
+		}
+	}
+}
+
+void ACheckpoint::ApplyStateBlend()
+{
+	const bool bShowOn = StateBlend > KINDA_SMALL_NUMBER || StateBlendTarget > 0.f;
+	const bool bShowOff = StateBlend < 1.f - KINDA_SMALL_NUMBER && StateBlendTarget < 1.f;
+
+	for (USceneComponent* Component : StateOnComponents)
+	{
+		if (!IsValid(Component))
+		{
+			continue;
+		}
+		Component->SetVisibility(bShowOn);
+
+		// 이펙트(나이아가라 등)는 켜짐 목표일 때만 재생
+		if (UFXSystemComponent* Effect = Cast<UFXSystemComponent>(Component))
+		{
+			const bool bShouldPlay = StateBlendTarget > 0.f;
+			if (bShouldPlay && !Effect->IsActive())
+			{
+				Effect->Activate(true);
+			}
+			else if (!bShouldPlay && Effect->IsActive())
+			{
+				Effect->Deactivate();
+			}
+		}
+	}
+
+	for (USceneComponent* Component : StateOffComponents)
+	{
+		if (IsValid(Component))
+		{
+			Component->SetVisibility(bShowOff);
+		}
+	}
+
+	for (int32 Index = 0; Index < StateLights.Num(); ++Index)
+	{
+		if (IsValid(StateLights[Index]))
+		{
+			StateLights[Index]->SetIntensity(StateLightBaseIntensities[Index] * StateBlend);
+		}
+	}
+
+	for (UMaterialInstanceDynamic* MID : StateGlowMaterials)
+	{
+		if (IsValid(MID))
+		{
+			MID->SetScalarParameterValue(StateGlowParameterName, StateBlend);
+		}
 	}
 }
 
