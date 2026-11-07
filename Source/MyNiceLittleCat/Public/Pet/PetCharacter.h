@@ -124,6 +124,27 @@ public:
 
 	bool IsNavigationRecoveryPending() { return bNavigationRecoveryPending;}
 
+	// ==== 자석 극 고정 ===
+	// 외부에서 펫의 자성 극을 특저 극으로 고정
+	UFUNCTION(BlueprintCallable, Category = "Pet|Magnet")
+	void LockMagnetPolarity(EPetMagnetPolarity _polarity);
+
+	// 극 고정 해제 (극은 고정됐던 극 그대로 유지되고, 다시 Q로 바꿀 수 있어요)
+	UFUNCTION(BlueprintCallable, Category = "Pet|Magnet")
+	void UnlockMagnetPolarity();
+
+	// 고정 중일 때만 true + 고정된 극을 돌려줘요 (GA 자성 능력이 매 틱 읽어요)
+	bool TryGetLockedMagnetPolarity(EPetMagnetPolarity& _outPolarity) const;
+
+	UFUNCTION(CallInEditor, Category = "Pet|Debug")
+	void DebugLockPolarityN(); //! 극 고정 테스트용
+
+	UFUNCTION(CallInEditor, Category = "Pet|Debug")
+	void DebugLockPolarityS(); //! 극 고정 테스트용
+
+	UFUNCTION(CallInEditor, Category = "Pet|Debug")
+	void DebugUnlockPolarity(); //! 극 고정 테스트용
+
 	// 자성 사용 중 이 캡슐 위치에 배치해도 되는지 검사
 	bool CanUseMagnetPosition(const FVector& CapsuleLocation);
 
@@ -175,6 +196,14 @@ protected:
 	// 펫 모드
 	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Pet", meta = (AllowPrivateAccess = "true"))
 	EPetMode CurrentMode = EPetMode::Basic;
+
+	// 자성 극이 고정됐나요? (고정 중에는 Q 극 변환 무시)
+	UPROPERTY(Transient, VisibleInstanceOnly, Category = "Pet|Magnet")
+	bool bMagnetPolarityLocked = false;
+
+	// 고정된 극 (bMagnetPolarityLocked가 true일 때만 의미 있어요)
+	UPROPERTY(Transient, VisibleInstanceOnly, Category = "Pet|Magnet")
+	EPetMagnetPolarity LockedMagnetPolarity = EPetMagnetPolarity::N;
 
 	// 마우스 커서 방향 저장
 	UPROPERTY(VisibleInstanceOnly, Category = "Pet|Input")

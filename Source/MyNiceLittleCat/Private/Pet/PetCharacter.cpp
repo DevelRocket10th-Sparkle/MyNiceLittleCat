@@ -582,6 +582,31 @@ void APetCharacter::CancelNavigationRecovery()
 	}
 }
 
+void APetCharacter::LockMagnetPolarity(EPetMagnetPolarity _polarity)
+{
+	// 실제 극 변경은 자성 능력이 다음 틱에 맞춰줘요
+	// 의도: 자성 모드가 아닐 때 고정돼도, 나중에 자성 모드를 켜는 순간 바로 이 극으로 시작하게
+	bMagnetPolarityLocked = true;
+	LockedMagnetPolarity = _polarity;
+}
+
+void APetCharacter::UnlockMagnetPolarity()
+{
+	bMagnetPolarityLocked = false;
+}
+
+bool APetCharacter::TryGetLockedMagnetPolarity(EPetMagnetPolarity& _outPolarity) const
+{
+	if (false == bMagnetPolarityLocked) return false;
+	_outPolarity = LockedMagnetPolarity;
+	return true;
+}
+
+// 트리거 액터 없이 디테일 패널 버튼으로 극 고정을 테스트하기 위한 함수들
+void APetCharacter::DebugLockPolarityN() { LockMagnetPolarity(EPetMagnetPolarity::N); }
+void APetCharacter::DebugLockPolarityS() { LockMagnetPolarity(EPetMagnetPolarity::S); }
+void APetCharacter::DebugUnlockPolarity() { UnlockMagnetPolarity(); }
+
 void APetCharacter::GrantModeAbilities()
 {
 	if (false == IsValid(AbilitySystemComponent.Get()))
