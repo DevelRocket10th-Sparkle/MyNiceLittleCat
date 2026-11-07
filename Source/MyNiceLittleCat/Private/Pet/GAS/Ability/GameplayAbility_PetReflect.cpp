@@ -76,6 +76,8 @@ void UGameplayAbility_PetReflect::ActivateAbility(const FGameplayAbilitySpecHand
 
     PreviewMID = PreviewMesh->CreateDynamicMaterialInstance(0, PreviewMaterial.Get());
 
+    CreatePlacementGhost(Pet);
+
     bDraggingPlacement = false;
     CachedPreviewLasers.Reset();
     bHasPendingPlacement = false;
@@ -151,6 +153,10 @@ void UGameplayAbility_PetReflect::EndAbility(const FGameplayAbilitySpecHandle Ha
     if (true == IsValid(PreviewMesh.Get()))
         PreviewMesh->DestroyComponent();
 
+    if (true == IsValid(PlacementGhostMesh.Get()))
+        PlacementGhostMesh->DestroyComponent();
+
+    PlacementGhostMesh = nullptr;
     PreviewMesh = nullptr;
     PreviewMID = nullptr;
     bCanPlaceReflector = false;
@@ -310,8 +316,10 @@ void UGameplayAbility_PetReflect::HandleModeUseInput(EPetModeUseInputPhase Phase
         bHasPendingPlacement = true;
         PreviewMesh->SetVisibility(false);
 
-        // 요청이 확정된 위치를 3초 동안 표시
-        DrawDebugBox(GetWorld(), ReflectorCenter, HalfExtents, PlacementRotation.Quaternion(), FColor::Cyan, false, 3.f, 0, 2.f);
+        // 펫이 도착할 때까지 설치될 자리에 반투명 반사판 표시
+        // 고스트 머티리얼이 없을 때만 예전 디버그 상자로 대신 표시
+        if (false == ShowPlacementGhost())
+            DrawDebugBox(GetWorld(), ReflectorCenter, HalfExtents, PlacementRotation.Quaternion(), FColor::Cyan, false, 3.f, 0, 2.f);
     }
 }
 
@@ -476,6 +484,10 @@ void UGameplayAbility_PetReflect::HandlePlacementMoveFinished(FGuid RequestId, b
         return;
 
     PlacementMoveRequestId.Invalidate();
+
+    // 도착했든 실패했든 고스트는 숨김 
+    // (성공이면 바로 아래에서 진짜 반사판이 생겨요)
+    HidePlacementGhost();
 
     if (true == bSucceeded)
     {
@@ -647,6 +659,63 @@ void UGameplayAbility_PetReflect::DrawLaserReflectionPreview() const
         }
     }
 #endif
+}
+
+void UGameplayAbility_PetReflect::CreatePlacementGhost(APetCharacter* Pet)
+{
+    // 고스트 머티리얼이 없으면 고스트를 만들지 않아요 (불투명 메시가 진짜 반사판처럼 보이면 헷갈리니까)
+    if (false == IsValid(Pet) || true == PlacementGhostMaterials.IsEmpty()) return;
+
+    // 반사판 BP에 설정된 메시를 그대로 가져와요
+    const APetReflector* ReflectorDefaults = ReflectorClass.GetDefaultObject();
+    const UStaticMeshComponent* SourceMesh = IsValid(ReflectorDefaults) ? ReflectorDefaults->GetReflectorMesh() : nullptr;
+    if (false == IsValid(SourceMesh) || false == IsValid(SourceMesh->GetStaticMesh())) return;
+
+    // 프리뷰 메시처럼 펫 소유, 위치는 설치 Transform으로 직접 지정
+    PlacementGhostMesh = NewObject<UStaticMeshComponent>(Pet, NAME_None, RF_Transient);
+    PlacementGhostMesh->SetMobility(EComponentMobility::Movable);
+    PlacementGhostMesh->SetStaticMesh(SourceMesh->GetStaticMesh());
+
+    PlacementGhostMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    PlacementGhostMesh->SetGenerateOverlapEvents(false);
+    PlacementGhostMesh->SetCastShadow(false);
+    PlacementGhostMesh->SetReceivesDecals(false);
+    PlacementGhostMesh->SetCanEverAffectNavigation(false);
+    PlacementGhostMesh->SetVisibility(false);
+
+    // 슬롯마다 같은 순서의 고스트 머티리얼로 덮어요
+    // 배열이 슬롯 수보다 짧거나 비어 있는 칸은 원래 머티리얼(불투명) 그대로라, 6칸 다 채워야 해요
+    const int32 SlotCount = FMath::Min(PlacementGhostMaterials.Num(), PlacementGhostMesh->GetNumMaterials());
+    for (int32 Index = 0; Index < SlotCount; ++Index)
+    {
+        if (true == IsValid(PlacementGhostMaterials[Index].Get()))
+            PlacementGhostMesh->SetMaterial(Index, PlacementGhostMaterials[Index].Get());
+    }
+
+    PlacementGhostMesh->RegisterComponent();
+}
+
+bool UGameplayAbility_PetReflect::ShowPlacementGhost()
+{
+    UStaticMeshComponent* Ghost = PlacementGhostMesh.Get();
+    const APetReflector* ReflectorDefaults = ReflectorClass.GetDefaultObject();
+    const UStaticMeshComponent* SourceMesh = IsValid(ReflectorDefaults) ? ReflectorDefaults->GetReflectorMesh() : nullptr;
+    const USceneComponent* SourceRoot = IsValid(ReflectorDefaults) ? ReflectorDefaults->GetRootComponent() : nullptr;
+
+    if (false == IsValid(Ghost) || false == IsValid(SourceMesh) || false == IsValid(SourceRoot)) return false;
+
+    // 진짜 반사판이 생길 때와 똑같은 위치·회전·크기
+    // = (반사판 안에서 메시의 상대 Transform) × (루트 크기) × (설치될 Transform)
+    const FTransform RootScale(FQuat::Identity, FVector::ZeroVector, SourceRoot->GetRelativeScale3D());
+    Ghost->SetWorldTransform(SourceMesh->GetRelativeTransform() * RootScale * PendingPlacementTransform);
+    Ghost->SetVisibility(true);
+    return true;
+}
+
+void UGameplayAbility_PetReflect::HidePlacementGhost()
+{
+    if (true == IsValid(PlacementGhostMesh.Get()))
+        PlacementGhostMesh->SetVisibility(false);
 }
 
 void UGameplayAbility_PetReflect::UpdateRemoveHover()

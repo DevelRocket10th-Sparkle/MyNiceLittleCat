@@ -57,6 +57,11 @@ protected:
 
     void DrawLaserReflectionPreview() const;
 
+    // 펫이 설치하러 가는 동안 설치될 자리에 반투명 반사판(고스트)을 보여줘요
+    void CreatePlacementGhost(class APetCharacter* Pet);
+    bool ShowPlacementGhost(); // 고스트를 못 띄우면 false (머티리얼 미설정 등)
+    void HidePlacementGhost();
+
     // 철거: 커서가 가리키는 설치된 반사판 갱신 (매 틱)
     void UpdateRemoveHover();
 
@@ -85,6 +90,15 @@ protected:
 
     UPROPERTY(Transient)
     TObjectPtr<class UMaterialInstanceDynamic> PreviewMID;
+
+    // 설치 대기 중 고스트에 씌울 반투명 머티리얼 (반사판 메시 슬롯 순서대로)
+    // 의도: 원래 반사판의 돌/금/보석/거울 느낌을 슬롯별로 그대로 살리기 위함
+    // 비워두면 예전 디버그 상자로 표시
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reflect|Preview")
+    TArray<TObjectPtr<class UMaterialInterface>> PlacementGhostMaterials;
+
+    UPROPERTY(Transient)
+    TObjectPtr<class UStaticMeshComponent> PlacementGhostMesh;
 
     UPROPERTY(EditDefaultsOnly, Category = "Reflect|Placement", meta = (ClampMin = "0.0", ClampMax = "45.0", Units = "deg"))
     float MaxPlacementSlopeDegrees = 5.f;
