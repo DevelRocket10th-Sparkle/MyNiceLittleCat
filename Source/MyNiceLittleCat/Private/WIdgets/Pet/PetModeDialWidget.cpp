@@ -61,7 +61,10 @@ void UPetModeDialWidget::UpdateSelectionFromOffset(const FVector2D& _pointerOffs
 	// 첫 항목의 중심이 위쪽을 향하도록 반 구역만큼 보정 (좀 왼쪽으로 돌려주는 것...)
 	const double AdjustedAngle = FMath::Fmod(AngleDegrees + SectorAngle * 0.5, 360.0);
 
-	SelectedIndex = FMath::FloorToInt(AdjustedAngle / SectorAngle) % EntrySize;
+	const int32 Index = FMath::FloorToInt(AdjustedAngle / SectorAngle) % EntrySize;
+
+	// 잠긴 칸은 선택 안 됨 → 그 위에서 놓아도 "유지"와 같은 처리
+	SelectedIndex = LockedModes.Contains(DialData->Entries[Index].Mode) ? INDEX_NONE : Index;
 }
 
 void UPetModeDialWidget::ResetSelection()
@@ -74,6 +77,12 @@ void UPetModeDialWidget::SetCurrentMode(EPetMode _mode)
 {
     CurrentMode = _mode;
     InvalidateLayoutAndVolatility();  // 체크 배지 위치가 바뀌니까 다시 그려요
+}
+
+void UPetModeDialWidget::SetLockedModes(const TSet<EPetMode>& _lockedModes)
+{
+    LockedModes = _lockedModes;
+    InvalidateLayoutAndVolatility();  // 잠긴 칸 색이 바뀌니까 다시 그려요
 }
 
 bool UPetModeDialWidget::TryGetSelectedMode(EPetMode& _outMode) const
@@ -165,6 +174,7 @@ int32 UPetModeDialWidget::NativePaint(const FPaintArgs& Args, const FGeometry& A
         const FPetModeDialEntry& Entry = Data.Entries[Index];
         const bool bSelected = (SelectedIndex == Index);
         const bool bCurrent = (CurrentMode == Entry.Mode);
+        const bool bLocked = LockedModes.Contains(Entry.Mode); // 아직 해금 안 된 칸? (선택될 일 없음)
 
         const float MiddleAngle = Index * SectorAngle;
         const float StartAngle = MiddleAngle - SectorAngle * 0.5f + HalfGap;
@@ -199,7 +209,8 @@ int32 UPetModeDialWidget::NativePaint(const FPaintArgs& Args, const FGeometry& A
         }
         else
         {
-            SectorMesh.AddRoundedSector(Center, SectorInner, Outer, StartAngle, EndAngle, Data.CornerRadius, ToVertexColor(Entry.IdleColor));
+            SectorMesh.AddRoundedSector(Center, SectorInner, Outer, StartAngle, EndAngle, Data.CornerRadius,
+                ToVertexColor(bLocked ? Data.LockedColor : Entry.IdleColor)); // 잠긴 칸은 회색
         }
 
         // 현재 모드 칸 바깥 크림색 고리 위에 흰 동그라미 + 갈색 체크 (칸 안의 이름과 겹치지 않게)
@@ -214,10 +225,12 @@ int32 UPetModeDialWidget::NativePaint(const FPaintArgs& Args, const FGeometry& A
 
         // ===== 아이콘 + 이름 (위아래로 쌓아서 칸 가운데에) =====
         const float ContentScale = bSelected ? Data.SelectedContentScale : 1.f;
-        const FLinearColor ContentColor = bSelected ? Data.HighlightContentColor : Entry.LabelColor;
+        const FLinearColor ContentColor = bSelected ? Data.HighlightContentColor
+                                        : (bLocked ? Data.LockedLabelColor : Entry.LabelColor);
 
         const FVector2D ContentCenter(MakeDialPoint(Center, MiddleAngle, (SectorInner + Outer) * 0.5f));
-        const bool bHasIcon = IconBrushes.IsValidIndex(Index) && nullptr != IconBrushes[Index].GetResourceObject();
+        // 잠긴 칸은 아이콘을 숨겨서 어떤 능력인지 모르게 해요
+        const bool bHasIcon = (false == bLocked) && IconBrushes.IsValidIndex(Index) && nullptr != IconBrushes[Index].GetResourceObject();
         const float IconDrawSize = bHasIcon ? Data.IconSize * ContentScale : 0.f; // 아이콘이 없으면 이름만 가운데에
         const float LabelHeight = Data.LabelFontSize * ContentScale * 1.4f; // 대략적인 글자 줄 높이
         const float StackTop = ContentCenter.Y - (IconDrawSize + LabelHeight) * 0.5f;
@@ -230,7 +243,8 @@ int32 UPetModeDialWidget::NativePaint(const FPaintArgs& Args, const FGeometry& A
                 &IconBrushes[Index], ESlateDrawEffect::None, ContentColor * WidgetTint);
         }
 
-        DrawLabel(Entry.DisplayName, FVector2D(ContentCenter.X, StackTop + IconDrawSize + LabelHeight * 0.5f), ContentColor, ContentScale);
+        const FText Label = bLocked ? NSLOCTEXT("PetModeDial", "LockedMode", "???") : Entry.DisplayName; // 아직 모르는 능력
+        DrawLabel(Label, FVector2D(ContentCenter.X, StackTop + IconDrawSize + LabelHeight * 0.5f), ContentColor, ContentScale);
     }
 
     // ===== 3. 가운데 젤리 발바닥 =====

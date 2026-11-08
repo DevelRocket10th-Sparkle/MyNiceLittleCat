@@ -25,6 +25,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Pet|Dial")
     void SetCurrentMode(EPetMode _mode);
 
+    // 아직 해금 안 된 모드들 (회색 "???" 칸 + 선택 불가). 다이얼을 열 때마다 받아요
+    void SetLockedModes(const TSet<EPetMode>& _lockedModes);
+
     // 후보가 있을 때만 true를 반환하는..
     UFUNCTION(BlueprintPure, Category = "Pet|Dial")
     bool TryGetSelectedMode(EPetMode& _outMode) const;
@@ -58,4 +61,7 @@ protected:
 private:
     // Entries와 같은 순서의 아이콘 브러시
     TArray<FSlateBrush> IconBrushes;
+
+    // 잠긴 모드 목록
+    TSet<EPetMode> LockedModes;
 };

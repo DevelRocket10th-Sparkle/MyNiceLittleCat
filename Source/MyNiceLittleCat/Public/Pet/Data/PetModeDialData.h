@@ -112,4 +112,12 @@ public:
     // 아무것도 선택 안 했을 때 가운데 "유지" 글자 색
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Colors")
     FLinearColor CenterTextColor = FLinearColor(FColor(138, 58, 74));
+
+    // 아직 해금 안 된 모드 칸 색 (회색빛 베이지)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Colors")
+    FLinearColor LockedColor = FLinearColor(FColor(214, 208, 200));
+
+    // 아직 해금 안 된 모드 칸의 "???" 글자 색
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Colors")
+    FLinearColor LockedLabelColor = FLinearColor(FColor(150, 140, 130));
 };

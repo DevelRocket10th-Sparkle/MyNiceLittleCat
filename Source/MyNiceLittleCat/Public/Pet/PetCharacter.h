@@ -8,9 +8,11 @@
 #include "Pet/PetTypes.h"
 #include "AbilitySystemInterface.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "GameplayTagContainer.h"
 #include "PetCharacter.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPetModeChanged, EPetMode, PreviousMode, EPetMode, NewMode);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPetModeUnlocked, EPetMode, UnlockedMode);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPetModeUseInput, EPetModeUseInputPhase, Phase);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPetAbilityMoveFinished, FGuid, RequestId, bool, bSucceeded);
 // 괴냥이 클래스
@@ -68,6 +70,11 @@ public:
 
 	UFUNCTION(BlueprintPure)
 	EPetMode GetCurrentMode() const { return CurrentMode; }
+
+	// 이 모드를 쓸 수 있는지 (Basic은 항상 true, 나머지는 능력 해금 아이템 보유 여부)
+	// 의도: 모드 능력을 "얻은 것만" 쓰게 해서 튜토리얼/진행도에 따라 모드가 열리게
+	UFUNCTION(BlueprintPure, Category = "Pet|Mode")
+	bool IsModeUnlocked(EPetMode _mode) const;
 
 	UFUNCTION(CallInEditor, Category = "Pet|Debug")
 	void DebugRequestBasicMode(); //! Mode 테스트용
@@ -165,12 +172,22 @@ public:
 	// 자성 모드의 자기장 영역 표시용 메시 (모양 갱신은 GameplayAbility_PetMagnet이 담당)
 	class UProceduralMeshComponent* GetMagnetFieldMesh() const { return MagnetFieldMesh; }
 private:
-	void GrantModeAbilities();
+	void GrantModeAbilities();         // 해금된 모드만 능력 부여
+	bool GrantModeAbility(EPetMode _mode); // 모드 하나만 능력 부여 (이미 있으면 false)
+	static FGameplayTag GetUnlockTag(EPetMode _mode); // 모드 → 해금 태그 (Basic은 빈 태그)
 	void TryCompleteNavigationRecovery();
+
+	// 인벤토리에서 능력 아이템을 처음 얻은 순간 → 해당 모드 능력 바로 부여
+	UFUNCTION()
+	void HandleAbilityUnlocked(FGameplayTag _abilityTag, class UItemData* _item);
 	// =============================================================================
 public:
 	UPROPERTY(BlueprintAssignable, Category = "Pet|Mode")
 	FOnPetModeChanged OnPetModeChanged;
+
+	// 게임 중 새 모드가 해금된 순간 (UI 연출용)
+	UPROPERTY(BlueprintAssignable, Category = "Pet|Mode")
+	FOnPetModeUnlocked OnPetModeUnlocked;
 
 	UPROPERTY(BlueprintAssignable, Category = "Pet|Input")
 	FOnPetModeUseInput OnPetModeUseInput;
