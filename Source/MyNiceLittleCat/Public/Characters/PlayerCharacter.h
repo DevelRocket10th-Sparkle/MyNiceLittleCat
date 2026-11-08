@@ -14,6 +14,7 @@
 class USpringArmComponent;
 class UCameraComponent;
 class ULockOnComponent;
+class UCameraOcclusionComponent;
 class UInputMappingContext;
 class UInputAction;
 class UAnimMontage;
@@ -191,6 +192,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
+
+	// 카메라와 플레이어 사이를 가리는 벽 / 천장 숨김
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+	TObjectPtr<UCameraOcclusionComponent> CameraOcclusionComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "LockOn")
 	TObjectPtr<ULockOnComponent> LockOnComponent;
