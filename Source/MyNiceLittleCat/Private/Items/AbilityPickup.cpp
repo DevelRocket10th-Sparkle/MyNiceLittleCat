@@ -1,4 +1,4 @@
-#include "Items/AbilityPickup.h"
+﻿#include "Items/AbilityPickup.h"
 #include "Items/InventorySubsystem.h"
 #include "Items/ItemSettings.h"
 #include "Components/SphereComponent.h"
@@ -101,6 +101,19 @@ void AAbilityPickup::BeginPlay()
 	}
 
 	PickupSphere->OnComponentBeginOverlap.AddDynamic(this, &AAbilityPickup::HandleBeginOverlap);
+
+	// 플레이어가 구슬 위에서 시작하면(플레이어가 BeginPlay보다 먼저 스폰됨) 겹침 시작 알림을 놓치므로 한 번 직접 확인
+	// 의도: 이 시점엔 겹침 목록이 비어 있을 수 있어서 먼저 새로 계산 (새 겹침이면 여기서 바로 HandleBeginOverlap이 불림)
+	PickupSphere->UpdateOverlaps();
+	if (true == bPicked) return;
+
+	TArray<AActor*> AlreadyOverlapping;
+	PickupSphere->GetOverlappingActors(AlreadyOverlapping, APawn::StaticClass());
+	for (AActor* Actor : AlreadyOverlapping)
+	{
+		HandleBeginOverlap(PickupSphere, Actor, nullptr, INDEX_NONE, false, FHitResult());
+		if (true == bPicked) break;
+	}
 }
 
 void AAbilityPickup::EndPlay(const EEndPlayReason::Type EndPlayReason)
