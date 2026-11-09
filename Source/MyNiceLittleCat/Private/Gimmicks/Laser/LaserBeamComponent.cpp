@@ -25,6 +25,30 @@ namespace
 	// 관통 모드에서 구간 하나당 통과시킬 수 있는 최대 액터 수 (무한 반복 방지)
 	constexpr int32 MaxPierceCount = 16;
 
+	// 구간 하나당 통과시킬 수 있는 감지 전용 박스 수 (무한 반복 방지)
+	constexpr int32 MaxSkippedDetectionVolumes = 16;
+
+	// 어떤 채널에도 막힘(Block) 응답이 없는 컴포넌트 = 트리거·카메라 마스킹 볼륨 같은 감지 전용 박스
+	// 레이저는 오브젝트 타입으로 검사해서, 응답이 무시·겹침이어도 판정만 켜져 있으면 맞은 것으로 나옴
+	// (예: RoomMaskVolume 박스(WorldDynamic, QueryOnly) 안에서 쏘면 빔이 출발하자마자 끝남) → 이런 박스는 통과
+	bool IsDetectionOnlyComponent(const UPrimitiveComponent* Component)
+	{
+		if (!Component)
+		{
+			return false;
+		}
+
+		const FCollisionResponseContainer& Responses = Component->GetCollisionResponseToChannels();
+		for (int32 Channel = 0; Channel < ECC_MAX; ++Channel)
+		{
+			if (Responses.GetResponse(static_cast<ECollisionChannel>(Channel)) == ECR_Block)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
 	// 2026-10-30에 NS_Laser_Basic 사용자 변수 이름을 Beam End → BeamEnd, Color → BeamColor로 바꿈.
 	// 그 전에 저장된 BP·맵 인스턴스에는 예전 이름이 남아 있어 끝점·색이 전달되지 않음 (흰색·엉뚱한 길이로 보임)
 	// 반대로 예전 이름을 그대로 쓰는 사본 이펙트(NS_Laser_Tutorial 등)에 새 이름으로 넘기는 BP도 있음
@@ -550,11 +574,23 @@ void ULaserBeamComponent::TraceBeamSegments(TArray<FLaserBeamSegment>& OutSegmen
 
 		// 먼저 실제 월드와 충돌 검사
 		bool bHit = false;
+		int32 SkippedDetectionVolumes = 0;
 		for (int32 PierceCount = 0; PierceCount <= MaxPierceCount; ++PierceCount)
 		{
 			bHit = BeamRadius > 0.f ?
 				World->SweepSingleByObjectType(Hit, SegmentStart, TraceEnd, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(BeamRadius), QueryParams)
 				: World->LineTraceSingleByObjectType(Hit, SegmentStart, TraceEnd, ObjectParams, QueryParams);
+
+			// 감지 전용 박스는 무시 목록에 넣고 같은 구간을 다시 검사 (관통 횟수에는 안 셈)
+			if (true == bHit && SkippedDetectionVolumes < MaxSkippedDetectionVolumes && IsDetectionOnlyComponent(Hit.GetComponent()))
+			{
+				QueryParams.AddIgnoredComponent(Hit.GetComponent());
+				Hit = FHitResult();
+				bHit = false;
+				++SkippedDetectionVolumes;
+				--PierceCount;
+				continue;
+			}
 
 			// 관통 모드: 반사판이 아닌 액터는 무시 목록에 넣고 같은 구간을 다시 검사
 			const AActor* BlockingActor = Hit.GetActor();
