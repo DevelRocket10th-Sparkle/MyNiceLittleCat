@@ -8,9 +8,11 @@
 #include "Pet/PetTypes.h"
 #include "AbilitySystemInterface.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "GameplayTagContainer.h"
 #include "PetCharacter.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPetModeChanged, EPetMode, PreviousMode, EPetMode, NewMode);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPetModeUnlocked, EPetMode, UnlockedMode);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPetModeUseInput, EPetModeUseInputPhase, Phase);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPetAbilityMoveFinished, FGuid, RequestId, bool, bSucceeded);
 // 괴냥이 클래스
@@ -69,6 +71,11 @@ public:
 	UFUNCTION(BlueprintPure)
 	EPetMode GetCurrentMode() const { return CurrentMode; }
 
+	// 이 모드를 쓸 수 있는지 (Basic은 항상 true, 나머지는 능력 해금 아이템 보유 여부)
+	// 의도: 모드 능력을 "얻은 것만" 쓰게 해서 튜토리얼/진행도에 따라 모드가 열리게
+	UFUNCTION(BlueprintPure, Category = "Pet|Mode")
+	bool IsModeUnlocked(EPetMode _mode) const;
+
 	UFUNCTION(CallInEditor, Category = "Pet|Debug")
 	void DebugRequestBasicMode(); //! Mode 테스트용
 
@@ -124,6 +131,27 @@ public:
 
 	bool IsNavigationRecoveryPending() { return bNavigationRecoveryPending;}
 
+	// ==== 자석 극 고정 ===
+	// 외부에서 펫의 자성 극을 특저 극으로 고정
+	UFUNCTION(BlueprintCallable, Category = "Pet|Magnet")
+	void LockMagnetPolarity(EPetMagnetPolarity _polarity);
+
+	// 극 고정 해제 (극은 고정됐던 극 그대로 유지되고, 다시 Q로 바꿀 수 있어요)
+	UFUNCTION(BlueprintCallable, Category = "Pet|Magnet")
+	void UnlockMagnetPolarity();
+
+	// 고정 중일 때만 true + 고정된 극을 돌려줘요 (GA 자성 능력이 매 틱 읽어요)
+	bool TryGetLockedMagnetPolarity(EPetMagnetPolarity& _outPolarity) const;
+
+	UFUNCTION(CallInEditor, Category = "Pet|Debug")
+	void DebugLockPolarityN(); //! 극 고정 테스트용
+
+	UFUNCTION(CallInEditor, Category = "Pet|Debug")
+	void DebugLockPolarityS(); //! 극 고정 테스트용
+
+	UFUNCTION(CallInEditor, Category = "Pet|Debug")
+	void DebugUnlockPolarity(); //! 극 고정 테스트용
+
 	// 자성 사용 중 이 캡슐 위치에 배치해도 되는지 검사
 	bool CanUseMagnetPosition(const FVector& CapsuleLocation);
 
@@ -144,12 +172,22 @@ public:
 	// 자성 모드의 자기장 영역 표시용 메시 (모양 갱신은 GameplayAbility_PetMagnet이 담당)
 	class UProceduralMeshComponent* GetMagnetFieldMesh() const { return MagnetFieldMesh; }
 private:
-	void GrantModeAbilities();
+	void GrantModeAbilities();         // 해금된 모드만 능력 부여
+	bool GrantModeAbility(EPetMode _mode); // 모드 하나만 능력 부여 (이미 있으면 false)
+	static FGameplayTag GetUnlockTag(EPetMode _mode); // 모드 → 해금 태그 (Basic은 빈 태그)
 	void TryCompleteNavigationRecovery();
+
+	// 인벤토리에서 능력 아이템을 처음 얻은 순간 → 해당 모드 능력 바로 부여
+	UFUNCTION()
+	void HandleAbilityUnlocked(FGameplayTag _abilityTag, class UItemData* _item);
 	// =============================================================================
 public:
 	UPROPERTY(BlueprintAssignable, Category = "Pet|Mode")
 	FOnPetModeChanged OnPetModeChanged;
+
+	// 게임 중 새 모드가 해금된 순간 (UI 연출용)
+	UPROPERTY(BlueprintAssignable, Category = "Pet|Mode")
+	FOnPetModeUnlocked OnPetModeUnlocked;
 
 	UPROPERTY(BlueprintAssignable, Category = "Pet|Input")
 	FOnPetModeUseInput OnPetModeUseInput;
@@ -175,6 +213,14 @@ protected:
 	// 펫 모드
 	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Pet", meta = (AllowPrivateAccess = "true"))
 	EPetMode CurrentMode = EPetMode::Basic;
+
+	// 자성 극이 고정됐나요? (고정 중에는 Q 극 변환 무시)
+	UPROPERTY(Transient, VisibleInstanceOnly, Category = "Pet|Magnet")
+	bool bMagnetPolarityLocked = false;
+
+	// 고정된 극 (bMagnetPolarityLocked가 true일 때만 의미 있어요)
+	UPROPERTY(Transient, VisibleInstanceOnly, Category = "Pet|Magnet")
+	EPetMagnetPolarity LockedMagnetPolarity = EPetMagnetPolarity::N;
 
 	// 마우스 커서 방향 저장
 	UPROPERTY(VisibleInstanceOnly, Category = "Pet|Input")

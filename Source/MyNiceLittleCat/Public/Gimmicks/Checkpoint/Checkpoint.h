@@ -16,6 +16,13 @@
 /// 이동(TravelTo): 발견한 체크포인트로 빠른 이동. 같은 맵이면 리스폰, 다른 맵이면 그 맵을 열어 체크포인트에서 시작.
 /// MenuWidgetClass가 비어 있으면 상호작용 즉시 휴식합니다 (기존 동작).
 /// TODO(합의): 몬스터 리셋은 OnPlayerRested에 연결
+///
+/// [켜짐·꺼짐 외형] (2026-11-06 추가)
+/// 활성 상태(현재 체크포인트)에 따라 컴포넌트 태그로 외형을 바꿉니다. BP 그래프 없이 메시 배치·태그만으로 연출을 만들 수 있습니다.
+/// - StateOnTag(기본 CheckpointOn): 켜졌을 때만 보임. 라이트는 밝기가 0 → 원래 값으로, 나이아가라 등 이펙트는 켜짐/꺼짐
+/// - StateOffTag(기본 CheckpointOff): 꺼졌을 때만 보임 (예: 꺼진 장작)
+/// - StateGlowTag(기본 CheckpointGlow): 머티리얼 스칼라 파라미터 StateGlowParameterName을 0(꺼짐) → 1(켜짐)
+/// 전환은 StateBlendTime 동안 부드럽게, 게임 시작 시 상태는 바로 적용
 
 #pragma once
 
@@ -27,6 +34,9 @@
 
 class UArrowComponent;
 class UCheckpointMenuWidget;
+class ULightComponent;
+class UMaterialInstanceDynamic;
+class AGimmickActorBase;
 
 UCLASS()
 class MYNICELITTLECAT_API ACheckpoint : public AInteractableBase
@@ -63,6 +73,17 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void Tick(float DeltaSeconds) override;
+
+	// 활성 상태가 바뀌면 켜짐·꺼짐 외형 전환
+	UFUNCTION()
+	void HandleStateVisualActivation(AGimmickActorBase* Gimmick, bool bNewActivated, AActor* ChangeInstigator);
+
+	// 태그 붙은 컴포넌트·라이트 기본 밝기·발광 MID 모으기 (BeginPlay 한 번)
+	void CacheStateVisuals();
+
+	// 현재 StateBlend 값을 컴포넌트에 반영
+	void ApplyStateBlend();
 
 	// 서브시스템의 체크포인트가 바뀌면 활성 표시 갱신
 	UFUNCTION()
@@ -119,4 +140,43 @@ protected:
 	// 휴식 연출 시간·색·입력 잠금 설정
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Rest", meta = (EditCondition = "bPlayRestTransition"))
 	FScreenTransitionSettings RestTransition;
+
+	// 켜졌을 때만 보이는 컴포넌트 태그 (라이트는 밝기 페이드, 이펙트는 켜기/끄기)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Visual")
+	FName StateOnTag = TEXT("CheckpointOn");
+
+	// 꺼졌을 때만 보이는 컴포넌트 태그
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Visual")
+	FName StateOffTag = TEXT("CheckpointOff");
+
+	// 켜지면 발광하는 메시 태그 (모든 머티리얼 슬롯에 StateGlowParameterName 0 → 1)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Visual")
+	FName StateGlowTag = TEXT("CheckpointGlow");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Visual")
+	FName StateGlowParameterName = TEXT("CheckpointGlow");
+
+	// 켜짐·꺼짐 전환 시간(초). 0이면 바로
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Visual", meta = (ClampMin = "0.0"))
+	float StateBlendTime = 0.8f;
+
+private:
+	// 0 = 꺼짐, 1 = 켜짐
+	float StateBlend = 0.f;
+	float StateBlendTarget = 0.f;
+	bool bStateVisualsCached = false;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USceneComponent>> StateOnComponents;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USceneComponent>> StateOffComponents;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<ULightComponent>> StateLights;
+
+	TArray<float> StateLightBaseIntensities;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UMaterialInstanceDynamic>> StateGlowMaterials;
 };
