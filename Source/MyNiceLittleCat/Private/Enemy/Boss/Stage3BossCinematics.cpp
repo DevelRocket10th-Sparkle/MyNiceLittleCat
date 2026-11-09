@@ -6,10 +6,12 @@
 #include "Components/DecalComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "DefaultLevelSequenceInstanceData.h"
 #include "Enemy/Boss/BossCharacter.h"
 #include "Enemy/Boss/BossEncounterManager.h"
 #include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Engine/GameInstance.h"
+#include "Engine/LevelStreaming.h"
 #include "Engine/World.h"
 #include "Frameworks/Save/GameProgressSubsystem.h"
 #include "Items/InventorySubsystem.h"
@@ -18,7 +20,11 @@
 #include "LevelSequence.h"
 #include "LevelSequenceActor.h"
 #include "LevelSequencePlayer.h"
+#include "LevelUtils.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "MovieScene.h"
+#include "MovieSceneBindingOverrides.h"
+#include "MovieSceneObjectBindingID.h"
 #include "NiagaraFunctionLibrary.h"
 #include "TimerManager.h"
 
@@ -30,6 +36,12 @@ namespace
 	const FName Barrier70(TEXT("Barrier70"));
 	const FName Barrier30(TEXT("Barrier30"));
 	const FName PhaseThree(TEXT("CombatPhase3"));
+
+	FTransform GetStageLevelTransform(const AActor& Stage)
+	{
+		const ULevelStreaming* StreamingLevel = FLevelUtils::FindStreamingLevel(Stage.GetLevel());
+		return StreamingLevel ? StreamingLevel->LevelTransform : FTransform::Identity;
+	}
 }
 
 AStage3BossCinematics::AStage3BossCinematics()
@@ -134,9 +146,7 @@ void AStage3BossCinematics::Tick(float DeltaSeconds)
 			Play(ArrivalSequence);
 	}
 
-	if (Opening == EOpening::Courtyard && !bUseExternalPhaseOneTrigger
-		&& !bRequirePhaseOneConfirmation && HasEnteredArena(PhaseOne))
-		StartPhaseOneCut(Player);
+	// 1페이즈 연출 시작은 ABossEncounterTrigger -> ABossEncounterManager::RequestEncounterStart 경로로만 진입
 	if (OpeningPlayer && DoorIsOpen.IsValidIndex(0))
 	{
 		const double Seconds = OpeningPlayer->GetCurrentTime().AsSeconds();
@@ -147,10 +157,14 @@ void AStage3BossCinematics::Tick(float DeltaSeconds)
 	}
 
 	if (Opening == EOpening::Combat && !bEntranceClosed && DoorIsOpen.IsValidIndex(1) && DoorIsOpen[1]
-		&& Doors[1].Actor && Player->GetActorLocation().X > Doors[1].Actor->GetActorLocation().X + 260.f)
+		&& Doors[1].Actor)
 	{
-		bEntranceClosed = true;
-		SetDoor(1, false, 0.18f);
+		const FVector EntranceDelta = Player->GetActorLocation() - Doors[1].Actor->GetActorLocation();
+		if (GetStageLevelTransform(*this).InverseTransformVector(EntranceDelta).X > 260.f)
+		{
+			bEntranceClosed = true;
+			SetDoor(1, false, 0.18f);
+		}
 	}
 }
 
@@ -183,13 +197,7 @@ FVector AStage3BossCinematics::GetDoorInteractionLocation(int32 DoorIndex) const
 bool AStage3BossCinematics::CanInteract_Implementation(AActor* InstigatorActor) const
 {
 	return InstigatorActor && InstigatorActor == GetPlayer() && !OpeningPlayer
-		&& (CanConfirmPhaseOne() || FindNearestDoor(InstigatorActor) != INDEX_NONE);
-}
-
-bool AStage3BossCinematics::CanConfirmPhaseOne() const
-{
-	return Opening == EOpening::Courtyard && !bUseExternalPhaseOneTrigger
-		&& bRequirePhaseOneConfirmation && HasEnteredArena(PhaseOne);
+		&& FindNearestDoor(InstigatorActor) != INDEX_NONE;
 }
 
 FVector AStage3BossCinematics::GetInteractFocusLocation_Implementation(AActor* InstigatorActor) const
@@ -209,9 +217,7 @@ FInteractPromptInfo AStage3BossCinematics::GetInteractPrompt_Implementation(AAct
 	FInteractPromptInfo Prompt;
 	Prompt.WorldLocation = GetInteractFocusLocation_Implementation(InstigatorActor);
 	const int32 Door = FindNearestDoor(InstigatorActor);
-	if (CanConfirmPhaseOne())
-		Prompt.ActionText = NSLOCTEXT("Stage3", "StartFight", "전투 시작");
-	else if (Door == 0 && Opening == EOpening::Locked)
+	if (Door == 0 && Opening == EOpening::Locked)
 		Prompt.ActionText = NSLOCTEXT("Stage3", "UseKey", "대문 열쇠 사용");
 	else
 		Prompt.ActionText = NSLOCTEXT("Stage3", "LockedDoor", "잠긴 문 확인");
@@ -221,8 +227,6 @@ FInteractPromptInfo AStage3BossCinematics::GetInteractPrompt_Implementation(AAct
 void AStage3BossCinematics::Interact_Implementation(AActor* InstigatorActor)
 {
 	if (!HasAuthority() || !CanInteract_Implementation(InstigatorActor))
-		return;
-	if (CanConfirmPhaseOne() && StartPhaseOneCut(Cast<APlayerCharacter>(InstigatorActor)))
 		return;
 
 	const int32 Door = FindNearestDoor(InstigatorActor);
@@ -408,10 +412,40 @@ void AStage3BossCinematics::SetDoor(int32 DoorIndex, bool bOpen, float Duration)
 
 void AStage3BossCinematics::BindSequence(ULevelSequence* Sequence, ALevelSequenceActor* Actor, ABossCharacter* Boss) const
 {
+	// The camera and boss transform keys were authored in the original stage's coordinates.
+	if (UDefaultLevelSequenceInstanceData* InstanceData = Cast<UDefaultLevelSequenceInstanceData>(Actor->DefaultInstanceData))
+	{
+		Actor->bOverrideInstanceData = true;
+		InstanceData->TransformOrigin = GetStageLevelTransform(*this);
+	}
+
 	if (Boss && !Sequence->FindBindingsByTag(TEXT("Boss")).IsEmpty())
 		Actor->SetBindingByTag(TEXT("Boss"), {Boss}, false);
 	if (APlayerCharacter* Player = GetPlayer(); Player && !Sequence->FindBindingsByTag(TEXT("Player")).IsEmpty())
 		Actor->SetBindingByTag(TEXT("Player"), {Player}, false);
+
+	if (Sequence == UnlockSequence && IsValid(GateLock) && Actor->BindingOverrides)
+	{
+		// The authored lock component binding points into the original level asset.
+		UStaticMeshComponent* LockMechanism = FindObjectFast<UStaticMeshComponent>(GateLock.Get(), TEXT("Main"));
+		UMovieScene* Scene = Sequence->GetMovieScene();
+		if (LockMechanism && Scene)
+		{
+			for (int32 Index = 0; Index < Scene->GetPossessableCount(); ++Index)
+			{
+				const FMovieScenePossessable& Binding = Scene->GetPossessable(Index);
+				if (Binding.GetName() != TEXT("Key lock mechanism"))
+					continue;
+
+				const FGuid Parent = Binding.GetParent();
+				if (Parent.IsValid())
+					Actor->SetBinding(UE::MovieScene::FFixedObjectBindingID(Parent, MovieSceneSequenceID::Root), {GateLock.Get()});
+				Actor->BindingOverrides->SetBinding(
+					UE::MovieScene::FFixedObjectBindingID(Binding.GetGuid(), MovieSceneSequenceID::Root), {LockMechanism});
+				break;
+			}
+		}
+	}
 }
 
 void AStage3BossCinematics::BeginPhaseCut(FName Phase, ABossCharacter* Boss)
@@ -457,7 +491,8 @@ bool AStage3BossCinematics::HasEnteredArena(FName Phase) const
 	if (!Setup || !Player)
 		return false;
 	const float Radius = Player->GetCapsuleComponent()->GetScaledCapsuleRadius();
-	const FVector Delta = (Player->GetActorLocation() - Setup->EntryCenter).GetAbs();
+	const FVector StagePosition = GetStageLevelTransform(*this).InverseTransformPosition(Player->GetActorLocation());
+	const FVector Delta = (StagePosition - Setup->EntryCenter).GetAbs();
 	return Delta.X + Radius < Setup->EntryExtent.X
 		&& Delta.Y + Radius < Setup->EntryExtent.Y && Delta.Z < Setup->EntryExtent.Z;
 }
@@ -475,9 +510,10 @@ void AStage3BossCinematics::AddTrail(const FStage3CinematicPhase& Phase, ABossCh
 {
 	if (!BloodMaterial)
 		return;
+	const FTransform StageTransform = GetStageLevelTransform(*this);
 	for (int32 Index = 0; Index < Phase.BloodTrail.Num(); ++Index)
 	{
-		const FVector Point = Phase.BloodTrail[Index];
+		const FVector Point = StageTransform.TransformPosition(Phase.BloodTrail[Index]);
 		FHitResult Floor;
 		FCollisionQueryParams Query(SCENE_QUERY_STAT(Stage3BloodFloor), false, Boss);
 		if (GetWorld()->LineTraceSingleByChannel(Floor, Point + FVector(0, 0, 70), Point - FVector(0, 0, 220),

@@ -179,6 +179,20 @@ bool ABossEncounterManager::StartEncounter(APlayerCharacter* Player)
 	return true;
 }
 
+// 레벨 트리거의 시작 요청: 연출이 연결되어 있으면 연출을 거쳐, 없으면 바로 전투 시작
+bool ABossEncounterManager::RequestEncounterStart(APlayerCharacter* Player)
+{
+	if (!HasAuthority() || EncounterState != EBossEncounterState::Ready
+		|| !IsValid(Player) || Player->GetbIsDead()) return false;
+
+	// 연출이 있는 보스방은 연출 종료 시점(FinishOpeningCut)에 StartEncounter가 호출됨
+	// - 여기서 StartEncounter를 직접 부르면 CanStartEncounter 검사에 막힘
+	if (StageCinematics)
+		return StageCinematics->StartPhaseOneCut(Player);
+
+	return StartEncounter(Player);
+}
+
 // 단일 플레이어의 생존 여부만 확인
 void ABossEncounterManager::CheckPlayer()
 {
