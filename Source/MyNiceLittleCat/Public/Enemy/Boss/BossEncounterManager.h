@@ -34,6 +34,9 @@ public :
 	// 연출 종료 후 전달받은 플레이어를 타깃으로 첫 페이즈 시작
 	UFUNCTION(BlueprintCallable, Category = "Boss")
 	bool StartEncounter(APlayerCharacter* Player);
+	// 레벨 트리거의 시작 요청: 연출이 연결되어 있으면 연출을 거쳐, 없으면 바로 전투 시작
+	UFUNCTION(BlueprintCallable, Category = "Boss")
+	bool RequestEncounterStart(APlayerCharacter* Player);
 	// 기존 보스 및 기믹 정리 후 새 보스로 체력과 페이즈 초기화
 	// 보스와 기믹 정리 후 새 보스를 생성하여 체력 및 페이즈 초기화
 	UFUNCTION(BlueprintCallable, Category = "Boss")
