@@ -19,6 +19,7 @@
 class UAbilitySystemComponent;
 class ULevelSequencePlayer;
 class ALevelSequenceActor;
+class AStage3BossCinematics;
 
 // 현재 페이즈와 별개로 관리하는 전환 진행 상태
 UENUM(BlueprintType)
@@ -46,6 +47,7 @@ public:
 
 	// 서버에서 페이즈 설정을 검사하고 전환 GA를 부여
 	bool InitializePhases(UAbilitySystemComponent* InASC, UEnemyPhaseConfigData* InConfig);
+	void SetStageCinematics(AStage3BossCinematics* InCinematics);
 	// 첫 페이즈에 진입: 정지 후 재사용하지 않고 보스를 재생성하여 초기화
 	// 첫 페이즈 설정 적용 후 체력 조건 평가 허용
 	bool StartPhases();
@@ -122,6 +124,8 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private :
+	TWeakObjectPtr<AStage3BossCinematics> StageCinematics;
+
 	// 현재 페이즈 다음 인덱스의 전환을 중복 없이 요청
 	// 다음 페이즈 전환을 중복 없이 요청하고 즉시 보호 처리 통지
 	void RequestNextPhase();

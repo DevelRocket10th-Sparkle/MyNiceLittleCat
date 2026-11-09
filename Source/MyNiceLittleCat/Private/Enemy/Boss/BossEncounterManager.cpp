@@ -1,5 +1,7 @@
 #include "Enemy/Boss/BossEncounterManager.h"
 #include "Enemy/Boss/BossCharacter.h"
+#include "Enemy/Boss/Stage3BossCinematics.h"
+#include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Enemy/AI/EnemyAIController.h"
 #include "Characters/PlayerCharacter.h"
 #include "Components/SceneComponent.h"
@@ -40,6 +42,7 @@ bool ABossEncounterManager::SpawnBoss()
 		return false;
 	}
 	CurrentBoss = Boss;
+	Boss->GetPhaseComponent()->SetStageCinematics(StageCinematics);
 	Boss->OnDefeated.AddUniqueDynamic(this, &ABossEncounterManager::HandleBossDefeated);
 	Boss->OnEncounterFailed.AddUniqueDynamic(this, &ABossEncounterManager::HandleBossFailed);
 	// 보스에 페이즈에서 사용하는 기믹 관련 요소 설정
@@ -114,6 +117,8 @@ void ABossEncounterManager::HideEncounterHealthBar()
 // 보스와 기믹 정리 후 새 보스를 생성하여 체력 및 페이즈 초기화
 void ABossEncounterManager::ResetEncounter()
 {
+	if (StageCinematics)
+		StageCinematics->ResetStaging();
 	// 보스 체력 바 숨김
 	HideEncounterHealthBar();
 
@@ -136,6 +141,8 @@ void ABossEncounterManager::ResetEncounter()
 // 준비된 보스방의 첫 페이즈와 타깃 선정 시작
 bool ABossEncounterManager::StartEncounter(APlayerCharacter* Player)
 {
+	if (StageCinematics && !StageCinematics->CanStartEncounter())
+		return false;
 	if (EncounterState != EBossEncounterState::Ready || !IsValid(CurrentBoss)
 		|| !IsValid(Player) || Player->GetbIsDead()) return false;
 	EncounterPlayer = Player;
@@ -231,6 +238,8 @@ void ABossEncounterManager::HandleBossDefeated(ABossCharacter* Boss)
 	GetWorld()->GetTimerManager().ClearTimer(PlayerCheckHandle);
 	ClearEncounterPlayer();
 	EncounterState = EBossEncounterState::Cleared;
+	if (StageCinematics)
+		StageCinematics->OpenExit();
 
 	// 보스 체력 바 숨김
 	HideEncounterHealthBar();
