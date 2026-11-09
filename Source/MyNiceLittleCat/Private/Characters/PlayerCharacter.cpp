@@ -23,6 +23,7 @@
 #include "Characters/GAS/PlayerAttributeSet.h"
 #include "Characters/GAS/GA_MeleeAttack.h"
 #include "Characters/PlayerComponents/LockOnComponent.h"
+#include "Systems/CameraOcclusionComponent.h"
 
 #include "Enemy/EnemyCharacter.h"
 #include "Engine/World.h"
@@ -64,6 +65,9 @@ APlayerCharacter::APlayerCharacter()
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
+
+	// 카메라 가림 벽 / 천장 숨김
+	CameraOcclusionComponent = CreateDefaultSubobject<UCameraOcclusionComponent>(TEXT("CameraOcclusionComponent"));
 
     // 무기 메쉬
     WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMesh"));

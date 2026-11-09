@@ -9,6 +9,7 @@
 class ABossCharacter;
 class APlayerCharacter;
 class USceneComponent;
+class AStage3BossCinematics;
 
 class AMainHUD;
 
@@ -37,6 +38,9 @@ public :
 	// 보스와 기믹 정리 후 새 보스를 생성하여 체력 및 페이즈 초기화
 	UFUNCTION(BlueprintCallable, Category = "Boss")
 	void ResetEncounter();
+
+	ABossCharacter* GetCurrentBoss() const { return CurrentBoss; }
+	bool IsWaitingForRetry() const { return EncounterState == EBossEncounterState::Waiting; }
 
 protected :
 	// 컴포넌트 초기화 후 실행 준비
@@ -77,6 +81,9 @@ protected :
 	// 몽타주, 코인 및 페이즈 설정을 지정한 보스 Blueprint 클래스
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss")
 	TSubclassOf<ABossCharacter> BossClass;
+
+	UPROPERTY(EditInstanceOnly, Category = "Boss|Cinematics")
+	TObjectPtr<AStage3BossCinematics> StageCinematics;
 	// 이번 보스방 실행에서 생성한 보스
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss")
 	TObjectPtr<ABossCharacter> CurrentBoss;

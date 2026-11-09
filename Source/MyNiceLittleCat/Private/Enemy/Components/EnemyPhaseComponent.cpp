@@ -2,6 +2,8 @@
 
 
 #include "Enemy/Components/EnemyPhaseComponent.h"
+#include "Enemy/Boss/BossCharacter.h"
+#include "Enemy/Boss/Stage3BossCinematics.h"
 #include "AbilitySystemComponent.h"
 #include "LevelSequence.h"
 #include "LevelSequenceActor.h"
@@ -64,6 +66,11 @@ bool UEnemyPhaseComponent::InitializePhases(UAbilitySystemComponent* InASC, UEne
 	}
 
 	return true;
+}
+
+void UEnemyPhaseComponent::SetStageCinematics(AStage3BossCinematics* InCinematics)
+{
+	StageCinematics = InCinematics;
 }
 
 // 첫 페이즈 설정 적용 후 체력 조건 평가 허용
@@ -240,14 +247,19 @@ bool UEnemyPhaseComponent::BeginPendingTransition(int64& OutTransitionId)
 	OutTransitionId = ActiveTransitionId;
 	SequenceTransitionId = ActiveTransitionId;
 	const FBossPhaseDefinition& Phase = Config->Phases[PendingPhaseIndex];
-	if (Config->IsLogOnlyPhase(PendingPhaseIndex) || !Phase.bUseTransitionSequence)
+	AStage3BossCinematics* Cinematics = StageCinematics.Get();
+	const FStage3CinematicPhase* Staging = Cinematics ? Cinematics->FindPhase(Phase.PhaseId) : nullptr;
+	ULevelSequence* Sequence = Staging ? Staging->Sequence.Get() : Phase.TransitionSequence.Get();
+	if (Config->IsLogOnlyPhase(PendingPhaseIndex) || (!Staging && !Phase.bUseTransitionSequence))
 	{
 		FinishTransitionSequence(TEXT("Disabled"));
 		return true;
 	}
+	if (Staging)
+		Cinematics->BeginPhaseCut(Phase.PhaseId, Cast<ABossCharacter>(GetOwner()));
 	// 미지정 연출과 잘못된 길이 또는 제한 시간도 전투 실패 대신 연출만 건너뜀
-	if (!Phase.TransitionSequence || !Phase.TransitionSequence->GetMovieScene()
-		|| Phase.TransitionSequence->GetMovieScene()->GetPlaybackRange().IsEmpty()
+	if (!Sequence || !Sequence->GetMovieScene()
+		|| Sequence->GetMovieScene()->GetPlaybackRange().IsEmpty()
 		|| !FMath::IsFinite(Phase.TransitionTimeout) || Phase.TransitionTimeout <= 0.f)
 	{
 		FinishTransitionSequence(TEXT("Invalid sequence or timeout"));
@@ -257,9 +269,12 @@ bool UEnemyPhaseComponent::BeginPendingTransition(int64& OutTransitionId)
 	Settings.bAutoPlay = false;
 	Settings.LoopCount.Value = 0;
 	Settings.bPauseAtEnd = false;
+	Settings.bDisableMovementInput = Staging != nullptr;
+	Settings.bDisableLookAtInput = Staging != nullptr;
+	Settings.bHideHud = Staging != nullptr;
 	Settings.FinishCompletionStateOverride = EMovieSceneCompletionModeOverride::ForceRestoreState;
 	ALevelSequenceActor* SequenceActor = nullptr;
-	TransitionSequencePlayer = ULevelSequencePlayer::CreateLevelSequencePlayer(this, Phase.TransitionSequence, Settings, SequenceActor);
+	TransitionSequencePlayer = ULevelSequencePlayer::CreateLevelSequencePlayer(this, Sequence, Settings, SequenceActor);
 	TransitionSequenceActor = SequenceActor;
 	if (!IsValid(TransitionSequencePlayer) || !IsValid(TransitionSequenceActor))
 	{
@@ -267,7 +282,9 @@ bool UEnemyPhaseComponent::BeginPendingTransition(int64& OutTransitionId)
 		return true;
 	}
 	// 동적으로 생성한 보스는 시퀀스 바인딩 태그 Boss로 연결; 카메라만 사용하는 연출은 태그 생략 가능
-	if (!Phase.TransitionSequence->FindBindingsByTag(TEXT("Boss")).IsEmpty())
+	if (Staging)
+		Cinematics->BindSequence(Sequence, SequenceActor, Cast<ABossCharacter>(GetOwner()));
+	else if (!Sequence->FindBindingsByTag(TEXT("Boss")).IsEmpty())
 		TransitionSequenceActor->SetBindingByTag(TEXT("Boss"), {GetOwner()}, false);
 	TransitionSequencePlayer->OnFinished.AddDynamic(this, &UEnemyPhaseComponent::HandleTransitionSequenceFinished);
 	TransitionSequencePlayer->OnStop.AddDynamic(this, &UEnemyPhaseComponent::HandleTransitionSequenceStopped);
@@ -285,8 +302,16 @@ bool UEnemyPhaseComponent::BeginPendingTransition(int64& OutTransitionId)
 // 현재 전환 번호와 일치하는 결과만 반환
 EEnemyPatternResult UEnemyPhaseComponent::GetTransitionResult(int64 TransitionId) const
 {
-	return IsTransitioning() && TransitionId != 0 && TransitionId == ActiveTransitionId
-		? TransitionResult : EEnemyPatternResult::Invalid;
+	if (!IsTransitioning() || TransitionId == 0 || TransitionId != ActiveTransitionId)
+		return EEnemyPatternResult::Invalid;
+	if (TransitionResult == EEnemyPatternResult::Completed && Config->Phases.IsValidIndex(PendingPhaseIndex))
+	{
+		const FName Phase = Config->Phases[PendingPhaseIndex].PhaseId;
+		if (const AStage3BossCinematics* Cinematics = StageCinematics.Get();
+			Cinematics && Cinematics->FindPhase(Phase) && !Cinematics->HasEnteredArena(Phase))
+			return EEnemyPatternResult::Running;
+	}
+	return TransitionResult;
 }
 
 // 정상 종료 시 다음 페이즈 적용 허용
@@ -310,7 +335,8 @@ void UEnemyPhaseComponent::HandleTransitionTimeout()
 // 요청 번호가 일치하는 재생만 취소하고 다음 페이즈로 진행
 bool UEnemyPhaseComponent::CancelTransitionSequence(int64 TransitionId)
 {
-	if (!GetOwner()->HasAuthority() || GetTransitionResult(TransitionId) != EEnemyPatternResult::Running)
+	if (!GetOwner()->HasAuthority() || TransitionResult != EEnemyPatternResult::Running
+		|| GetTransitionResult(TransitionId) != EEnemyPatternResult::Running)
 	{
 		return false;
 	}
@@ -327,6 +353,8 @@ void UEnemyPhaseComponent::FinishTransitionSequence(const TCHAR* Reason)
 	UE_LOG(LogTemp, Log, TEXT("[BossPhase][TransitionSequence] %s: %s"),
 		*Config->Phases[PendingPhaseIndex].PhaseId.ToString(), Reason);
 	CleanupTransitionSequence();
+	if (AStage3BossCinematics* Cinematics = StageCinematics.Get())
+		Cinematics->FinishPhaseCut(Config->Phases[PendingPhaseIndex].PhaseId, Cast<ABossCharacter>(GetOwner()));
 }
 
 // 구독 해제 및 소유 참조 초기화 후 Stop과 상태 복원; 전투 초기화는 완료 통지를 발생시키지 않음
@@ -346,12 +374,17 @@ void UEnemyPhaseComponent::CleanupTransitionSequence()
 	{
 		Player->OnFinished.RemoveDynamic(this, &UEnemyPhaseComponent::HandleTransitionSequenceFinished);
 		Player->OnStop.RemoveDynamic(this, &UEnemyPhaseComponent::HandleTransitionSequenceStopped);
-		Player->Stop();
-		Player->RestoreState();
+		if (Player->IsPlaying() || Player->IsPaused())
+			Player->Stop();
 	}
 	if (IsValid(Actor))
 	{
-		Actor->Destroy();
+		TWeakObjectPtr<ALevelSequenceActor> WeakActor = Actor;
+		GetWorld()->GetTimerManager().SetTimerForNextTick([WeakActor]
+		{
+			if (WeakActor.IsValid())
+				WeakActor->Destroy();
+		});
 	}
 }
 
@@ -477,6 +510,8 @@ bool UEnemyPhaseComponent::CompleteTransition(int64 TransitionId)
 	}
 	RunState = EBossPhaseRunState::Active;
 	ActiveTransitionId = 0;
+	if (AStage3BossCinematics* Cinematics = StageCinematics.Get())
+		Cinematics->ActivatePhase(GetCurrentPhaseId(), Cast<ABossCharacter>(GetOwner()));
 	if (bPendingGimmickCompletion)
 	{
 		RequestNextPhase();
