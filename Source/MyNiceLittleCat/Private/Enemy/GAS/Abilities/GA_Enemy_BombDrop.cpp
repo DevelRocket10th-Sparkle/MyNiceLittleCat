@@ -17,7 +17,7 @@ namespace
 	// 보스가 죽거나 사라지거나 플레이어가 죽으면 스폰된 액터를 제거하는 감시 타이머 (어빌리티 인스턴스 수명과 무관)
 	// 보스 사망 시 패턴 컴포넌트가 GA를 회수해서 GA 쪽 바인딩만으로는 정리가 안 됨
 	template <typename TSpawned, typename TKillFunc>
-	void WatchSpawnOwner(UWorld* World, TSpawned* Spawned, AEnemyCharacter* Boss, TKillFunc KillFunc)
+	void WatchBombOwner(UWorld* World, TSpawned* Spawned, AEnemyCharacter* Boss, TKillFunc KillFunc)
 	{
 		if (!World || !IsValid(Spawned)) return;
 
@@ -207,7 +207,7 @@ void UGA_Enemy_BombDrop::DropNext()
 			}
 			Bomb->LaunchCharacter(FVector(0.f, 0.f, -Settings->DropSpeed), true, true);
 			AliveBombs.Add(Bomb);
-			WatchSpawnOwner(GetWorld(), Bomb, Enemy.Get(), [](ABombEnemy* B)
+			WatchBombOwner(GetWorld(), Bomb, Enemy.Get(), [](ABombEnemy* B)
 			{
 				UE_LOG(LogTemp, Log, TEXT("[BombDrop] Boss gone or player dead -> destroying %s"), *GetNameSafe(B));
 				B->Destroy();

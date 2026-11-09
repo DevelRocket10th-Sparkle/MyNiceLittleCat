@@ -20,7 +20,7 @@ namespace
 	// 보스가 죽거나 사라지거나 플레이어가 죽으면 스폰된 액터를 제거하는 감시 타이머 (어빌리티 인스턴스 수명과 무관)
 	// 보스 사망 시 패턴 컴포넌트가 GA를 회수해서 GA 쪽 바인딩만으로는 정리가 안 됨
 	template <typename TSpawned, typename TKillFunc>
-	void WatchSpawnOwner(UWorld* World, TSpawned* Spawned, AEnemyCharacter* Boss, TKillFunc KillFunc)
+	void WatchTurretOwner(UWorld* World, TSpawned* Spawned, AEnemyCharacter* Boss, TKillFunc KillFunc)
 	{
 		if (!World || !IsValid(Spawned)) return;
 
@@ -155,7 +155,7 @@ void UGA_Enemy_TurretRain::DropNext()
 			// 보스 사망·제거, 플레이어 사망 시 정리 (FX 설정은 데이터 에셋이라 GA가 사라져도 유효)
 			TWeakObjectPtr<UTurretRainPatternSettings> WeakFX(Settings);
 			TWeakObjectPtr<UGA_Enemy_TurretRain> WeakThis(this);
-			WatchSpawnOwner(GetWorld(), Turret, Enemy.Get(), [WeakFX, WeakThis](ATurret* T)
+			WatchTurretOwner(GetWorld(), Turret, Enemy.Get(), [WeakFX, WeakThis](ATurret* T)
 			{
 				UE_LOG(LogTemp, Log, TEXT("[TurretRain] Boss gone or player dead -> destroying %s"), *GetNameSafe(T));
 				if (WeakThis.IsValid() && WeakThis->GetWorld()) WeakThis->DestroyWithFX(T);
