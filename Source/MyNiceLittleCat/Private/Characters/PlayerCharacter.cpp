@@ -469,6 +469,7 @@ void APlayerCharacter::SwitchTarget(const FInputActionValue& Value)
 void APlayerCharacter::StartDodge()
 {
     if (bIsDead || bIsDodging || !DodgeMontage || !bIsAbleToDodge || bIsDeflected) return;
+    if (GetCharacterMovement()->IsFalling()) return;
     // 내부 쿨다운: 연속 회피를 다 쓴 뒤 잠김
     const float Now = GetWorld()->GetTimeSeconds();
     if (Now < DodgeLockedUntil) return;

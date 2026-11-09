@@ -12,6 +12,39 @@
 
 #include "Gimmicks/Magnetic/MagneticComponent.h"
 
+namespace
+{
+	// 보스가 죽거나 사라지거나 플레이어가 죽으면 스폰된 액터를 제거하는 감시 타이머 (어빌리티 인스턴스 수명과 무관)
+	// 보스 사망 시 패턴 컴포넌트가 GA를 회수해서 GA 쪽 바인딩만으로는 정리가 안 됨
+	template <typename TSpawned, typename TKillFunc>
+	void WatchSpawnOwner(UWorld* World, TSpawned* Spawned, AEnemyCharacter* Boss, TKillFunc KillFunc)
+	{
+		if (!World || !IsValid(Spawned)) return;
+
+		TSharedRef<FTimerHandle> Handle = MakeShared<FTimerHandle>();
+		TWeakObjectPtr<UWorld> WeakWorld(World);
+		TWeakObjectPtr<TSpawned> WeakSpawned(Spawned);
+		TWeakObjectPtr<AEnemyCharacter> WeakBoss(Boss);
+
+		World->GetTimerManager().SetTimer(*Handle, FTimerDelegate::CreateLambda([WeakWorld, WeakSpawned, WeakBoss, Handle, KillFunc]()
+		{
+			UWorld* W = WeakWorld.Get();
+			if (!W || W->bIsTearingDown) return;
+
+			const APlayerCharacter* Player = Cast<APlayerCharacter>(UGameplayStatics::GetPlayerCharacter(W, 0));
+			const bool bBossGone = !WeakBoss.IsValid() || !WeakBoss->IsAlive();
+			const bool bPlayerDead = Player && Player->GetbIsDead();
+			if (WeakSpawned.IsValid() && !bBossGone && !bPlayerDead) return;
+
+			W->GetTimerManager().ClearTimer(*Handle);
+			if (TSpawned* Target = WeakSpawned.Get())
+			{
+				KillFunc(Target);
+			}
+		}), 0.1f, true);
+	}
+}
+
 UGA_Enemy_BombDrop::UGA_Enemy_BombDrop()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
@@ -33,6 +66,8 @@ void UGA_Enemy_BombDrop::ActivateAbility(const FGameplayAbilitySpecHandle Handle
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
+
+	BindOwnerCleanup(Enemy.Get());
 
 	Settings = Cast<UBombDropPatternSettings>(Definition.ExecutionSettings);
 	Target = ExecutionTarget;
@@ -62,6 +97,40 @@ void UGA_Enemy_BombDrop::ActivateAbility(const FGameplayAbilitySpecHandle Handle
 	Dropped = 0;
 	GetWorld()->GetTimerManager().SetTimer(CancelCheckTimer, this, &UGA_Enemy_BombDrop::CheckCancel, 0.1f, true);
 	DropNext();
+}
+
+void UGA_Enemy_BombDrop::BindOwnerCleanup(AEnemyCharacter* OwnerEnemy)
+{
+	if (bCleanupBound || !IsValid(OwnerEnemy)) return;
+	OwnerEnemy->OnDeathStarted.AddUObject(this, &UGA_Enemy_BombDrop::HandleOwnerDeathStarted);
+	OwnerEnemy->OnDestroyed.AddUniqueDynamic(this, &UGA_Enemy_BombDrop::HandleOwnerDestroyed);
+	bCleanupBound = true;
+}
+
+void UGA_Enemy_BombDrop::HandleOwnerDeathStarted(AEnemyCharacter* DeadEnemy)
+{
+	KillSpawnedBombs();
+}
+
+void UGA_Enemy_BombDrop::HandleOwnerDestroyed(AActor* DestroyedActor)
+{
+	KillSpawnedBombs();
+}
+
+void UGA_Enemy_BombDrop::KillSpawnedBombs()
+{
+	UWorld* World = GetWorld();
+	if (!World || World->bIsTearingDown) return;
+
+	World->GetTimerManager().ClearTimer(StepTimer);
+	for (const TWeakObjectPtr<ABombEnemy>& Bomb : AliveBombs)
+	{
+		if (Bomb.IsValid())
+		{
+			Bomb->Destroy();
+		}
+	}
+	AliveBombs.Reset();
 }
 
 int32 UGA_Enemy_BombDrop::CountAliveBombs()
@@ -119,6 +188,7 @@ void UGA_Enemy_BombDrop::DropNext()
 		const FRotator Facing(0.f, (Target->GetActorLocation() - Ground).Rotation().Yaw, 0.f);
 
 		FActorSpawnParameters Params;
+		Params.Owner = Enemy.Get();
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
 		if (ABombEnemy* Bomb = GetWorld()->SpawnActor<ABombEnemy>(Settings->BombClass, SpawnLocation, Facing, Params))
@@ -137,6 +207,11 @@ void UGA_Enemy_BombDrop::DropNext()
 			}
 			Bomb->LaunchCharacter(FVector(0.f, 0.f, -Settings->DropSpeed), true, true);
 			AliveBombs.Add(Bomb);
+			WatchSpawnOwner(GetWorld(), Bomb, Enemy.Get(), [](ABombEnemy* B)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[BombDrop] Boss gone or player dead -> destroying %s"), *GetNameSafe(B));
+				B->Destroy();
+			});
 
 			if (Settings->SpawnEffect)
 			{
