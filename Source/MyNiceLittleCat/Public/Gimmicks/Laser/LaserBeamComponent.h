@@ -14,7 +14,8 @@
 /// 빔 시작·끝·맞은 액터는 GetBeamStart/GetBeamEnd/GetHitActor로도 조회할 수 있고, 디버그 라인(bDrawDebugBeam)은 필요할 때만 켭니다.
 /// 반사판(IReflectiveSurfaceInterface)을 만났을 때 레이저 종류 (팀 합의 2026-10-27):
 /// - 반사형 bEnableReflection: 반사판에서 반사되고, 반사된 구간은 ReflectedDamageTypeClass로 피해 → 30% 생성장치 파괴 가능.
-///   스테이지 기믹·함정, 보스 단일 레이저용. bPlanarReflection(기본 true)이면 반사된 구간은 수평으로 진행
+///   스테이지 기믹·함정, 보스 단일 레이저용. bPlanarReflection(기본 true)이면 반사된 구간은 수평으로 진행.
+///   반사된 구간이 보스에 맞으면 보스 반격 피해 (bCounterDamageBossOnReflect, UBossGimmickComponent::TryApplyCounterDamage)
 /// - 파괴형 bBreakReflectors: 반사하지 않고 반사판에 BreakByLaser를 호출해 부숨 (펫 반사판을 방패로 못 쓰게). 보스 격자 레이저용
 /// - 둘 다 꺼짐: 반사판도 일반 물체처럼 빔을 막음. 둘 다 켜지면 반사가 우선
 /// 관통 모드 bPierceNonTargets: 반사판(반사형·파괴형일 때)만 빔을 막고 나머지 액터는 통과하며,
@@ -443,6 +444,11 @@ protected:
 	// bEnableReflection이 켜져 있으면 반사가 우선이라 이 값은 무시됨
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Reflection", meta = (EditCondition = "!bEnableReflection"))
 	bool bBreakReflectors = false;
+
+	// true면 반사된 구간이 보스(UBossGimmickComponent가 붙은 액터)에 맞을 때 보스 반격 피해 (DamageInterval마다).
+	// 피해량·허용 페이즈·배리어 무시는 보스 쪽 설정. DamageTargetClasses·DamagePerHit와 별개
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserBeam|Reflection", meta = (EditCondition = "bEnableReflection"))
+	bool bCounterDamageBossOnReflect = true;
 
 private:
 	FVector FireDirection = FVector::ForwardVector;
