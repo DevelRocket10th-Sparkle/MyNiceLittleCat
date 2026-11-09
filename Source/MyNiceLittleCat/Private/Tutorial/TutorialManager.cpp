@@ -157,6 +157,7 @@ void ATutorialManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	StopWaitPetArrive();
 	StopWaitCondition();
 	StopPetFollowLockTarget();
+	CancelLockOnRespawns();
 	RestorePetForm(); // 변신 도중에 구간이 끝나도 펫이 거대하거나 숨은 채로 남지 않게
 
 	// 튜토리얼에서 막았던 펫 입력 복구 (다음 레벨에서 펫 조작이 안 되는 일 방지)
@@ -247,6 +248,8 @@ void ATutorialManager::StageEnd(ETutorialStage Stage)
 	StopWaitCondition();
 	StopPetFollowLockTarget();
 	RestorePetForm(); // 변신 도중에 구간이 끝나도 펫이 거대하거나 숨은 채로 남지 않게
+	CancelLockOnRespawns();
+	LockOnEnemySlots.Reset();
 	LockOnEnemies.Reset();
 	Actions.Reset();
 	ActionIndex = INDEX_NONE;
@@ -355,19 +358,19 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 
 	// 적은 여러 마리라 FindActorByTag(하나만 찾음) 대신 같은 태그를 전부 모아둠
 	LockOnEnemies.Reset();
+	LockOnEnemySlots.Reset();
+	bLockOnLessonDone = false;
+
 	TArray<AActor*> FoundEnemies;
 	UGameplayStatics::GetAllActorsWithTag(this, TutorialTag::EnemyLockOn, FoundEnemies);
 	for (AActor* Enemy : FoundEnemies)
 	{
+		FTutorialEnemySlot& Slot = LockOnEnemySlots.AddDefaulted_GetRef();
+		Slot.EnemyClass = Enemy->GetClass();
+		Slot.SpawnTransform = Enemy->GetActorTransform();
+
 		LockOnEnemies.Add(Enemy);
-
-		// 쓰러진 적은 3초 뒤 갑자기 사라짐 -> 사라지는 순간 연기 팡 (적 코드는 안 건드리고 여기서 구독)
-		Enemy->OnEndPlay.AddUniqueDynamic(this, &ATutorialManager::HandleLockOnEnemyEndPlay);
-
-		// 쓰러지는 순간부터 몸에서 연기 -> 래그돌로 굴러다니는 3초도 연출이 됨
-		// (OnDeathStarted 는 다이내믹 델리게이트가 아니라서 AddUObject)
-		if (AEnemyCharacter* EnemyChar = Cast<AEnemyCharacter>(Enemy))
-			EnemyChar->OnDeathStarted.AddUObject(this, &ATutorialManager::HandleLockOnEnemyDeathStarted);
+		RegisterLockOnEnemy(Enemy);
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[Tutorial] 락온 구간 적 %d 마리"), LockOnEnemies.Num());
@@ -399,11 +402,37 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(Do([this] { PetSay(INVTEXT("휠 클릭으로 조준!")); }));
 
 	// 3-1) 휠 클릭 안내와 동시에 조작 시작 (카메라는 이미 플레이어 -> 사실상 잠금만 풂)
-	OutActions.Add(Do([this] { EndCinematic(0.f); }));
+	OutActions.Add(Do([this]
+		{
+			EndCinematic(0.f);
+			LockOnHintSayTime = GetWorld()->GetTimeSeconds(); // 방금 안내했으니 여기서부터 시간 잼
+		}));
 
-	// 4) 락온하면 -> 바로 공격이 아니라 "대상 바꾸기"부터 한 번 해 보게 함
+	// 4) 락온할 때까지 기다림 (반드시 해야 함)
+	// 그 전에 적을 잡아도 펫이 다시 불러내서 "락온 없이 통과"가 안 됨
+	OutActions.Add(WaitUntil([this]
+		{
+			if (true == IsPlayerLockedOn()) return true;
+
+			// 오래 안 하면 다시 알려줌
+			const float Now = GetWorld()->GetTimeSeconds();
+			if (Now - LockOnHintSayTime >= LockOnHintRepeatTime)
+			{
+				LockOnHintSayTime = Now;
+
+				// 펫이 가리키던 적이 쓰러졌으면 살아있는 적 옆으로 옮겨 감 (시체 옆에서 안내하지 않게)
+				if (false == IsEnemyAlive(PetFollowedTarget.Get()))
+				{
+					if (AActor* Hint = FindLockOnHintTarget())
+						PetWalkToEnemy(Hint);
+				}
+				PetSay(INVTEXT("휠 클릭으로 조준해 봐!"));
+			}
+			return false;
+		}));
+
+	// 4) 락온 성공 -> 이제 "대상 바꾸기" 안내
 	// 이때부터 펫이 락온 대상을 따라다님 -> 스크롤로 바꾸면 펫이 새 대상으로 가서 "바뀐 게" 눈에 보임
-	OutActions.Add(WaitUntil([this] { return IsPlayerLockedOn(); }));
 	OutActions.Add(Do([this]
 		{
 			ULockOnComponent* LockOn = GetPlayerLockOn();
@@ -412,14 +441,32 @@ void ATutorialManager::BuildLockOnActions(TArray<FTutorialAction>& OutActions)
 
 			StartPetFollowLockTarget();
 			PetSay(INVTEXT("휠을 굴리면 대상이 바껴!"));
+			LockOnHintSayTime = GetWorld()->GetTimeSeconds();
 		}));
 
-	// 4-1) 다른 적으로 바꿀 때까지 기다림 (적이 1마리만 남으면 그냥 통과)
-	OutActions.Add(WaitUntil([this] { return HasPlayerSwitchedLockTarget(); }));
+	// 4-1) 다른 적으로 바꿀 때까지 기다림 (반드시 해야 함)
+	OutActions.Add(WaitUntil([this]
+		{
+			if (true == HasPlayerSwitchedLockTarget()) return true;
+
+			const float Now = GetWorld()->GetTimeSeconds();
+			if (Now - LockOnHintSayTime >= LockOnHintRepeatTime)
+			{
+				LockOnHintSayTime = Now;
+				// 락온을 풀어 버렸으면 다시 잡으라고, 잡고 있으면 굴리라고
+				PetSay(true == IsPlayerLockedOn() ? INVTEXT("휠을 굴려 봐!") : INVTEXT("휠 클릭으로 다시 조준해!"));
+			}
+			return false;
+		}));
 	OutActions.Add(WaitSeconds(0.5f)); // 펫이 새 대상 쪽으로 움직이는 걸 볼 틈
 
-	// 4-2) 바꾸기 성공 -> 이제 공격 안내 (펫 따라가기는 이미 켜져 있음)
-	OutActions.Add(Do([this] { PetSay(INVTEXT("좋아, 공격해!")); }));
+	// 4-2) 다 배움 -> 더는 다시 불러내지 않음 + 이제 공격 안내
+	OutActions.Add(Do([this]
+		{
+			bLockOnLessonDone = true;
+			CancelLockOnRespawns(); // 기다리던 다시 불러내기도 취소 (남은 적만 잡으면 끝)
+			PetSay(INVTEXT("좋아, 공격해!"));
+		}));
 
 	// 5) 전부 처치하면 입력을 잠그고, 펫이 그 자리에서 플레이어를 돌아보고 칭찬
 	OutActions.Add(WaitUntil([this] { return AreLockOnEnemiesDead(); }));
@@ -1194,7 +1241,10 @@ bool ATutorialManager::HasPlayerSwitchedLockTarget()
 		if (true == IsEnemyAlive(Enemy.Get())) ++AliveCount;
 	}
 	
-	if (AliveCount <= 1) return true;
+	// 배치 실수로 적이 2마리 미만이면 바꿀 대상이 영원히 없음 -> 막히지 않게 통과
+	// (살아있는 수로 판단하지 않음: 적을 빨리 잡아서 바꾸기를 건너뛰는 걸 막기 위해.
+	//  쓰러진 적은 RespawnLockOnEnemy 가 다시 불러내니 조금 기다리면 됨)
+	if (LockOnEnemySlots.Num() < 2) return true;
 
 	ULockOnComponent* LockOn = GetPlayerLockOn();
 	AActor* Target = (nullptr != LockOn) ? LockOn->GetLockedTarget() : nullptr;
@@ -1303,6 +1353,62 @@ void ATutorialManager::StopPetFollowLockTarget()
 {
 	GetWorldTimerManager().ClearTimer(PetFollowTimerHandle);
 	PetFollowedTarget.Reset();
+}
+
+void ATutorialManager::RegisterLockOnEnemy(AActor* _Enemy)
+{
+	if (nullptr == _Enemy) return;
+
+	// 쓰러진 적은 3초 뒤 갑자기 사라짐 -> 사라지는 순간 연기 팡 + (배우기 전이면) 다시 불러내기 예약
+	_Enemy->OnEndPlay.AddUniqueDynamic(this, &ATutorialManager::HandleLockOnEnemyEndPlay);
+
+	// 쓰러지는 순간부터 몸에서 연기 (OnDeathStarted 는 다이내믹 델리게이트가 아니라서 AddUObject)
+	if (AEnemyCharacter* EnemyChar = Cast<AEnemyCharacter>(_Enemy))
+		EnemyChar->OnDeathStarted.AddUObject(this, &ATutorialManager::HandleLockOnEnemyDeathStarted);
+}
+
+void ATutorialManager::RespawnLockOnEnemy(int32 _SlotIdx)
+{
+	// 기다리는 사이 구간이 바뀌었거나 다 배웠으면 안 함
+	if (ETutorialStage::LockOn != CurrentStage || true == bLockOnLessonDone) return;
+	if (false == LockOnEnemySlots.IsValidIndex(_SlotIdx) || false == LockOnEnemies.IsValidIndex(_SlotIdx)) return;
+
+	const FTutorialEnemySlot& Slot = LockOnEnemySlots[_SlotIdx];
+	if (nullptr == Slot.EnemyClass) return;
+
+	// 자리에 플레이어가 서 있어도 옆으로 비켜서 반드시 나타나게
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	AActor* NewEnemy = GetWorld()->SpawnActor<AActor>(Slot.EnemyClass, Slot.SpawnTransform, Params);
+	if (nullptr == NewEnemy)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Tutorial] RespawnLockOnEnemy: 적 다시 불러내기 실패"));
+		return;
+	}
+
+	// 처음 배치한 적과 똑같이 다룸 (태그 + 목록 같은 자리 + 구독)
+	NewEnemy->Tags.AddUnique(TutorialTag::EnemyLockOn);
+	LockOnEnemies[_SlotIdx] = NewEnemy;
+	RegisterLockOnEnemy(NewEnemy);
+
+	// 적 BP 가 "Placed In World" 면 스폰만으로는 AI 가 안 붙음 -> 직접 붙임 (보스와 같은 방식)
+	if (APawn* EnemyPawn = Cast<APawn>(NewEnemy))
+	{
+		if (nullptr == EnemyPawn->GetController())
+			EnemyPawn->SpawnDefaultController();
+	}
+
+	// 반짝 + 펫이 지금 단계에 맞게 안내
+	PlayFXSetAtGround(EnemyRespawnFX, NewEnemy);
+	PetSay(true == IsPlayerLockedOn() ? INVTEXT("휠을 굴려서 바꿔 봐!") : INVTEXT("조준부터 해 봐!"));
+	LockOnHintSayTime = GetWorld()->GetTimeSeconds(); // 방금 알려줬으니 다시 알려주기 시간 초기화
+}
+
+void ATutorialManager::CancelLockOnRespawns()
+{
+	for (FTutorialEnemySlot& Slot : LockOnEnemySlots)
+		GetWorldTimerManager().ClearTimer(Slot.RespawnTimerHandle);
 }
 
 void ATutorialManager::HandlePlayerRespawned(AController* _Controller, APawn* _NewPawn)
@@ -1710,6 +1816,21 @@ void ATutorialManager::HandleLockOnEnemyEndPlay(AActor* _Actor, EEndPlayReason::
 		Location = Character->GetMesh()->GetComponentLocation();
 
 	PlayFXSetAtLocation(EnemyVanishFX, Location);
+
+	// 배우기 전에 사라졌으면 -> 같은 자리에 다시 불러내기 예약
+	if (ETutorialStage::LockOn != CurrentStage || true == bLockOnLessonDone) return;
+
+	// 사라지는 중인 액터라 일반 Get() 은 nullptr 일 수 있음 -> Get(true) 로 비교
+	const int32 SlotIndex = LockOnEnemies.IndexOfByPredicate([_Actor](const TWeakObjectPtr<AActor>& Enemy)
+		{
+			return Enemy.Get(true) == _Actor;
+		});
+	if (false == LockOnEnemySlots.IsValidIndex(SlotIndex)) return;
+
+	// 시간이 0 이면 SetTimer 가 타이머를 지워 버림 -> 아주 작은 값이라도 넣음
+	const FTimerDelegate Delegate = FTimerDelegate::CreateUObject(this, &ATutorialManager::RespawnLockOnEnemy, SlotIndex);
+	GetWorldTimerManager().SetTimer(LockOnEnemySlots[SlotIndex].RespawnTimerHandle, Delegate,
+		FMath::Max(LockOnRespawnDelay, 0.01f), false);
 }
 
 void ATutorialManager::HandleLockOnEnemyDeathStarted(AEnemyCharacter* _Enemy)

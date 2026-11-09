@@ -62,6 +62,22 @@ struct FTutorialFXSet
     float ShakeScale = 1.f;                      // 흔들림 세기 배율
 };
 
+// 락온 구간 적 한 자리
+// (배우기 전에 쓰러지면 같은 자리에 같은 적을 다시 불러내려고 기억해 둠)
+USTRUCT()
+struct FTutorialEnemySlot
+{
+    GENERATED_BODY()
+
+    UPROPERTY()
+    TSubclassOf<AActor> EnemyClass;   // 처음 배치된 적의 BP 클래스 (UPROPERTY: 적이 다 사라져도 GC 가 클래스를 지우지 않게)
+
+    UPROPERTY()
+    FTransform SpawnTransform;        // 처음 배치된 위치/방향/크기
+
+    FTimerHandle RespawnTimerHandle;  // 다시 불러내기 대기 타이머 (자리마다 따로)
+};
+
 UCLASS()
 class MYNICELITTLECAT_API ATutorialManager : public AActor
 {
@@ -167,6 +183,10 @@ protected:
     void StartPetFollowLockTarget();      // 락온 대상이 바뀌면 펫이 따라가기 시작
     void UpdatePetFollowLockTarget();     // 0.1초마다 락온 대상 확인
     void StopPetFollowLockTarget();       // 따라가기 끝
+
+    void RegisterLockOnEnemy(AActor* _Enemy); // 적 사망/사라짐 구독 (처음 배치한 적, 다시 불러낸 적 둘 다 사용)
+    void RespawnLockOnEnemy(int32 _SlotIdx); // 릭온을 배우기 전에 쓰러진 적을 같은 자리에 다시 불러내요
+    void CancelLockOnRespawns(); // 적 리스폰 예약 타이머 취소
     
     UFUNCTION()
     void HandlePlayerRespawned(AController* _Controller, APawn* _NewPawn); // 리스폰되면 연출 강제 종료
@@ -259,6 +279,15 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Tutorial|LockOn", meta = (ClampMin = "0.0"))
     float PetEnemySideOffset = 150.f;   // 적 옆으로 얼마나 비켜설지 (적 캡슐과 겹치면 늘리기)
 
+    UPROPERTY(EditAnywhere, Category = "Tutorial|LockOn", meta = (ClampMin = "0.0"))
+    float LockOnRespawnDelay = 0.2f;    // 쓰러진 적이 사라진 뒤 다시 나타날 때까지 (초)
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|LockOn", meta = (ClampMin = "1.0"))
+    float LockOnHintRepeatTime = 4.f;  // 락온/대상 바꾸기를 안 하면 몇 초마다 다시 알려줄지
+
+    UPROPERTY(EditAnywhere, Category = "Tutorial|LockOn")
+    FTutorialFXSet EnemyRespawnFX;     // 적이 다시 나타날 때 (1회)
+
     // ===== 전투 구간 =====
     UPROPERTY(EditAnywhere, Category = "Tutorial|Combat")
     TSubclassOf<class AEnemyCharacter> BossClass;  // 등장시킬 보스 (BP_Tutorial_Boss)
@@ -348,6 +377,12 @@ private:
 
     // 락온 구간
     TArray<TWeakObjectPtr<AActor>> LockOnEnemies; // 락온 구간 적 전부 (구간 시작 시 태그로 모음)
+
+    UPROPERTY()
+    TArray<FTutorialEnemySlot> LockOnEnemySlots; // LockOnEnemies 와 같은 순서 (i 번 자리 = i 번 적)
+    bool bLockOnLessonDone = false;              // 락온 + 대상 바꾸기를 다 배웠는지 (true 면 더는 다시 불러내지 않음)
+    float LockOnHintSayTime = 0.f;               // 마지막으로 안내한 시각 (다시 알려주기용)
+
     FTimerHandle PetFollowTimerHandle;            // 락온 대상 따라가기 확인 타이머
     TWeakObjectPtr<AActor> PetFollowedTarget;     // 펫이 지금 옆에 가 있는 적
     TWeakObjectPtr<AActor> SwitchBaseTarget;      // 대상 바꾸기 판정 기준 (이 적과 다른 적을 잡으면 "바꿈")
