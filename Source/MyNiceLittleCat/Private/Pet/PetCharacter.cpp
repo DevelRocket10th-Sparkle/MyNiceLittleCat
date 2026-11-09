@@ -18,6 +18,9 @@
 #include "CollisionQueryParams.h"
 #include "CollisionShape.h"
 #include "ProceduralMeshComponent.h"
+#include "Engine/GameInstance.h"
+#include "Items/InventorySubsystem.h"
+#include "Items/ItemAbilityTags.h"
 
 APetCharacter::APetCharacter()
 {
@@ -79,6 +82,11 @@ void APetCharacter::BeginPlay()
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
 	GrantModeAbilities();
 
+	// 게임 중 능력 아이템을 얻으면 바로 해당 모드 능력 부여
+	if (UGameInstance* GI = GetGameInstance())
+		if (UInventorySubsystem* Inventory = GI->GetSubsystem<UInventorySubsystem>())
+			Inventory->OnAbilityUnlocked.AddUniqueDynamic(this, &APetCharacter::HandleAbilityUnlocked);
+
 	//UE_LOG(LogTemp, Warning,
 	//	TEXT("CarryPoint Parent=%s / Socket=%s / SocketExists=%d"),
 	//	*GetNameSafe(CarryPoint->GetAttachParent()),
@@ -109,6 +117,11 @@ void APetCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(NavigationRecoveryTimer);
 	bNavigationRecoveryPending = false;
+
+	// 서브시스템은 펫보다 오래 살아서 바인딩을 꼭 풀어줌
+	if (UGameInstance* GI = GetGameInstance())
+		if (UInventorySubsystem* Inventory = GI->GetSubsystem<UInventorySubsystem>())
+			Inventory->OnAbilityUnlocked.RemoveDynamic(this, &APetCharacter::HandleAbilityUnlocked);
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -206,6 +219,9 @@ bool APetCharacter::RequestMode(EPetMode _newMode)
 		break;
 	default: return false;
 	}
+
+	// 아직 얻지 못한 모드는 선택 불가
+	if (false == IsModeUnlocked(_newMode)) return false;
 
 	if (_newMode == CurrentMode) return true;
 
@@ -582,24 +598,86 @@ void APetCharacter::CancelNavigationRecovery()
 	}
 }
 
+void APetCharacter::LockMagnetPolarity(EPetMagnetPolarity _polarity)
+{
+	// 실제 극 변경은 자성 능력이 다음 틱에 맞춰줘요
+	// 의도: 자성 모드가 아닐 때 고정돼도, 나중에 자성 모드를 켜는 순간 바로 이 극으로 시작하게
+	bMagnetPolarityLocked = true;
+	LockedMagnetPolarity = _polarity;
+}
+
+void APetCharacter::UnlockMagnetPolarity()
+{
+	bMagnetPolarityLocked = false;
+}
+
+bool APetCharacter::TryGetLockedMagnetPolarity(EPetMagnetPolarity& _outPolarity) const
+{
+	if (false == bMagnetPolarityLocked) return false;
+	_outPolarity = LockedMagnetPolarity;
+	return true;
+}
+
+// 트리거 액터 없이 디테일 패널 버튼으로 극 고정을 테스트하기 위한 함수들
+void APetCharacter::DebugLockPolarityN() { LockMagnetPolarity(EPetMagnetPolarity::N); }
+void APetCharacter::DebugLockPolarityS() { LockMagnetPolarity(EPetMagnetPolarity::S); }
+void APetCharacter::DebugUnlockPolarity() { UnlockMagnetPolarity(); }
+
 void APetCharacter::GrantModeAbilities()
 {
-	if (false == IsValid(AbilitySystemComponent.Get()))
-		return;
-
+	// 해금된 모드만 능력 부여 (잠긴 모드는 해금되는 순간 HandleAbilityUnlocked에서 부여)
 	for (const auto& Entry : ModeAbilities)
 	{
-		const EPetMode Mode = Entry.Key;
-		const TSubclassOf<UGameplayAbility> AbilityClass = Entry.Value;
+		if (true == IsModeUnlocked(Entry.Key))
+			GrantModeAbility(Entry.Key);
+	}
+}
 
-		if (nullptr == AbilityClass || true == ModeAbilityHandles.Contains(Mode))
-			continue;
+bool APetCharacter::GrantModeAbility(EPetMode _mode)
+{
+	if (false == IsValid(AbilitySystemComponent.Get()) || true == ModeAbilityHandles.Contains(_mode))
+		return false;
 
-		const FGameplayAbilitySpec Spec(AbilityClass,1, INDEX_NONE, this);
-		const FGameplayAbilitySpecHandle Handle = AbilitySystemComponent->GiveAbility(Spec);
+	const TSubclassOf<UGameplayAbility>* AbilityClass = ModeAbilities.Find(_mode);
+	if (nullptr == AbilityClass || nullptr == *AbilityClass)
+		return false;
 
-		if (true == Handle.IsValid())
-			ModeAbilityHandles.Add(Mode, Handle);
+	const FGameplayAbilitySpec Spec(*AbilityClass, 1, INDEX_NONE, this);
+	const FGameplayAbilitySpecHandle Handle = AbilitySystemComponent->GiveAbility(Spec);
+	if (false == Handle.IsValid())
+		return false;
+
+	ModeAbilityHandles.Add(_mode, Handle);
+	return true;
+}
+
+FGameplayTag APetCharacter::GetUnlockTag(EPetMode _mode)
+{
+	switch (_mode)
+	{
+	case EPetMode::Magnet:  return ItemAbilityTags::Ability_Pet_Magnet;
+	case EPetMode::Reflect: return ItemAbilityTags::Ability_Pet_Reflect;
+	default:                return FGameplayTag(); // Basic: 해금 필요 없음
+	}
+}
+
+bool APetCharacter::IsModeUnlocked(EPetMode _mode) const
+{
+	const FGameplayTag Tag = GetUnlockTag(_mode);
+	if (false == Tag.IsValid()) return true; // 해금 태그가 없는 모드는 항상 열림
+
+	const UGameInstance* GI = GetGameInstance();
+	const UInventorySubsystem* Inventory = GI ? GI->GetSubsystem<UInventorySubsystem>() : nullptr;
+	return (nullptr != Inventory) && Inventory->HasAbility(Tag);
+}
+
+void APetCharacter::HandleAbilityUnlocked(FGameplayTag _abilityTag, UItemData* _item)
+{
+	// 해금된 태그에 해당하는 모드를 찾아 지금 바로 능력 부여
+	for (const auto& Entry : ModeAbilities)
+	{
+		if (true == GetUnlockTag(Entry.Key).MatchesTagExact(_abilityTag) && true == GrantModeAbility(Entry.Key))
+			OnPetModeUnlocked.Broadcast(Entry.Key);
 	}
 }
 
