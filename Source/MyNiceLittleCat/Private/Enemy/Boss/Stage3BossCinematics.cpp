@@ -25,6 +25,7 @@
 namespace
 {
 	const FName ArrivalSeen(TEXT("Stage3.MansionArrivalSeen"));
+	constexpr float ArrivalTriggerRadius = 1200.f;
 	const FName PhaseOne(TEXT("CombatPhase1"));
 	const FName Barrier70(TEXT("Barrier70"));
 	const FName Barrier30(TEXT("Barrier30"));
@@ -124,9 +125,12 @@ void AStage3BossCinematics::Tick(float DeltaSeconds)
 	if (Opening == EOpening::Initial && !OpeningPlayer)
 	{
 		UGameProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UGameProgressSubsystem>();
-		if (Progress && Progress->HasProgressFlag(ArrivalSeen))
+		const AActor* ArrivalAnchor = IsValid(GateLock) ? GateLock.Get()
+			: (Doors.IsValidIndex(0) ? Doors[0].Actor.Get() : nullptr);
+		if (!ArrivalSequence || (Progress && Progress->HasProgressFlag(ArrivalSeen)))
 			FinishOpeningCut();
-		else
+		else if (IsValid(ArrivalAnchor) && FVector::DistSquared(Player->GetActorLocation(), ArrivalAnchor->GetActorLocation())
+			<= FMath::Square(ArrivalTriggerRadius))
 			Play(ArrivalSequence);
 	}
 
