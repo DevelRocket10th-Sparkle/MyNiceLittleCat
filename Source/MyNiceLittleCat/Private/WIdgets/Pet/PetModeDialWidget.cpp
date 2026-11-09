@@ -1,11 +1,37 @@
 #include "Widgets/Pet/PetModeDialWidget.h"
 #include "Pet/Data/PetModeDialData.h"
 
+#include "Engine/Texture2D.h"
 #include "Framework/Application/SlateApplication.h"
-#include "Rendering/DrawElementTypes.h"
+#include "Rendering/DrawElements.h"
 #include "Rendering/SlateRenderer.h"
 #include "Styling/CoreStyle.h"
 #include "Fonts/FontMeasure.h"
+
+#include "Widgets/Pet/PetUIDraw.h"
+
+// 도형 그리기 도우미(FDialMesh 등)는 모드 배지와 같이 쓰려고 PetUIDraw.h로 옮겼어요
+using namespace PetUIDraw;
+
+void UPetModeDialWidget::NativeConstruct()
+{
+    Super::NativeConstruct();
+    RebuildIconBrushes();
+}
+
+void UPetModeDialWidget::RebuildIconBrushes()
+{
+    IconBrushes.Reset();
+    if (false == IsValid(DialData.Get())) return;
+
+    // Entries와 같은 순서로 만들어서 인덱스로 바로 꺼내 쓸 수 있게 해요
+    for (const FPetModeDialEntry& Entry : DialData->Entries)
+    {
+        FSlateBrush& Brush = IconBrushes.AddDefaulted_GetRef();
+        if (IsValid(Entry.Icon.Get()))
+            Brush.SetResourceObject(Entry.Icon.Get());
+    }
+}
 
 void UPetModeDialWidget::UpdateSelectionFromOffset(const FVector2D& _pointerOffset)
 {
@@ -18,12 +44,9 @@ void UPetModeDialWidget::UpdateSelectionFromOffset(const FVector2D& _pointerOffs
 	const int32 EntrySize = DialData->Entries.Num();
 	if (0 == EntrySize) return;
 
-	// 마우스가 중앙 영역 안인지 계산
+	// 중앙(유지) 영역에서는 모드 선택을 안 해요
 	const float DeadZoneRadius = FMath::Max(0.f, DialData->DeadZoneRadius);
 	if (FMath::Square(DeadZoneRadius) >= _pointerOffset.SizeSquared()) return;
-
-	// 중앙에서는 모드 선택을 안 하기 위함
-	if (_pointerOffset.SizeSquared() <= FMath::Square(DeadZoneRadius)) return;
 
 	// 마우스 방향을 각도로 변경하는 과정
 	// Atan2를 이용해 마우스 방향의 각도를 구해요
@@ -38,13 +61,28 @@ void UPetModeDialWidget::UpdateSelectionFromOffset(const FVector2D& _pointerOffs
 	// 첫 항목의 중심이 위쪽을 향하도록 반 구역만큼 보정 (좀 왼쪽으로 돌려주는 것...)
 	const double AdjustedAngle = FMath::Fmod(AngleDegrees + SectorAngle * 0.5, 360.0);
 
-	SelectedIndex = FMath::FloorToInt(AdjustedAngle / SectorAngle) % EntrySize;
+	const int32 Index = FMath::FloorToInt(AdjustedAngle / SectorAngle) % EntrySize;
+
+	// 잠긴 칸은 선택 안 됨 → 그 위에서 놓아도 "유지"와 같은 처리
+	SelectedIndex = LockedModes.Contains(DialData->Entries[Index].Mode) ? INDEX_NONE : Index;
 }
 
 void UPetModeDialWidget::ResetSelection()
 {
 	SelectedIndex = INDEX_NONE;
     InvalidateLayoutAndVolatility();  // 렌더링 다시 진행
+}
+
+void UPetModeDialWidget::SetCurrentMode(EPetMode _mode)
+{
+    CurrentMode = _mode;
+    InvalidateLayoutAndVolatility();  // 체크 배지 위치가 바뀌니까 다시 그려요
+}
+
+void UPetModeDialWidget::SetLockedModes(const TSet<EPetMode>& _lockedModes)
+{
+    LockedModes = _lockedModes;
+    InvalidateLayoutAndVolatility();  // 잠긴 칸 색이 바뀌니까 다시 그려요
 }
 
 bool UPetModeDialWidget::TryGetSelectedMode(EPetMode& _outMode) const
@@ -60,131 +98,190 @@ bool UPetModeDialWidget::TryGetSelectedMode(EPetMode& _outMode) const
 
 float UPetModeDialWidget::GetDialDiameter() const
 {
-    return (true == IsValid(DialData.Get())) ? FMath::Max(1.f, DialData->Diameter) : 280.f; //! 280은 그냥 기본값
+    return (true == IsValid(DialData.Get())) ? FMath::Max(1.f, DialData->Diameter) : 300.f; //! 300은 그냥 기본값
 }
 
-int32 UPetModeDialWidget::NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, 
+int32 UPetModeDialWidget::NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect,
     FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
-    // BaseLayer : 기존 위젯
-    // BaseLayer + 1 : 부채꼴 패널
-    // BaseLayer + 2 : 글자
+    // BaseLayer     : 기존 위젯
+    // BaseLayer + 1 : 크림색 고리
+    // BaseLayer + 2 : 선택 안 된 칸들
+    // BaseLayer + 3 : 선택된 칸 그림자
+    // BaseLayer + 4 : 선택된 칸 (갈색 테두리 + 진한 색)
+    // BaseLayer + 5 : 젤리 발바닥, 체크 배지
+    // BaseLayer + 6 : 아이콘, 글자
     const int32 BaseLayer = Super::NativePaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 
     if (false == IsValid(DialData.Get()) || true == DialData->Entries.IsEmpty())
         return BaseLayer;
 
+    const UPetModeDialData& Data = *DialData;
+
     const FVector2D Size = AllottedGeometry.GetLocalSize();
-    const FVector2D Center = Size * 0.5; // 중심
+    const FVector2f Center(Size * 0.5); // 중심
 
-    // 도넛의 반지름들 구하기
-    const float Diameter = FMath::Min(DialData->Diameter, static_cast<float>(FMath::Min(Size.X, Size.Y)));
-    const float OuterRadius = Diameter * 0.5f;
-    if (0.f >= OuterRadius) return BaseLayer;
-    const float InnerRadius = FMath::Clamp(DialData->DeadZoneRadius, 0.f, OuterRadius); // 안쪽 구녕
+    // ===== 반지름 계산 =====
+    // 위젯 크기 안에 "튀어나온 칸 + 그림자"까지 들어가도록 평소 칸 크기를 잡아요
+    const float MaxRadius = FMath::Min(Data.Diameter, static_cast<float>(FMath::Min(Size.X, Size.Y))) * 0.5f;
+    const float SectorOuter = MaxRadius - Data.SelectedPopOut - Data.ShadowOffset;
+    const float SectorInner = Data.DeadZoneRadius + Data.OutlineThickness; // 가운데 영역과 살짝 띄워요
+    if (SectorOuter <= SectorInner) return BaseLayer;
 
-    const int32 EntrySize = DialData->Entries.Num();
-    const float SectorAngle = 360.f / EntrySize; // 부채꼴 각도
+    const float RingRadius = SectorOuter + Data.RingPadding;
 
-    // 부채꼴 사이에 있는 작은 간격을 위한
-    const float GapAngle = FMath::Min(2.f, SectorAngle * 0.1f);
+    // 위젯 투명도(페이드 인/아웃 등)를 모든 색에 반영해요
+    const FLinearColor WidgetTint = InWidgetStyle.GetColorAndOpacityTint();
+    const auto ToVertexColor = [&](const FLinearColor& Color) { return (Color * WidgetTint).ToFColor(true); };
 
-    // 모드 이름을 적을 텍스트 관련 세팅
-    const FSlateFontInfo Font = FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), 16);
-    const auto FontMeasure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
-    const FLinearColor TextColor(0.12f, 0.16f, 0.15f, 1.f);
+    const FColor OutlineColor = ToVertexColor(Data.OutlineColor);
+    const FColor HighlightColor = ToVertexColor(Data.HighlightContentColor);
 
-    // 해당 위치에 글자를 그려요
-    const auto DrawLabel = [&](const FText& Text, const FVector2D& Position)
+    FDialMesh RingMesh(AllottedGeometry);
+    FDialMesh ShadowMesh(AllottedGeometry);
+    FDialMesh SectorMesh(AllottedGeometry);
+    FDialMesh SelectedMesh(AllottedGeometry);
+    FDialMesh DecoMesh(AllottedGeometry);
+
+    // ===== 1. 크림색 고리 (갈색 원 위에 크림색 원을 올려 외곽선처럼 보이게) =====
+    RingMesh.AddEllipse(Center, RingRadius + Data.OutlineThickness, RingRadius + Data.OutlineThickness, OutlineColor);
+    RingMesh.AddEllipse(Center, RingRadius, RingRadius, ToVertexColor(Data.RingColor));
+
+    // ===== 글자 세팅 =====
+    const FSlateFontInfo Font = FCoreStyle::GetDefaultFontStyle(TEXT("Bold"), Data.LabelFontSize);
+    const TSharedRef<FSlateFontMeasure> FontMeasure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+
+    // 인자로 들어온 위치(글자의 중심)에 글자를 그려요
+    const auto DrawLabel = [&](const FText& Text, const FVector2D& Position, const FLinearColor& Color, float Scale)
     {
-        const FVector2D TextSize = FontMeasure->Measure(Text, Font); // <- 글자의 실제 크기 측정
+        FSlateFontInfo ScaledFont = Font;
+        ScaledFont.Size = FMath::RoundToFloat(Font.Size * Scale);
+
+        const FVector2D TextSize = FontMeasure->Measure(Text, ScaledFont); // <- 글자의 실제 크기 측정
         FSlateDrawElement::MakeText(
-            OutDrawElements, BaseLayer + 2,
-            AllottedGeometry.ToPaintGeometry(TextSize, FSlateLayoutTransform(Position - TextSize * 0.5)), // <- 인자로 들어온 포지션이 글자의 중간
-            Text, Font, ESlateDrawEffect::None, TextColor * InWidgetStyle.GetColorAndOpacityTint());
+            OutDrawElements, BaseLayer + 6,
+            AllottedGeometry.ToPaintGeometry(TextSize, FSlateLayoutTransform(Position - TextSize * 0.5)),
+            Text, ScaledFont, ESlateDrawEffect::None, Color * WidgetTint);
     };
+
+    // ===== 2. 칸들 =====
+    const int32 EntrySize = Data.Entries.Num();
+    const float SectorAngle = 360.f / EntrySize; // 부채꼴 각도
+    const float HalfGap = FMath::Min(Data.SectorGapDegrees, SectorAngle * 0.3f) * 0.5f;
 
     for (int32 Index = 0; Index < EntrySize; ++Index)
     {
-        const FPetModeDialEntry& Entry = DialData->Entries[Index];
+        const FPetModeDialEntry& Entry = Data.Entries[Index];
         const bool bSelected = (SelectedIndex == Index);
-
-        FLinearColor PanelColor = Entry.Tint; // 데이터에 든 색상 적용
-        PanelColor.A *= FMath::Clamp(bSelected ? DialData->SelectedPanelOpacity : DialData->PanelOpacity, 0.f, 1.f);
-        PanelColor *= InWidgetStyle.GetColorAndOpacityTint();
+        const bool bCurrent = (CurrentMode == Entry.Mode);
+        const bool bLocked = LockedModes.Contains(Entry.Mode); // 아직 해금 안 된 칸? (선택될 일 없음)
 
         const float MiddleAngle = Index * SectorAngle;
+        const float StartAngle = MiddleAngle - SectorAngle * 0.5f + HalfGap;
+        const float EndAngle = MiddleAngle + SectorAngle * 0.5f - HalfGap;
 
-        // 모드 부채꼴을 그려요
-        DrawDialSector(OutDrawElements, BaseLayer + 1, AllottedGeometry, Center, InnerRadius, OuterRadius,
-            MiddleAngle - SectorAngle * 0.5f + GapAngle * 0.5f, MiddleAngle + SectorAngle * 0.5f - GapAngle * 0.5f, PanelColor);
+        // 선택된 칸은 바깥으로 튀어나와요
+        const float Outer = bSelected ? SectorOuter + Data.SelectedPopOut : SectorOuter;
 
-        // 부채꼴 가운데에 모드의 이름을 그릴거예요
-        const float Radians = FMath::DegreesToRadians(MiddleAngle);
-        const float LabelRadius = (InnerRadius + OuterRadius) * 0.5f;
+        if (true == bSelected)
+        {
+            // 칸을 모든 방향으로 OutlineThickness만큼 키운 모양 (갈색 테두리용)
+            // 각도는 (안쪽 반지름 + 모서리) 기준으로 넓혀야 둥근 모서리 중심이 원래 칸과 같아져요
+            const float Border = Data.OutlineThickness;
+            const float BorderAngle = FMath::RadiansToDegrees(Border / (SectorInner + Data.CornerRadius));
+            const float BorderInner = SectorInner - Border;
+            const float BorderOuter = Outer + Border;
+            const float BorderStart = StartAngle - BorderAngle;
+            const float BorderEnd = EndAngle + BorderAngle;
+            const float BorderCorner = Data.CornerRadius + Border;
 
-        const FVector2D LabelPosition = Center + FVector2D(-FMath::Sin(Radians), -FMath::Cos(Radians)) * LabelRadius;
+            // 갈색 그림자를 살짝 아래로 깔아서 떠 보이게 해요
+            // 테두리와 같은 색이라 아래쪽 테두리만 두꺼워 보일 수 있어서, ShadowOffset이 0이면 그리지 않아요
+            if (Data.ShadowOffset > 0.f)
+            {
+                ShadowMesh.AddRoundedSector(Center + FVector2f(0.f, Data.ShadowOffset), BorderInner, BorderOuter,
+                    BorderStart, BorderEnd, BorderCorner, OutlineColor);
+            }
 
-        DrawLabel(Entry.DisplayName, LabelPosition);
+            // 갈색 테두리 → 그 위에 진한 모드 색 (옆 칸보다 위 레이어라 테두리가 가려지지 않아요)
+            SelectedMesh.AddRoundedSector(Center, BorderInner, BorderOuter, BorderStart, BorderEnd, BorderCorner, OutlineColor);
+            SelectedMesh.AddRoundedSector(Center, SectorInner, Outer, StartAngle, EndAngle, Data.CornerRadius, ToVertexColor(Entry.Tint));
+        }
+        else
+        {
+            SectorMesh.AddRoundedSector(Center, SectorInner, Outer, StartAngle, EndAngle, Data.CornerRadius,
+                ToVertexColor(bLocked ? Data.LockedColor : Entry.IdleColor)); // 잠긴 칸은 회색
+        }
+
+        // 현재 모드 칸 바깥 크림색 고리 위에 흰 동그라미 + 갈색 체크 (칸 안의 이름과 겹치지 않게)
+        if (true == bCurrent)
+        {
+            const FVector2f BadgeCenter = MakeDialPoint(Center, MiddleAngle, SectorOuter + Data.RingPadding * 0.5f);
+            DecoMesh.AddEllipse(BadgeCenter, 11.5f, 11.5f, OutlineColor);
+            DecoMesh.AddEllipse(BadgeCenter, 9.f, 9.f, HighlightColor);
+            DecoMesh.AddThickLine(BadgeCenter + FVector2f(-4.5f, 0.f), BadgeCenter + FVector2f(-1.f, 3.5f), 2.2f, OutlineColor);
+            DecoMesh.AddThickLine(BadgeCenter + FVector2f(-1.8f, 3.5f), BadgeCenter + FVector2f(4.5f, -3.5f), 2.2f, OutlineColor);
+        }
+
+        // ===== 아이콘 + 이름 (위아래로 쌓아서 칸 가운데에) =====
+        const float ContentScale = bSelected ? Data.SelectedContentScale : 1.f;
+        const FLinearColor ContentColor = bSelected ? Data.HighlightContentColor
+                                        : (bLocked ? Data.LockedLabelColor : Entry.LabelColor);
+
+        const FVector2D ContentCenter(MakeDialPoint(Center, MiddleAngle, (SectorInner + Outer) * 0.5f));
+        // 잠긴 칸은 아이콘을 숨겨서 어떤 능력인지 모르게 해요
+        const bool bHasIcon = (false == bLocked) && IconBrushes.IsValidIndex(Index) && nullptr != IconBrushes[Index].GetResourceObject();
+        const float IconDrawSize = bHasIcon ? Data.IconSize * ContentScale : 0.f; // 아이콘이 없으면 이름만 가운데에
+        const float LabelHeight = Data.LabelFontSize * ContentScale * 1.4f; // 대략적인 글자 줄 높이
+        const float StackTop = ContentCenter.Y - (IconDrawSize + LabelHeight) * 0.5f;
+
+        if (true == bHasIcon)
+        {
+            const FVector2D IconTopLeft(ContentCenter.X - IconDrawSize * 0.5f, StackTop);
+            FSlateDrawElement::MakeBox(OutDrawElements, BaseLayer + 6,
+                AllottedGeometry.ToPaintGeometry(FVector2D(IconDrawSize), FSlateLayoutTransform(IconTopLeft)),
+                &IconBrushes[Index], ESlateDrawEffect::None, ContentColor * WidgetTint);
+        }
+
+        const FText Label = bLocked ? NSLOCTEXT("PetModeDial", "LockedMode", "???") : Entry.DisplayName; // 아직 모르는 능력
+        DrawLabel(Label, FVector2D(ContentCenter.X, StackTop + IconDrawSize + LabelHeight * 0.5f), ContentColor, ContentScale);
     }
 
-    DrawLabel(NSLOCTEXT("PetModeDial", "KeepMode", "유지"), Center);
+    // ===== 3. 가운데 젤리 발바닥 =====
+    // 시안이 DeadZoneRadius 62 기준이라, 그 비율로 크기를 맞춰요
+    const float PawScale = Data.DeadZoneRadius / 62.f;
+    const auto PawPoint = [&](float X, float Y) { return Center + FVector2f(X, Y) * PawScale; };
 
-    return BaseLayer + 2; // 엔진한테 해당 레이어까지 사용했다고 알려줘요
-}
+    const bool bHasSelection = Data.Entries.IsValidIndex(SelectedIndex);
+    const FColor PadColor = ToVertexColor(bHasSelection ? Data.Entries[SelectedIndex].Tint : Data.CenterPadColor);
+    const float Outline = Data.OutlineThickness;
 
-void UPetModeDialWidget::DrawDialSector(FSlateWindowElementList& Elements, int32 Layer, const FGeometry& Geometry, const FVector2D& Center, float InnerRadius, float OuterRadius, float StartDegrees, float EndDegrees, const FLinearColor& Color)
-{
-    const FSlateBrush* Brush = FCoreStyle::Get().GetBrush(TEXT("WhiteBrush"));
-    const FSlateResourceHandle Resource = FSlateApplication::Get().GetRenderer()->GetResourceHandle(*Brush);
+    // 흰 바탕 (갈색 외곽선)
+    DecoMesh.AddEllipse(PawPoint(0.f, 8.f), 50.f * PawScale + Outline, 42.f * PawScale + Outline, OutlineColor);
+    DecoMesh.AddEllipse(PawPoint(0.f, 8.f), 50.f * PawScale, 42.f * PawScale, HighlightColor);
 
-    TArray<FSlateVertex> Vertices; // 유사 VertextBuffer
-    TArray<SlateIndex> Indices; // 유사 IndexBuffer
+    // 큰 젤리
+    DecoMesh.AddEllipse(PawPoint(0.f, 14.f), 27.f * PawScale, 16.f * PawScale, PadColor);
 
-    // 조각을 4도 간격으로 나눠 원처럼 보이게 해요
-    const int32 Steps = FMath::Max(1, FMath::CeilToInt((EndDegrees - StartDegrees) / 4.f));
-
-    const FColor VertexColor = Color.ToFColor(true);
-
-    // 각도와 반지름을 점의 좌표로 바꾸는 람다
-    // 중심에서 특정 방향으로 반지름만큼 떨어진 점을 구해요
-    const auto MakePoint = [&](float Degrees, float Radius)
+    // 발가락 젤리 3개 (갈색 외곽선)
+    const FVector2f ToeOffsets[] = { FVector2f(-24.f, -30.f), FVector2f(0.f, -38.f), FVector2f(24.f, -30.f) };
+    for (const FVector2f& Offset : ToeOffsets)
     {
-        const float Radians = FMath::DegreesToRadians(Degrees); 
-        return FVector2f(Center.X - FMath::Sin(Radians) * Radius, Center.Y - FMath::Cos(Radians) * Radius);
-    };
-
-    // VertexBuffer에 유사 Vertex를 추가하는 함수
-    const auto AddVertex = [&](const FVector2f& Position)
-    {
-        Vertices.Add(FSlateVertex::Make<ESlateVertexRounding::Disabled>(Geometry.GetAccumulatedRenderTransform(), // <-- 좌표 변환
-                Position, FVector2f(0.5f, 0.5f), VertexColor));
-    };
-
-    // 부채꼴을 그릴 Vertex, Index Buffer를 채워요
-    for (int32 Step = 0; Step < Steps; ++Step)
-    {
-        const float A = FMath::Lerp(StartDegrees, EndDegrees, static_cast<float>(Step) / Steps);
-        const float B = FMath::Lerp(StartDegrees, EndDegrees, static_cast<float>(Step + 1) / Steps);
-
-        const SlateIndex Base = static_cast<SlateIndex>(Vertices.Num());
-
-        // Vertex 추가
-        AddVertex(MakePoint(A, InnerRadius));
-        AddVertex(MakePoint(A, OuterRadius));
-        AddVertex(MakePoint(B, OuterRadius));
-        AddVertex(MakePoint(B, InnerRadius));
-
-        // 
-        Indices.Add(Base);
-        Indices.Add(Base + 1);
-        Indices.Add(Base + 2);
-
-        Indices.Add(Base);
-        Indices.Add(Base + 2);
-        Indices.Add(Base + 3);
+        DecoMesh.AddEllipse(PawPoint(Offset.X, Offset.Y), 8.f * PawScale + Outline * 0.75f, 9.f * PawScale + Outline * 0.75f, OutlineColor);
+        DecoMesh.AddEllipse(PawPoint(Offset.X, Offset.Y), 8.f * PawScale, 9.f * PawScale, PadColor);
     }
 
-    // 진짜 그려달라고 요청
-    FSlateDrawElement::MakeCustomVerts(Elements, Layer, Resource, Vertices, Indices, nullptr, 0, 0);
+    // 큰 젤리 위 글자: 선택 중이면 모드 이름, 아니면 "유지"
+    const FText CenterText = bHasSelection ? Data.Entries[SelectedIndex].DisplayName : NSLOCTEXT("PetModeDial", "KeepMode", "유지");
+    const FLinearColor CenterTextColor = bHasSelection ? Data.HighlightContentColor : Data.CenterTextColor;
+    DrawLabel(CenterText, FVector2D(PawPoint(0.f, 14.f)), CenterTextColor, 1.f);
+
+    // ===== 실제 그리기 요청 (레이어 순서대로) =====
+    RingMesh.Draw(OutDrawElements, BaseLayer + 1);
+    SectorMesh.Draw(OutDrawElements, BaseLayer + 2);
+    ShadowMesh.Draw(OutDrawElements, BaseLayer + 3);
+    SelectedMesh.Draw(OutDrawElements, BaseLayer + 4);
+    DecoMesh.Draw(OutDrawElements, BaseLayer + 5);
+
+    return BaseLayer + 6; // 엔진한테 해당 레이어까지 사용했다고 알려줘요
 }

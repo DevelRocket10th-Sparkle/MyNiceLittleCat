@@ -1,13 +1,14 @@
 // 작성자: 우진
 // 작성일자: 2026-11-03
 // 보스를 잡으면 끝 벽이 빛으로 녹아내리며 관문(포탈)으로 바뀌는 액터
-// 순서: 닫힘(그냥 벽) -> 충전(마법진이 그려지며 벽이 빛남) -> 녹아내림(아치 구멍 + 소용돌이) -> 열림(들어가면 로그)
+// 순서: 닫힘(그냥 벽) -> 충전(마법진이 그려지며 벽이 빛남) -> 녹아내림(구멍 + 소용돌이) -> 열림(들어가면 TargetLevel 로 이동)
 // 원래 벽(Wall_30_0_90)을 지우고 같은 자리에 놓음 -> 이 액터가 벽 메시를 직접 들고 있어서 벽이 사라지는 연출을 할 수 있음
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Interfaces/ActivatableInterface.h"
+#include "Frameworks/Transition/ScreenTransitionSubsystem.h" // FScreenTransitionSettings (값으로 들고 있어서 전방 선언으론 안 됨)
 #include "TutorialPortal.generated.h"
 
 UENUM()
@@ -46,7 +47,7 @@ public:
 private:
 	void ChangeState(ETutorialPortalState NewState);
 	void ApplyVisuals();        // 지금 상태 + 진행도 -> 머티리얼 / 빛 값
-	void HandlePlayerEnter();   // 플레이어가 관문에 들어옴 (지금은 로그만. 나중에 레벨 이동으로 바꿀 자리)
+	void HandlePlayerEnter();   // 플레이어가 관문에 들어옴 -> 화면 전환 후 TargetLevel 로 이동
 
 	UFUNCTION()
 	void HandleTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
@@ -110,9 +111,17 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Tutorial|Portal|FX", meta = (ClampMin = "0.0"))
 	float OpenShakeScale = 1.f;
 
+	// ---- 이동 ----
+	UPROPERTY(EditAnywhere, Category = "Tutorial|Portal|Travel")
+	TSoftObjectPtr<UWorld> TargetLevel;            // 들어가면 이동할 레벨 (드롭다운으로 맵 선택. 비워두면 이동 안 함)
+
+	UPROPERTY(EditAnywhere, Category = "Tutorial|Portal|Travel")
+	FScreenTransitionSettings TravelTransition;    // 이동할 때 화면 전환 (완전히 어두워진 순간 레벨을 엶)
+
 private:
 	ETutorialPortalState State = ETutorialPortalState::Closed;
 	float StateElapsed = 0.f; // 지금 상태가 된 뒤 지난 시간
+	bool bTraveling = false;  // 이동 시작했는지 (전환 중에 트리거를 또 밟아도 한 번만 이동)
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> WallMID;

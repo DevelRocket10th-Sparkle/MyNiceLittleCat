@@ -93,9 +93,20 @@ void UGameplayAbility_PetMagnet::EndAbility(const FGameplayAbilitySpecHandle Han
 
 void UGameplayAbility_PetMagnet::HandleMagnetTick(float DeltaTime)
 {
+    const APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
+    
+    // 극이 고정되어 있는데 지금 극이 다르면 고정된 극으로 맞춤
+    // 의도 : 자성 모드 중에 고정 구역에 들어오거나, 고정 구역 안에서 자성 모드를 켜도 바로 그 극이 되게
+    EPetMagnetPolarity LockedPolarity;
+    if (true == IsValid(Pet) && true == Pet->TryGetLockedMagnetPolarity(LockedPolarity)
+        && CurrentPolarity != LockedPolarity)
+    {
+        CurrentPolarity = LockedPolarity;
+        PlayPolarityChangeAnimation(); // 극 바뀐 걸 보여줘요
+    }
+
     // 펫이 벽 속, 허공, 벽 너머에 있으면 자기장 정지
     // 의도: 공전은 자유롭게 두되, 그 자리에서 자성을 쓰는 악용(물체 벽 통과 등)은 막음
-    const APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
     if (true == IsValid(Pet) && false == Pet->IsMagnetPlacementValid())
     {
         DropHeldTargetAtLastValidLocation();
@@ -442,7 +453,15 @@ bool UGameplayAbility_PetMagnet::IsMagnetCandidate(const AActor* _actor) const
 
 void UGameplayAbility_PetMagnet::HandleSpecialAction(FGameplayEventData Payload)
 {
-    CurrentPolarity = (CurrentPolarity == EPetMagnetPolarity::N) ? EPetMagnetPolarity::S: EPetMagnetPolarity::N;
+    // 극이 고정된구역에서는 극 변환을 무시해요
+    const APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
+
+    EPetMagnetPolarity LockedPolarity;
+    if (true == IsValid(Pet) && true == Pet->TryGetLockedMagnetPolarity(LockedPolarity)) 
+        return;
+
+    CurrentPolarity = (CurrentPolarity == EPetMagnetPolarity::N) ? 
+        EPetMagnetPolarity::S: EPetMagnetPolarity::N;
 
     PlayPolarityChangeAnimation();
 }
