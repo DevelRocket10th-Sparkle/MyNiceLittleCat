@@ -27,6 +27,10 @@ void UPlayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
     Speed = HorizontalVelocity.Size2D();
 
+    const ACharacter* Character = Cast<ACharacter>(OwnerPawn);
+    const UCharacterMovementComponent* Move = Character ? Character->GetCharacterMovement() : nullptr;
+    bIsFalling = Move && Move->IsFalling() && Velocity.Z < -150.f;
+
 	if (FMath::IsNearlyZero(Speed))
 	{
 		Speed = 0.0f;
