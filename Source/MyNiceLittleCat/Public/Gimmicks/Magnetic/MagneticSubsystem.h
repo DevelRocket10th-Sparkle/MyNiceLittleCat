@@ -6,6 +6,9 @@
 /// UMagneticComponent는 매 틱 ForEachSource로 자력원을 조회해 범위·가림 판정 후 힘을 받습니다.
 /// 자력원은 받는 쪽 액터를 직접 찾지 않아도 되고, 받는 쪽은 자력원 종류를 몰라도 됩니다.
 /// 콘솔 변수 Magnetic.DrawDebug 1 이면 등록·갱신 시 자기장 범위를 그립니다.
+/// 성능: 자력원이 생기거나 없어질 때 OnSourcesChanged로 알려서, 자성 컴포넌트가 자력원이 있을 때만 틱을 켭니다.
+/// 맵 시작 때 프로젝트 설정(Magnetic)의 기본 극성 이펙트·막 머티리얼을 미리 불러 둡니다.
+/// (보스 코인처럼 게임 중 처음 생기는 자성 액터가 그 자리에서 동기 로딩해 화면이 멈칫하는 것을 막음)
 
 #pragma once
 
@@ -14,6 +17,11 @@
 #include "Gimmicks/Magnetic/MagneticTypes.h"
 #include "MagneticSubsystem.generated.h"
 
+class UNiagaraSystem;
+class UMaterialInterface;
+
+DECLARE_MULTICAST_DELEGATE(FOnMagneticSourcesChanged);
+
 // TODO(합의): 펫 담당과 자력원 등록 방식 확정 필요
 UCLASS()
 class MYNICELITTLECAT_API UMagneticSubsystem : public UWorldSubsystem
@@ -21,6 +29,14 @@ class MYNICELITTLECAT_API UMagneticSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+
+	// 유효한 자력원이 하나라도 있는지
+	bool HasAnySource() const;
+
+	// 자력원이 새로 생기거나 없어질 때 (정보 갱신 때는 안 부름)
+	FOnMagneticSourcesChanged OnSourcesChanged;
+
 	// 자력원 등록 (능력 on). 이미 등록돼 있으면 정보만 갱신
 	UFUNCTION(BlueprintCallable, Category = "Magnetic")
 	void RegisterSource(AActor* SourceActor, const FMagneticSourceInfo& Info);
@@ -47,4 +63,11 @@ protected:
 
 private:
 	TMap<TWeakObjectPtr<AActor>, FMagneticSourceInfo> Sources;
+
+	// 미리 불러 둔 기본 이펙트·머티리얼 (월드가 살아 있는 동안 메모리에 유지)
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraSystem> PreloadedPolarityEffect;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> PreloadedPolarityOverlay;
 };
