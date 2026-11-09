@@ -8,6 +8,12 @@
 #include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Gimmicks/Boss/Barrier.h"
 #include "Gimmicks/Boss/MagneticCoinPatternComponent.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemBlueprintLibrary.h"
+#include "GameplayEffect.h"
+#include "GameplayTagContainer.h"
+#include "Enemy/GAS/EnemyAttributeSet.h"
+#include "UObject/Package.h"
 
 UBossGimmickComponent::UBossGimmickComponent()
 {
@@ -177,6 +183,107 @@ void UBossGimmickComponent::CompleteLaserTurn(EBossLaserTurn FinishedTurn)
 
 	CurrentLaserTurn = FinishedTurn == EBossLaserTurn::Grid ? EBossLaserTurn::Beam : EBossLaserTurn::Grid;
 	UE_LOG(LogTemp, Log, TEXT("[BossGimmick] 레이저 순번 → %s"), CurrentLaserTurn == EBossLaserTurn::Grid ? TEXT("격자") : TEXT("단일"));
+}
+
+bool UBossGimmickComponent::IsAnyBarrierActive() const
+{
+	if (IsValid(ActiveBarrier) && ActiveBarrier->IsBarrierActive())
+	{
+		return true;
+	}
+
+	// 보스에 붙이지 않은 배리어나 다른 페이즈 배리어가 남아 켜져 있는 경우도 막음
+	for (const TPair<FName, TObjectPtr<AActor>>& Pair : PhaseActors)
+	{
+		const ABarrier* Barrier = Cast<ABarrier>(Pair.Value.Get());
+		if (IsValid(Barrier) && Barrier->IsBarrierActive())
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool UBossGimmickComponent::CanReceiveCounterDamage(EBossCounterDamageType Type) const
+{
+	const ABossCharacter* Boss = Cast<ABossCharacter>(GetOwner());
+	if (!IsValid(Boss) || !Boss->IsAlive())
+	{
+		return false;
+	}
+
+	const UEnemyPhaseComponent* PhaseComponent = Boss->GetPhaseComponent();
+	const FName PhaseId = PhaseComponent ? PhaseComponent->GetCurrentPhaseId() : NAME_None;
+	const TArray<FName>& AllowedPhases = Type == EBossCounterDamageType::MagneticCoin ? CoinDamagePhaseIds : ReflectedLaserDamagePhaseIds;
+	if (!AllowedPhases.Contains(PhaseId))
+	{
+		return false;
+	}
+
+	return !(bIgnoreWhileBarrierActive && IsAnyBarrierActive());
+}
+
+bool UBossGimmickComponent::TryApplyCounterDamage(AActor* Source, EBossCounterDamageType Type, float DamageOverride)
+{
+	if (!CanReceiveCounterDamage(Type))
+	{
+		return false;
+	}
+
+	const bool bReflectedLaser = Type == EBossCounterDamageType::ReflectedLaser;
+	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+	if (bReflectedLaser && ReflectedLaserDamageInterval > 0.f && LastReflectedLaserDamageTime >= 0.f
+		&& Now - LastReflectedLaserDamageTime < ReflectedLaserDamageInterval)
+	{
+		return false;
+	}
+
+	const float Damage = DamageOverride > 0.f ? DamageOverride
+		: (Type == EBossCounterDamageType::MagneticCoin ? CoinDamage : ReflectedLaserDamage);
+	UAbilitySystemComponent* BossASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetOwner());
+	if (Damage <= 0.f || !BossASC)
+	{
+		return false;
+	}
+
+	FGameplayEffectContextHandle Context = BossASC->MakeEffectContext();
+	Context.AddSourceObject(Source);
+
+	if (CounterDamageEffectClass)
+	{
+		// 지정한 GE: SetByCaller Data.Damage로 피해량 전달
+		const FGameplayEffectSpecHandle Spec = BossASC->MakeOutgoingSpec(CounterDamageEffectClass, 1.f, Context);
+		if (!Spec.IsValid())
+		{
+			return false;
+		}
+		Spec.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(FName("Data.Damage")), Damage);
+		BossASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+	}
+	else
+	{
+		// GE 미지정: 적 Damage 어트리뷰트에 피해량을 더하는 즉시 GE를 만들어 적용
+		// (팀 적 피해 GE는 고정값이라 피해량을 넘길 수 없음 → 에셋 없이도 동작하게)
+		UGameplayEffect* DamageEffect = NewObject<UGameplayEffect>(GetTransientPackage(), NAME_None, RF_Transient);
+		DamageEffect->DurationPolicy = EGameplayEffectDurationType::Instant;
+		FGameplayModifierInfo& Modifier = DamageEffect->Modifiers.AddDefaulted_GetRef();
+		Modifier.Attribute = UEnemyAttributeSet::GetDamageAttribute();
+		Modifier.ModifierOp = EGameplayModOp::Additive;
+		Modifier.ModifierMagnitude = FGameplayEffectModifierMagnitude(FScalableFloat(Damage));
+
+		const FGameplayEffectSpec Spec(DamageEffect, Context, 1.f);
+		BossASC->ApplyGameplayEffectSpecToSelf(Spec);
+	}
+
+	if (bReflectedLaser)
+	{
+		LastReflectedLaserDamageTime = Now;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[BossGimmick] 반격 피해 %s %.1f (출처 %s)"),
+		Type == EBossCounterDamageType::MagneticCoin ? TEXT("코인") : TEXT("반사 레이저"), Damage, *GetNameSafe(Source));
+	OnCounterDamaged.Broadcast(this, Source, Type, Damage);
+	return true;
 }
 
 void UBossGimmickComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)

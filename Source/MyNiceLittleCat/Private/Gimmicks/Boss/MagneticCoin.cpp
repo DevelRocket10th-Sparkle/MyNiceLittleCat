@@ -5,6 +5,7 @@
 
 #include "Gimmicks/Boss/MagneticCoin.h"
 #include "Gimmicks/Boss/BarrierGenerator.h"
+#include "Gimmicks/Boss/BossGimmickComponent.h"
 #include "Gimmicks/Boss/DamageTypes/DamageType_MagneticCoin.h"
 #include "Gimmicks/Boss/DamageTypes/DamageType_MagneticCoinFall.h"
 #include "Gimmicks/Magnetic/MagneticComponent.h"
@@ -330,6 +331,12 @@ void AMagneticCoin::HandleMeshBeginOverlap(UPrimitiveComponent* OverlappedCompon
 
 void AMagneticCoin::HandleMeshHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
 {
+	// 보스는 DamageTargetClasses와 별개로 반격 피해 처리
+	if (HandleBossHit(OtherActor))
+	{
+		return;
+	}
+
 	if ((CoinState != EMagneticCoinState::Landed && CoinState != EMagneticCoinState::Thrown) || !CanDamageTarget(OtherActor))
 	{
 		return;
@@ -350,6 +357,42 @@ void AMagneticCoin::HandleMeshHit(UPrimitiveComponent* HitComponent, AActor* Oth
 	{
 		Destroy();
 	}
+}
+
+bool AMagneticCoin::HandleBossHit(AActor* OtherActor)
+{
+	UBossGimmickComponent* BossGimmick = IsValid(OtherActor) ? OtherActor->FindComponentByClass<UBossGimmickComponent>() : nullptr;
+	if (!BossGimmick)
+	{
+		return false;
+	}
+
+	// 보스가 바닥 코인을 밟거나 밀어도 피해 없음: 던져진 코인만, 충분히 빠를 때만
+	const float Now = GetWorld()->GetTimeSeconds();
+	if (!bDamageBossWhenThrown || CoinState != EMagneticCoinState::Thrown
+		|| (LastDamageTime >= 0.f && Now - LastDamageTime < DamageCooldown))
+	{
+		return true;
+	}
+
+	const float ImpactSpeed = FMath::Max(PreviousSpeed, Mesh->GetPhysicsLinearVelocity().Size());
+	if (ImpactSpeed < MinImpactSpeed)
+	{
+		return true;
+	}
+
+	LastDamageTime = Now;
+	if (!BossGimmick->TryApplyCounterDamage(this, EBossCounterDamageType::MagneticCoin))
+	{
+		return true;
+	}
+
+	OnCoinDamaged.Broadcast(this, OtherActor);
+	if (bDestroyOnDamage)
+	{
+		Destroy();
+	}
+	return true;
 }
 
 bool AMagneticCoin::CanDamageTarget(const AActor* OtherActor) const

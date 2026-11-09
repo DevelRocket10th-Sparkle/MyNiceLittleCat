@@ -18,6 +18,9 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "TimerManager.h"
+#include "NiagaraFunctionLibrary.h"
+#include "Kismet/GameplayStatics.h"
+#include "Camera/PlayerCameraManager.h"
 
 #include "Pet/PetCharacter.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
@@ -144,6 +147,23 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
         AActor* Target = Hit.GetActor();
 
         if (!Target || Target->IsA<APetCharacter>() || Target->ActorHasTag(DeflectTag) || HitActors.Contains(Target)) continue;
+
+        if (HitEffect)
+        {
+            // 시작부터 겹쳐 있던 히트(bStartPenetrating)는 ImpactPoint가 부정확하므로 대상 표면의 가장 가까운 점 사용
+            FVector Point = Hit.ImpactPoint;
+            if (Hit.bStartPenetrating && Hit.GetComponent())
+            {
+                Hit.GetComponent()->GetClosestPointOnCollision(MeshComp->GetComponentLocation(), Point);
+            }
+            if (const APlayerCameraManager* Cam = UGameplayStatics::GetPlayerCameraManager(MeshComp->GetWorld(), 0))
+            {
+                Point += (Cam->GetCameraLocation() - Point).GetSafeNormal() * 500.f;
+            }
+            const FRotator Facing = (-Hit.ImpactNormal).Rotation();   // 이펙트가 타격 방향을 향하게
+            UNiagaraFunctionLibrary::SpawnSystemAtLocation(MeshComp->GetWorld(), HitEffect, Point, Facing, HitEffectScale);
+
+        }
 
         HitActors.Add(Target);
 

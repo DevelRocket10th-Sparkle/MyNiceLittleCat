@@ -180,8 +180,32 @@ void ATutorialPortal::ApplyVisuals()
 
 void ATutorialPortal::HandlePlayerEnter()
 {
-	// TODO 다음 장소로 이동 (지금은 로그만)
-	UE_LOG(LogTemp, Log, TEXT("[TutorialPortal] 플레이어가 관문에 들어옴 -> 다음 장소로 이동 예정"));
+	if (true == bTraveling) return; // 이미 이동 중
+
+	if (true == TargetLevel.IsNull())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[TutorialPortal] 이동할 레벨(TargetLevel)이 비어 있음 -> 이동 안 함"));
+		return;
+	}
+
+	bTraveling = true;
+	UE_LOG(LogTemp, Log, TEXT("[TutorialPortal] 관문 진입 -> %s 로 이동"), *TargetLevel.ToSoftObjectPath().ToString());
+
+	// 화면이 완전히 어두워진 순간 레벨을 엶 (팀 체크포인트의 맵 이동과 같은 방식)
+	// 람다 안에서는 이 액터가 이미 사라졌을 수 있어서 약한 포인터로 확인
+	TWeakObjectPtr<ATutorialPortal> WeakThis(this);
+	const TSoftObjectPtr<UWorld> Level = TargetLevel;
+	auto DoTravel = [WeakThis, Level]()
+		{
+			if (ATutorialPortal* Portal = WeakThis.Get())
+				UGameplayStatics::OpenLevelBySoftObjectPtr(Portal, Level);
+		};
+
+	// 화면 전환을 못 쓰면(서브시스템 없음 / 이미 재생 중) 바로 이동
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	UScreenTransitionSubsystem* Transition = GetWorld()->GetSubsystem<UScreenTransitionSubsystem>();
+	if (nullptr == Transition || false == Transition->PlayTransition(PC, TravelTransition, DoTravel))
+		DoTravel();
 }
 
 void ATutorialPortal::HandleTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)

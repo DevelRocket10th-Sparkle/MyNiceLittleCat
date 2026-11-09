@@ -41,6 +41,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Targeting", meta = (ClampMin = "0.03"))
 	float ScanInterval = 0.1f;
 
+	// 락온 중 카메라 피치 (기본 피치는 BeginPlay 때 CameraBoom에서 읽음)
+	UPROPERTY(EditAnywhere, Category = "LockOn|Camera")
+	float LockOnCameraPitch = -55.f;
+
 private:
 	void RefreshCandidates();
 
@@ -78,6 +82,8 @@ protected:
 
 	FVector BaseCameraTargetOffset = FVector::ZeroVector;
 	float BaseCameraArmLength = 0.0f;
+
+	float BaseCameraPitch = 0.f;
 
 	FTimerHandle CameraFocusTimerHandle;
 

@@ -18,6 +18,7 @@ class ATurretProjectile;
 class APetCharacter;
 class USoundBase;
 class UGameplayEffect;
+class UNiagaraSystem;
 
 UCLASS()
 class MYNICELITTLECAT_API ATurret : public AActor
@@ -32,6 +33,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Turret")
 	bool IsCarried() const { return bCarried; }
 
+	bool IsBeingPulled() const { return !bCarried && !GetActorEnableCollision(); }
 protected:
 	virtual void BeginPlay() override;
 
@@ -40,6 +42,10 @@ protected:
 	void TickHostile(float DeltaTime);
 	void SpawnProjectile(bool bHostileShot);
 
+	UFUNCTION()
+	void HandleMeshHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
+
+	void Land();
 protected:
 	UPROPERTY(EditAnywhere, Category = "Turret")
 	TSubclassOf<UGameplayEffect> DamageEffectClass;
@@ -76,6 +82,12 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Turret")
 	TObjectPtr<USoundBase> FireSound;
 
+	UPROPERTY(EditAnywhere, Category = "Turret|FX")
+	TObjectPtr<UNiagaraSystem> MuzzleFlashEffect;
+
+	UPROPERTY(EditAnywhere, Category = "Turret|FX")
+	FVector MuzzleFlashScale = FVector(1.f);
+
 	// 적대 상태: 플레이어를 조준·자동 사격. 플레이어가 한 번 잡으면 아군으로 바뀜
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Turret|Hostile")
 	bool bHostile = true;
@@ -89,12 +101,25 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Turret|Hostile")
 	float HostileFireInterval = 1.5f;
 
+	// 적대 상태 발사 간격 랜덤 범위
+	UPROPERTY(EditAnywhere, Category = "Turret|Hostile", meta = (ClampMin = "0.05", Units = "s"))
+	float HostileFireIntervalMin = 0.6f;
+
+	UPROPERTY(EditAnywhere, Category = "Turret|Hostile", meta = (ClampMin = "0.05", Units = "s"))
+	float HostileFireIntervalMax = 1.4f;
+
 	// 이 각도 안으로 조준됐을 때만 발사
 	UPROPERTY(EditAnywhere, Category = "Turret|Hostile")
 	float AimToleranceDeg = 10.f;
 
 	UPROPERTY(EditAnywhere, Category = "Turret", meta = (ClampMin = "0.0"))
 	float PlayerSpreadDeg = 6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Turret", meta = (ClampMin = "1"))
+	int32 MaxAmmo = 30;
+
+	UPROPERTY(EditAnywhere, Category = "Turret|Hostile", meta = (ClampMin = "0.0"))
+	float ArmDelay = 0.6f;
 
 	UPROPERTY(EditAnywhere, Category = "Turret|Jelly")
 	float JellyAmount = 0.35f;
@@ -108,8 +133,12 @@ protected:
 private:
 	bool bCarried = false;
 	bool bFireKeyBound = false;
+	bool bLanded = false;
+	float LandedTime = -1.f;
 	float LastFireTime = -1000.f;
+	float NextHostileFireTime = 0.f;
 	float JellyElapsed = -1.f;
+	int32 CurrentAmmo = 0;
 	FVector HeadBaseScale = FVector::OneVector;
 	TWeakObjectPtr<APetCharacter> CachedPet;
 };

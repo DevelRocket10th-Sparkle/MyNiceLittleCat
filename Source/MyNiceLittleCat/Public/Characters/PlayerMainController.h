@@ -36,6 +36,9 @@ protected:
 public:
 	void SetPartnerPet(class APetCharacter* _pet);
 
+	// 함께 다니는 펫 (아직 연결 전이면 nullptr) - HUD 모드 배지 등에서 사용
+	class APetCharacter* GetPartnerPet() const { return PartnerPet.Get(); }
+
 	bool TryGetPetCursorHit(FHitResult& _outHit) const;
 
 	// 펫 입력(모드 다이얼 / 모드 사용 / 특수 행동) 켜고 끄기

@@ -83,6 +83,10 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Magnet|Range", meta = (ClampMin = "1.0", ClampMax = "89.0", Units = "deg"))
     float HalfAngleDegrees = 15.f;
 
+    // 펫 주변 원형 자기장 반경 (부채꼴과 별개로 이 안의 자성 액터는 방향과 상관없이 반응)
+    UPROPERTY(EditDefaultsOnly, Category = "Magnet|Range", meta = (ClampMin = "0.0", Units = "cm"))
+    float NearbyFieldRadius = 150.f;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Magnet|Range", meta = (ClampMin = "0.0", Units = "cm"))
     float ForwardOffset = 40.f;
 

@@ -8,4 +8,5 @@
 namespace ItemAbilityTags
 {
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Pet_Reflect, "Ability.Pet.Reflect", "펫 반사판 설치 능력 (능력 해금 아이템으로 획득)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Pet_Magnet, "Ability.Pet.Magnet", "펫 자성 능력 (능력 해금 아이템으로 획득)");
 }

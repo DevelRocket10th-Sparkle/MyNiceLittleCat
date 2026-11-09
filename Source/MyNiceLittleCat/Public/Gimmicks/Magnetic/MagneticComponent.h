@@ -2,8 +2,12 @@
 /// 작성일자: 2026-10-18
 ///
 /// 자력을 받는 액터에 붙이는 자성 컴포넌트입니다.
-/// 액터에 N/S 극성을 부여하고, 극성 이펙트(나이아가라)를 메시에 붙여 표시합니다.
-/// - 이펙트: PolarityEffect(비면 UMagneticSettings 기본값)를 EffectMeshTag 메시(없으면 첫 메시)에 붙임.
+/// 액터에 N/S 극성을 부여하고, 극성 막(오버레이 머티리얼)으로 표시합니다.
+/// - 막(bApplyPolarityOverlay, 기본 켜짐, 2026-11-08): PolarityOverlay(비면 UMagneticSettings 기본값)를
+///   OverlayTargetTag 메시(None이면 모든 메시)의 오버레이 머티리얼로 씌움. 머티리얼 파라미터:
+///   Color(벡터, 극성 색), Activity(스칼라 0~1, 자력을 받는 동안 올라감), Polarity(스칼라 0 = N, 1 = S).
+///   극성이 None이면 막을 벗기고 원래 오버레이로 되돌립니다.
+/// - 이펙트(bSpawnPolarityEffect, 기본 꺼짐 — 예전 번개·N/S 아이콘 표시): PolarityEffect(비면 UMagneticSettings 기본값)를 EffectMeshTag 메시(없으면 첫 메시)에 붙임.
 ///   User 파라미터: Color(극성 색), Polarity(0 = N, 1 = S), Activity(0~1, 자력을 받는 동안 올라감),
 ///   IconOffset(이펙트 위치 기준 아이콘 위치, 월드 Z = 바운드 윗면 + IconHeightOffset)
 ///   전기 이미터의 메시 표면 샘플링은 붙은 메시(Attach Parent)를 사용합니다. 극성이 None이면 이펙트를 끕니다.
@@ -23,6 +27,7 @@
 
 class UMagneticComponent;
 class UMaterialInstanceDynamic;
+class UMaterialInterface;
 class UMeshComponent;
 class UNiagaraComponent;
 class UNiagaraSystem;
@@ -100,6 +105,12 @@ protected:
 	void UpdatePolarityEffect();
 	void UpdateEffectActivity(float DeltaTime);
 
+	// 극성 막: 대상 메시에 오버레이 씌우기·파라미터 갱신·벗기기
+	void ApplyPolarityOverlay();
+	void RemovePolarityOverlay();
+	void UpdatePolarityOverlay();
+	void UpdateOverlayActivity();
+
 protected:
 	// 극성 (코인 등은 스폰 시 SetPolarity로 지정)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic")
@@ -129,9 +140,21 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Color")
 	TMap<EMagneticPolarity, FLinearColor> PolarityColors;
 
-	// 극성 이펙트를 메시에 붙임
+	// 극성 막(오버레이 머티리얼)을 메시에 씌움
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Overlay")
+	bool bApplyPolarityOverlay = true;
+
+	// 극성 막 머티리얼 (비면 프로젝트 설정 Magnetic의 DefaultPolarityOverlay)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Overlay", meta = (EditCondition = "bApplyPolarityOverlay"))
+	TObjectPtr<UMaterialInterface> PolarityOverlay;
+
+	// 이 태그가 있는 메시에만 막을 씌움 (None이면 액터의 모든 메시)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Overlay", meta = (EditCondition = "bApplyPolarityOverlay"))
+	FName OverlayTargetTag;
+
+	// 예전 극성 이펙트(번개·N/S 아이콘 나이아가라)를 메시에 붙임
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Effect")
-	bool bSpawnPolarityEffect = true;
+	bool bSpawnPolarityEffect = false;
 
 	// 극성 이펙트 (비면 프로젝트 설정 Magnetic의 DefaultPolarityEffect)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Effect", meta = (EditCondition = "bSpawnPolarityEffect"))
@@ -146,11 +169,11 @@ protected:
 	float IconHeightOffset = 30.f;
 
 	// 자력을 받은 뒤 Activity를 최대로 유지하는 시간 (초)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Effect", meta = (ClampMin = "0.0", EditCondition = "bSpawnPolarityEffect"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Effect", meta = (ClampMin = "0.0"))
 	float ActivityHoldTime = 0.2f;
 
 	// 유지 시간 뒤 Activity가 0으로 내려가는 속도 (초당)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Effect", meta = (ClampMin = "0.0", EditCondition = "bSpawnPolarityEffect"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnetic|Effect", meta = (ClampMin = "0.0"))
 	float ActivityFadeSpeed = 3.f;
 
 	// 극성 색을 메시 머티리얼에도 표시 (머티리얼에 ColorParameterName 파라미터가 있어야 함)
@@ -179,6 +202,16 @@ private:
 
 	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Magnetic|Effect")
 	TObjectPtr<UNiagaraComponent> PolarityEffectComponent;
+
+	// 막을 씌운 메시 (같은 순서로 원래 오버레이 저장, 막 MID는 모든 메시 공용)
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UMeshComponent>> OverlayMeshes;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UMaterialInterface>> OriginalOverlays;
+
+	UPROPERTY(VisibleInstanceOnly, Transient, Category = "Magnetic|Overlay")
+	TObjectPtr<UMaterialInstanceDynamic> OverlayMaterialInstance;
 
 	float CurrentActivity = 0.f;
 

@@ -10,6 +10,7 @@
 
 class UGameplayEffect;
 class UCameraShakeBase;
+class UNiagaraSystem;
 /**
  * 
  */
@@ -81,6 +82,12 @@ protected:
 
     UPROPERTY(EditAnywhere, Category = "Deflect")
     TObjectPtr<USoundBase> DeflectSound;
+
+    UPROPERTY(EditAnywhere, Category = "FX")
+    TObjectPtr<UNiagaraSystem> HitEffect;
+
+    UPROPERTY(EditAnywhere, Category = "FX")
+    FVector HitEffectScale = FVector(1.f);
 
 private:
     TMap<TWeakObjectPtr<USkeletalMeshComponent>, TSet<TWeakObjectPtr<AActor>>> HitActorsByMesh;

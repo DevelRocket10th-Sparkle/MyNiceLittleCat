@@ -18,7 +18,9 @@ public:
 	UPetModeDialComponent();
 	// ========================================================================================
 public:
-	bool OpenDial(const FVector2D& _centerInViewport);
+	// _currentMode: 지금 펫 모드 (다이얼에서 체크 표시할 칸)
+	// _lockedModes: 아직 해금 안 된 모드 (회색 "???" 칸 + 선택 불가)
+	bool OpenDial(const FVector2D& _centerInViewport, EPetMode _currentMode, const TSet<EPetMode>& _lockedModes);
 	void CloseDial();
 	bool IsDialOpen() const { return bDialOpen; }
 

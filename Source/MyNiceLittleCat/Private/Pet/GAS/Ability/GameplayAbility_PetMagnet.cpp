@@ -93,9 +93,20 @@ void UGameplayAbility_PetMagnet::EndAbility(const FGameplayAbilitySpecHandle Han
 
 void UGameplayAbility_PetMagnet::HandleMagnetTick(float DeltaTime)
 {
+    const APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
+    
+    // 극이 고정되어 있는데 지금 극이 다르면 고정된 극으로 맞춤
+    // 의도 : 자성 모드 중에 고정 구역에 들어오거나, 고정 구역 안에서 자성 모드를 켜도 바로 그 극이 되게
+    EPetMagnetPolarity LockedPolarity;
+    if (true == IsValid(Pet) && true == Pet->TryGetLockedMagnetPolarity(LockedPolarity)
+        && CurrentPolarity != LockedPolarity)
+    {
+        CurrentPolarity = LockedPolarity;
+        PlayPolarityChangeAnimation(); // 극 바뀐 걸 보여줘요
+    }
+
     // 펫이 벽 속, 허공, 벽 너머에 있으면 자기장 정지
     // 의도: 공전은 자유롭게 두되, 그 자리에서 자성을 쓰는 악용(물체 벽 통과 등)은 막음
-    const APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
     if (true == IsValid(Pet) && false == Pet->IsMagnetPlacementValid())
     {
         DropHeldTargetAtLastValidLocation();
@@ -170,6 +181,16 @@ void UGameplayAbility_PetMagnet::DrawMagnetDebugRange() const
 
         PreviousPoint = Point;
     }
+
+    // 펫 주변 원형 자기장 범위 (판정과 같은 중심 = 펫 위치, 표시 높이는 부채꼴과 동일)
+    if (NearbyFieldRadius > 0.f)
+    {
+        FVector CircleCenter = Pet->GetActorLocation();
+        CircleCenter.Z = Origin.Z;
+
+        DrawDebugCircle(GetWorld(), CircleCenter, NearbyFieldRadius, 32, Color, false, 0.f, 0, 2.f,
+            FVector(1.f, 0.f, 0.f), FVector(0.f, 1.f, 0.f), false);
+    }
 #endif
 }
 
@@ -236,8 +257,11 @@ void UGameplayAbility_PetMagnet::CollectMagnetTargetsInRange(TArray<AActor*>& Ou
 
     TArray<FOverlapResult> Overlaps;
 
+    // 부채꼴(Origin 기준)과 펫 주변 원(펫 위치 기준)을 모두 덮는 크기
+    const float SearchExtent = FMath::Max(RangeLength, NearbyFieldRadius + FMath::Abs(ForwardOffset));
+
     GetWorld()->OverlapMultiByObjectType(Overlaps, Origin, FQuat::Identity, ObjectTypes,
-        FCollisionShape::MakeBox(FVector(RangeLength, RangeLength, TargetHeightTolerance)), QueryParams);
+        FCollisionShape::MakeBox(FVector(SearchExtent, SearchExtent, TargetHeightTolerance)), QueryParams);
 
     const float RangeSquared = FMath::Square(RangeLength);
     const float MinimumDot = FMath::Cos(FMath::DegreesToRadians(HalfAngleDegrees));
@@ -265,16 +289,28 @@ void UGameplayAbility_PetMagnet::CollectMagnetTargetsInRange(TArray<AActor*>& Ou
         if (ToTarget.SizeSquared() > RangeSquared)
             continue;
 
-        if (false == ToTarget.IsNearlyZero())
+        // 펫 주변 원 안이면 부채꼴(거리·각도) 검사 생략
+        const FVector PetLocation = Pet->GetActorLocation();
+        const bool bInNearbyField = NearbyFieldRadius > 0.f &&
+            FVector::DistSquared2D(PetLocation, Candidate->GetActorLocation()) <= FMath::Square(NearbyFieldRadius);
+
+        if (false == bInNearbyField)
         {
-            const float Dot = FVector::DotProduct(Forward, ToTarget.GetSafeNormal());
-            if (Dot < MinimumDot)
+            ToTarget.Z = 0.f;
+            if (ToTarget.SizeSquared() > RangeSquared)
                 continue;
+
+            if (false == ToTarget.IsNearlyZero())
+            {
+                const float Dot = FVector::DotProduct(Forward, ToTarget.GetSafeNormal());
+                if (Dot < MinimumDot)
+                    continue;
+            }
         }
 
         // 부채꼴 안에 있어도 벽 뒤에 있으면 자기장이 닿지 않음
-        // 의도: 트레이스는 비용이 있으므로 거리·각도 검사를 모두 통과한 후보에만 수행
-        if (true == IsShieldedByWall(Origin, Candidate))
+        // 근처 원은 펫 위치에서 검사 → 펫 앞 지점(Origin)이 벽 너머에 걸쳐도 오판하지 않게
+        if (true == IsShieldedByWall(bInNearbyField ? PetLocation : Origin, Candidate))
             continue;
 
         OutTargets.Add(Candidate);
@@ -342,6 +378,9 @@ void UGameplayAbility_PetMagnet::ApplyNearbyRepulsion(const TArray<AActor*>& Can
     const AActor* Pet = GetAvatarActorFromActorInfo();
     if (false == IsValid(Pet)) return;
 
+    // 목표 속도와의 차이에 곱하는 반응 계수 (클수록 빨리 목표 속도에 도달)
+    constexpr float ResponseRate = 10.f;
+
     for (AActor* Candidate : Candidates)
     {
         if (false == IsValid(Candidate) || Candidate == HeldTarget.Get())
@@ -355,17 +394,46 @@ void UGameplayAbility_PetMagnet::ApplyNearbyRepulsion(const TArray<AActor*>& Can
         if (CurrentPolarity != TargetPolarity)
             continue;
 
-        //! 임시 물체 연결부 -> 루트 메시의 물리에 힘을 줘요
-        UPrimitiveComponent* Body = Cast<UPrimitiveComponent>(Candidate->GetRootComponent());
-
-        if (false == IsValid(Body) || false == Body->IsSimulatingPhysics())
-            continue;
-
+        // 밀어낼 방향: 펫 → 대상 (수평)
         FVector Direction = Candidate->GetActorLocation() - Pet->GetActorLocation();
         Direction = Direction.GetSafeNormal2D();
 
         if (true == Direction.IsNearlyZero())
             Direction = Pet->GetActorForwardVector().GetSafeNormal2D();
+
+        // [캐릭터] 물리 시뮬레이션이 없으므로 CharacterMovement에 힘을 줌
+        // 의도: 물리 물체와 같은 규칙(목표 속도에 못 미친 만큼만 가속)으로 밀어서 체감을 맞춤
+        if (ACharacter* Character = Cast<ACharacter>(Candidate))
+        {
+            UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
+
+            // 끌어당기는 중이라 이동이 꺼진(MOVE_None) 캐릭터는 제외
+            if (false == IsValid(Movement) || MOVE_None == Movement->MovementMode)
+                continue;
+
+            const float OutwardSpeed = FVector::DotProduct(Movement->Velocity, Direction);
+            const float SpeedGap = NearbyRepelSpeed - OutwardSpeed;
+
+            // 이미 충분히 빠르게 밀려나는 중이면 추가 힘을 주지 않음
+            if (SpeedGap <= 0.f) continue;
+
+            //Xconst float Acceleration = FMath::Clamp(SpeedGap * ResponseRate, 0.f, NearbyRepelMaxAcceleration);
+
+            //X CMC의 AddForce는 질량으로 나누므로, 질량을 곱해서 물리 물체와 같은 가속도로 맞춤
+            //XMovement->AddForce(Direction * Acceleration * Movement->Mass);
+
+            // 캐릭터는 걷기 제동(BrakingDecelerationWalking)이 힘을 매 프레임 상쇄하므로
+            // 힘 대신 바깥 방향 속도를 목표 속도(NearbyRepelSpeed)까지 직접 채워 줌
+            // 의도: 제동보다 약한 힘으로는 전혀 밀리지 않는 문제 해결
+            Movement->Velocity += Direction * SpeedGap;
+            continue;
+        }
+
+        // [물리 물체] 루트 메시의 물리에 힘을 줘요
+        UPrimitiveComponent* Body = Cast<UPrimitiveComponent>(Candidate->GetRootComponent());
+
+        if (false == IsValid(Body) || false == Body->IsSimulatingPhysics())
+            continue;
 
         const float OutwardSpeed = FVector::DotProduct(Body->GetPhysicsLinearVelocity(), Direction);
         const float SpeedGap = NearbyRepelSpeed - OutwardSpeed;
@@ -373,12 +441,10 @@ void UGameplayAbility_PetMagnet::ApplyNearbyRepulsion(const TArray<AActor*>& Can
         // 이미 충분히 빠르게 날아가는 물체에는 추가 힘을 주지 않음
         if (SpeedGap <= 0.f) continue;
 
-        constexpr float ResponseRate = 10.f;
         const float Acceleration = FMath::Clamp(SpeedGap * ResponseRate, 0.f, NearbyRepelMaxAcceleration);
         Body->AddForce(Direction * Acceleration, NAME_None, true);
     }
 }
-
 bool UGameplayAbility_PetMagnet::IsMagnetCandidate(const AActor* _actor) const
 {
     EPetMagnetPolarity TargetPolarity;
@@ -387,7 +453,15 @@ bool UGameplayAbility_PetMagnet::IsMagnetCandidate(const AActor* _actor) const
 
 void UGameplayAbility_PetMagnet::HandleSpecialAction(FGameplayEventData Payload)
 {
-    CurrentPolarity = (CurrentPolarity == EPetMagnetPolarity::N) ? EPetMagnetPolarity::S: EPetMagnetPolarity::N;
+    // 극이 고정된구역에서는 극 변환을 무시해요
+    const APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
+
+    EPetMagnetPolarity LockedPolarity;
+    if (true == IsValid(Pet) && true == Pet->TryGetLockedMagnetPolarity(LockedPolarity)) 
+        return;
+
+    CurrentPolarity = (CurrentPolarity == EPetMagnetPolarity::N) ? 
+        EPetMagnetPolarity::S: EPetMagnetPolarity::N;
 
     PlayPolarityChangeAnimation();
 }

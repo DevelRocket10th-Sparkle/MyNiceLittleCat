@@ -30,8 +30,7 @@ void UGameplayAbility_PetReflect::ActivateAbility(const FGameplayAbilitySpecHand
     APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
 
     if ((false == IsValid(Pet)) || (false == Pet->IsPetInitialized()) || 
-        (EPetMode::Reflect != Pet->GetCurrentMode()) || (nullptr == ReflectorClass) 
-        || false == IsValid(PreviewMaterial.Get()) || false == IsValid(PreviewMeshAsset.Get()))
+        (EPetMode::Reflect != Pet->GetCurrentMode()) || (nullptr == ReflectorClass))
     {
         EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
         return;
@@ -43,38 +42,15 @@ void UGameplayAbility_PetReflect::ActivateAbility(const FGameplayAbilitySpecHand
         return;
     }
 
-    // 실제 반사판 너비에 맞춰 프리뷰 크기 계산
-    const APetReflector* ReflectorDefaults = ReflectorClass.GetDefaultObject();
-
-    const float TargetWidth = ReflectorDefaults->GetHalfWidth() * 2.f;
-    const float MeshWidth = PreviewMeshAsset->GetBoundingBox().GetSize().Y;
-
-    if (MeshWidth <= KINDA_SMALL_NUMBER)
+    // 설치 프리뷰는 실제 반사판 모양의 고스트로 보여줘요 (못 만들면 설치 위치를 보여줄 수 없으니 종료)
+    if (false == CreatePlacementGhost(Pet))
     {
         EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
         return;
     }
 
-    const float PreviewScale = TargetWidth / MeshWidth;
-
-    // 소유자는 펫이지만, 위치는 커서의 월드 위치로 직접 관리
-    PreviewMesh = NewObject<UStaticMeshComponent>(Pet, NAME_None, RF_Transient);
-
-    PreviewMesh->SetMobility(EComponentMobility::Movable);
-    PreviewMesh->SetStaticMesh(PreviewMeshAsset.Get());
-
-    PreviewMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    PreviewMesh->SetGenerateOverlapEvents(false);
-    PreviewMesh->SetCastShadow(false);
-    PreviewMesh->SetReceivesDecals(false);
-    PreviewMesh->SetCanEverAffectNavigation(false);
-    PreviewMesh->SetVisibility(false);
-
-    PreviewMesh->SetWorldScale3D(FVector(PreviewScale));
-    PreviewMesh->SetTranslucentSortPriority(10); //! 다른 반투명 이펙트보다 나중에(위에) 그려지도록
-    PreviewMesh->RegisterComponent();
-
-    PreviewMID = PreviewMesh->CreateDynamicMaterialInstance(0, PreviewMaterial.Get());
+    // 방향 화살표는 없어도 설치는 되니까 실패해도 계속 진행
+    CreateFacingArrow(Pet);
 
     bDraggingPlacement = false;
     CachedPreviewLasers.Reset();
@@ -148,11 +124,24 @@ void UGameplayAbility_PetReflect::EndAbility(const FGameplayAbilitySpecHandle Ha
         RemovePrompt->DestroyComponent();
     RemovePrompt = nullptr;
 
-    if (true == IsValid(PreviewMesh.Get()))
-        PreviewMesh->DestroyComponent();
+    if (true == IsValid(PlacementGhostMesh.Get()))
+        PlacementGhostMesh->DestroyComponent();
 
-    PreviewMesh = nullptr;
-    PreviewMID = nullptr;
+    PlacementGhostMesh = nullptr;
+    PlacementGhostMIDs.Reset();
+
+    if (true == IsValid(FacingArrowComponent.Get()))
+        FacingArrowComponent->DestroyComponent();
+    FacingArrowComponent = nullptr;
+
+    for (UStaticMeshComponent* Segment : LaserPreviewSegments)
+    {
+        if (true == IsValid(Segment))
+            Segment->DestroyComponent();
+    }
+    LaserPreviewSegments.Reset();
+    LaserPreviewMIDs.Reset();
+
     bCanPlaceReflector = false;
 
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
@@ -163,20 +152,16 @@ void UGameplayAbility_PetReflect::HandleReflectTick(float DeltaTime)
     // 펫이 설치하러 가는 중에도 철거는 가능해야 하므로 가장 먼저 갱신
     UpdateRemoveHover();
 
-    UStaticMeshComponent* Mesh = PreviewMesh.Get();
-    if (false == IsValid(Mesh)) return;
+    if (false == IsValid(PlacementGhostMesh.Get())) return;
+
+    // 설치하러 가는 중에는 고스트가 설치될 자리에 그대로 머물러요 (도착/실패 시 숨김)
+    if (true == bHasPendingPlacement) return;
 
     // 철거할 반사판을 가리키는 동안은 설치 프리뷰를 숨겨서 헷갈리지 않게
     if (true == HoveredReflector.IsValid())
     {
         bCanPlaceReflector = false;
-        Mesh->SetVisibility(false);
-        return;
-    }
-
-    if (true == bHasPendingPlacement)
-    {
-        Mesh->SetVisibility(false);
+        HidePlacementGhost();
         return;
     }
 
@@ -186,7 +171,7 @@ void UGameplayAbility_PetReflect::HandleReflectTick(float DeltaTime)
     if (false == IsValid(Pet) || false == IsValid(PC))
     {
         bCanPlaceReflector = false;
-        Mesh->SetVisibility(false);
+        HidePlacementGhost();
         return;
     }
 
@@ -199,7 +184,7 @@ void UGameplayAbility_PetReflect::HandleReflectTick(float DeltaTime)
         if (false == UpdateDragRotation())
         {
             bCanPlaceReflector = false;
-            Mesh->SetVisibility(false);
+            HidePlacementGhost();
             return;
         }
     }
@@ -209,40 +194,29 @@ void UGameplayAbility_PetReflect::HandleReflectTick(float DeltaTime)
         if (false == TryGetPlacementCursorHit(Hit))
         {
             bCanPlaceReflector = false;
-            Mesh->SetVisibility(false);
+            HidePlacementGhost();
             return;
         }
 
         PlacementRotation = FRotator(0.f, Pet->GetAimDirection().Rotation().Yaw, 0.f);
     }
 
-    const FVector GroundLocation = Hit.ImpactPoint + FVector::UpVector * PlacementGroundClearance;
     bCanPlaceReflector = CanPlaceReflector(Hit, PlacementRotation);
-    Mesh->SetWorldLocationAndRotation(GroundLocation, PlacementRotation);
 
-    if (true == IsValid(PreviewMID.Get()))
-    {
-        PreviewMID->SetVectorParameterValue(TEXT("PreviewColor"), 
-            bCanPlaceReflector ? ValidPreviewColor : InvalidPreviewColor);
-    }
+    // 실제 반사판이 생길 위치(판 중앙)와 똑같이 계산해서 고스트를 놓아요
+    // 의도: 프리뷰 → 설치 대기 → 실제 생성까지 위치가 한 번도 튀지 않게
+    const FVector HalfExtents = ReflectorClass.GetDefaultObject()->GetPlacementHalfExtents();
+    const FVector ReflectorCenter = Hit.ImpactPoint + FVector::UpVector * (HalfExtents.Z + PlacementGroundClearance);
+    ShowPlacementGhost(FTransform(PlacementRotation, ReflectorCenter, FVector::OneVector), bCanPlaceReflector);
 
-    Mesh->SetVisibility(true);
-
-    // 반구는 회전해도 같아 보이므로 실제 판이 놓일 선 표시
-    const float HalfWidth = ReflectorClass.GetDefaultObject()->GetHalfWidth();
-    const FVector WidthDirection = PlacementRotation.RotateVector(FVector::RightVector);
-
-    DrawDebugLine(GetWorld(),
-        GroundLocation - WidthDirection * HalfWidth, GroundLocation + WidthDirection * HalfWidth,
-        FColor::White, false, -1.f, SDPG_Foreground, 2.f);
-
-    // 반사판 앞면 방향
-    DrawDebugDirectionalArrow(GetWorld(),
-        GroundLocation, GroundLocation + PlacementRotation.Vector() * 60.f,
-        15.f, FColor::Yellow, false, -1.f, SDPG_Foreground, 2.f);
+    // 드래그로 방향을 정하는 동안만 앞면 방향 화살표 표시
+    if (true == bDraggingPlacement)
+        ShowFacingArrow(Hit.ImpactPoint);
+    else
+        HideFacingArrow();
 
     // 프리뷰 반사 방향
-    DrawLaserReflectionPreview();
+    UpdateLaserReflectionPreview();
 }
 
 bool UGameplayAbility_PetReflect::CanPlaceReflector(const FHitResult& Hit, const FRotator& Rotation) const
@@ -266,6 +240,8 @@ void UGameplayAbility_PetReflect::HandleModeUseInput(EPetModeUseInputPhase Phase
     if (Phase == EPetModeUseInputPhase::Canceled)
     {
         bDraggingPlacement = false;
+        HideFacingArrow();
+        HideLaserPreviewFrom(0);
         CachedPreviewLasers.Reset();
         bCanPlaceReflector = false;
         return;
@@ -292,6 +268,8 @@ void UGameplayAbility_PetReflect::HandleModeUseInput(EPetModeUseInputPhase Phase
         // 마지막 커서 위치와 공간 판정을 놓는 순간 다시 갱신
         HandleReflectTick(0.f);
         bDraggingPlacement = false;
+        HideFacingArrow(); // 방향이 확정됐으니 화살표는 숨김 (설치 대기 중엔 Tick이 갱신하지 않아서 여기서 직접)
+        HideLaserPreviewFrom(0); // 레이저 경로 미리보기도 같은 이유로 여기서 숨김
         CachedPreviewLasers.Reset();
 
         if (false == bCanPlaceReflector) return;
@@ -308,10 +286,9 @@ void UGameplayAbility_PetReflect::HandleModeUseInput(EPetModeUseInputPhase Phase
         }
 
         bHasPendingPlacement = true;
-        PreviewMesh->SetVisibility(false);
 
-        // 요청이 확정된 위치를 3초 동안 표시
-        DrawDebugBox(GetWorld(), ReflectorCenter, HalfExtents, PlacementRotation.Quaternion(), FColor::Cyan, false, 3.f, 0, 2.f);
+        // 펫이 도착할 때까지 설치될 자리에 고스트를 고정 (설치가 확정됐으니 설치 가능 색)
+        ShowPlacementGhost(PendingPlacementTransform, true);
     }
 }
 
@@ -477,6 +454,10 @@ void UGameplayAbility_PetReflect::HandlePlacementMoveFinished(FGuid RequestId, b
 
     PlacementMoveRequestId.Invalidate();
 
+    // 도착했든 실패했든 고스트는 숨김 
+    // (성공이면 바로 아래에서 진짜 반사판이 생겨요)
+    HidePlacementGhost();
+
     if (true == bSucceeded)
     {
         const bool bPlaced = TryPlaceReflector();
@@ -604,14 +585,20 @@ void UGameplayAbility_PetReflect::CachePreviewLasers()
     }
 }
 
-void UGameplayAbility_PetReflect::DrawLaserReflectionPreview() const
+void UGameplayAbility_PetReflect::UpdateLaserReflectionPreview()
 {
-#if ENABLE_DRAW_DEBUG
-    if (false == bDraggingPlacement || false == bCanPlaceReflector || true == bHasPendingPlacement)
-        return;
+    // 이번 틱에 실제로 쓴 점선 구간 수 (나머지는 마지막에 숨김)
+    int32 UsedCount = 0;
 
     const APetReflector* Defaults = ReflectorClass.GetDefaultObject();
-    if (false == IsValid(Defaults)) return;
+
+    // 드래그로 방향을 정하는 중이고, 그 자리에 설치할 수 있을 때만 표시
+    if (false == bDraggingPlacement || false == bCanPlaceReflector || true == bHasPendingPlacement
+        || false == IsValid(Defaults))
+    {
+        HideLaserPreviewFrom(0);
+        return;
+    }
 
     // 실제 설치할 반사판과 같은 크기, 위치, 회전
     FVirtualReflectiveSurface VirtualSurface;
@@ -639,14 +626,199 @@ void UGameplayAbility_PetReflect::DrawLaserReflectionPreview() const
         for (const FLaserBeamSegment& Segment : PreviewSegments)
         {
             // 가상 반사판에 맞은 이후 구간만 표시
-            if (true == bAfterVirtualSurface)
-                DrawDebugLine( GetWorld(), Segment.Start, Segment.End, FColor::Magenta, false, -1.f, 0, 3.f);
+            if (true == bAfterVirtualSurface && true == ShowLaserPreviewSegment(UsedCount, Segment.Start, Segment.End))
+                ++UsedCount;
 
             if (Segment.bHitVirtualSurface)
                 bAfterVirtualSurface = true;
         }
     }
-#endif
+
+    // 이번 틱에 안 쓴 구간은 숨겨서 다음에 재사용
+    HideLaserPreviewFrom(UsedCount);
+}
+
+bool UGameplayAbility_PetReflect::ShowLaserPreviewSegment(int32 Index, const FVector& Start, const FVector& End)
+{
+    if (Index >= MaxLaserPreviewSegments || false == IsValid(LaserPreviewMesh.Get()) || false == IsValid(LaserPreviewMaterial.Get()))
+        return false;
+
+    const FVector Delta = End - Start;
+    const float Length = Delta.Size();
+    if (Length < 1.f) return false; // 너무 짧은 구간은 건너뜀
+
+    // 풀에 이 번호의 구간 메시가 없으면 새로 만들어요 (처음 한 번만)
+    while (LaserPreviewSegments.Num() <= Index)
+    {
+        AActor* Owner = GetAvatarActorFromActorInfo();
+        if (false == IsValid(Owner)) return false;
+
+        UStaticMeshComponent* NewSegment = NewObject<UStaticMeshComponent>(Owner, NAME_None, RF_Transient);
+        NewSegment->SetMobility(EComponentMobility::Movable);
+        NewSegment->SetStaticMesh(LaserPreviewMesh.Get());
+
+        NewSegment->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        NewSegment->SetGenerateOverlapEvents(false);
+        NewSegment->SetCastShadow(false);
+        NewSegment->SetReceivesDecals(false);
+        NewSegment->SetCanEverAffectNavigation(false);
+        NewSegment->SetVisibility(false);
+        NewSegment->SetTranslucentSortPriority(12); //! 화살표(11)·고스트(10)보다 위에 그려지도록
+
+        // 구간 길이를 넘겨줄 동적 머티리얼 (구간마다 하나, 처음 한 번만 생성)
+        UMaterialInstanceDynamic* NewMID = NewSegment->CreateDynamicMaterialInstance(0, LaserPreviewMaterial.Get());
+        NewSegment->RegisterComponent();
+
+        LaserPreviewSegments.Add(NewSegment);
+        LaserPreviewMIDs.Add(NewMID);
+    }
+
+    UStaticMeshComponent* SegmentMesh = LaserPreviewSegments[Index].Get();
+    if (false == IsValid(SegmentMesh)) return false;
+
+    // 평면의 로컬 +X를 레이저 진행 방향, 로컬 +Z를 위로 → 바닥과 나란히 누운 띠
+    const FVector Direction = Delta / Length;
+    const FRotator Rotation = FRotationMatrix::MakeFromXZ(Direction, FVector::UpVector).Rotator();
+
+    SegmentMesh->SetWorldLocationAndRotation((Start + End) * 0.5f, Rotation);
+    SegmentMesh->SetWorldScale3D(FVector(Length / 100.f, LaserPreviewWidth / 100.f, 1.f)); // 평면 100x100 기준
+
+    // 점선 간격이 구간 길이와 상관없이 일정하도록 실제 길이를 넘겨줘요
+    if (LaserPreviewMIDs.IsValidIndex(Index) && true == IsValid(LaserPreviewMIDs[Index].Get()))
+        LaserPreviewMIDs[Index]->SetScalarParameterValue(TEXT("SegmentLength"), Length);
+
+    SegmentMesh->SetVisibility(true);
+    return true;
+}
+
+void UGameplayAbility_PetReflect::HideLaserPreviewFrom(int32 Index)
+{
+    for (int32 SegmentIndex = FMath::Max(Index, 0); SegmentIndex < LaserPreviewSegments.Num(); ++SegmentIndex)
+    {
+        UStaticMeshComponent* SegmentMesh = LaserPreviewSegments[SegmentIndex].Get();
+        if (true == IsValid(SegmentMesh) && true == SegmentMesh->IsVisible())
+            SegmentMesh->SetVisibility(false);
+    }
+}
+
+bool UGameplayAbility_PetReflect::CreatePlacementGhost(APetCharacter* Pet)
+{
+    // 고스트 머티리얼이 없으면 만들지 않아요 (불투명 메시가 진짜 반사판처럼 보이면 헷갈리니까)
+    if (false == IsValid(Pet) || true == PlacementGhostMaterials.IsEmpty()) return false;
+
+    // 반사판 BP에 설정된 메시를 그대로 가져와요
+    const APetReflector* ReflectorDefaults = ReflectorClass.GetDefaultObject();
+    const UStaticMeshComponent* SourceMesh = IsValid(ReflectorDefaults) ? ReflectorDefaults->GetReflectorMesh() : nullptr;
+    if (false == IsValid(SourceMesh) || false == IsValid(SourceMesh->GetStaticMesh())) return false;
+
+    // 펫 소유, 위치는 커서/설치 Transform으로 직접 지정
+    PlacementGhostMesh = NewObject<UStaticMeshComponent>(Pet, NAME_None, RF_Transient);
+    PlacementGhostMesh->SetMobility(EComponentMobility::Movable);
+    PlacementGhostMesh->SetStaticMesh(SourceMesh->GetStaticMesh());
+
+    PlacementGhostMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    PlacementGhostMesh->SetGenerateOverlapEvents(false);
+    PlacementGhostMesh->SetCastShadow(false);
+    PlacementGhostMesh->SetReceivesDecals(false);
+    PlacementGhostMesh->SetCanEverAffectNavigation(false);
+    PlacementGhostMesh->SetVisibility(false);
+    PlacementGhostMesh->SetTranslucentSortPriority(10); //! 다른 반투명 이펙트보다 나중에(위에) 그려지도록
+
+    // 슬롯마다 같은 순서의 고스트 머티리얼로 동적 머티리얼을 만들어요 (설치 가능/불가 색을 바꾸기 위해)
+    // 배열이 슬롯 수보다 짧거나 비어 있는 칸은 원래 머티리얼(불투명) 그대로라, 6칸 다 채워야 해요
+    PlacementGhostMIDs.Reset();
+    const int32 SlotCount = FMath::Min(PlacementGhostMaterials.Num(), PlacementGhostMesh->GetNumMaterials());
+    for (int32 Index = 0; Index < SlotCount; ++Index)
+    {
+        if (false == IsValid(PlacementGhostMaterials[Index].Get())) continue;
+
+        UMaterialInstanceDynamic* MID = PlacementGhostMesh->CreateDynamicMaterialInstance(Index, PlacementGhostMaterials[Index].Get());
+        if (true == IsValid(MID))
+            PlacementGhostMIDs.Add(MID);
+    }
+
+    PlacementGhostMesh->RegisterComponent();
+    return true;
+}
+
+void UGameplayAbility_PetReflect::ShowPlacementGhost(const FTransform& ReflectorTransform, bool bPlaceable)
+{
+    UStaticMeshComponent* Ghost = PlacementGhostMesh.Get();
+    const APetReflector* ReflectorDefaults = ReflectorClass.GetDefaultObject();
+    const UStaticMeshComponent* SourceMesh = IsValid(ReflectorDefaults) ? ReflectorDefaults->GetReflectorMesh() : nullptr;
+    const USceneComponent* SourceRoot = IsValid(ReflectorDefaults) ? ReflectorDefaults->GetRootComponent() : nullptr;
+
+    if (false == IsValid(Ghost) || false == IsValid(SourceMesh) || false == IsValid(SourceRoot)) return;
+
+    // 진짜 반사판이 생길 때와 똑같은 위치·회전·크기
+    // = (반사판 안에서 메시의 상대 Transform) × (루트 크기) × (반사판 Transform)
+    const FTransform RootScale(FQuat::Identity, FVector::ZeroVector, SourceRoot->GetRelativeScale3D());
+    Ghost->SetWorldTransform(SourceMesh->GetRelativeTransform() * RootScale * ReflectorTransform);
+
+    // 설치 가능하면 원래 색 그대로(검정을 더함), 불가면 빨갛게 빛나게 (머티리얼 발광에 GhostTint를 더해요)
+    const FLinearColor Tint = bPlaceable ? ValidPreviewColor : InvalidPreviewColor;
+    for (UMaterialInstanceDynamic* MID : PlacementGhostMIDs)
+    {
+        if (true == IsValid(MID))
+            MID->SetVectorParameterValue(TEXT("GhostTint"), Tint);
+    }
+
+    Ghost->SetVisibility(true);
+}
+
+void UGameplayAbility_PetReflect::HidePlacementGhost()
+{
+    if (true == IsValid(PlacementGhostMesh.Get()))
+        PlacementGhostMesh->SetVisibility(false);
+
+    // 고스트가 없으면 화살표·레이저 미리보기도 의미가 없으니 같이 숨김
+    HideFacingArrow();
+    HideLaserPreviewFrom(0);
+}
+
+void UGameplayAbility_PetReflect::CreateFacingArrow(APetCharacter* Pet)
+{
+    if (false == IsValid(Pet) || false == IsValid(FacingArrowMesh.Get()) || false == IsValid(FacingArrowMaterial.Get())) return;
+
+    // 고스트처럼 펫 소유, 위치는 매 틱 직접 지정
+    FacingArrowComponent = NewObject<UStaticMeshComponent>(Pet, NAME_None, RF_Transient);
+    FacingArrowComponent->SetMobility(EComponentMobility::Movable);
+    FacingArrowComponent->SetStaticMesh(FacingArrowMesh.Get());
+    FacingArrowComponent->SetMaterial(0, FacingArrowMaterial.Get());
+
+    FacingArrowComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    FacingArrowComponent->SetGenerateOverlapEvents(false);
+    FacingArrowComponent->SetCastShadow(false);
+    FacingArrowComponent->SetReceivesDecals(false);
+    FacingArrowComponent->SetCanEverAffectNavigation(false);
+    FacingArrowComponent->SetVisibility(false);
+    FacingArrowComponent->SetTranslucentSortPriority(11); //! 고스트(10)보다 위에 그려지도록
+
+    // 평면 메시(100x100) 기준 → 원하는 길이/폭으로 늘림 (X = 앞, Y = 옆)
+    FacingArrowComponent->SetWorldScale3D(FVector(FacingArrowLength / 100.f, FacingArrowWidth / 100.f, 1.f));
+    FacingArrowComponent->RegisterComponent();
+}
+
+void UGameplayAbility_PetReflect::ShowFacingArrow(const FVector& GroundLocation)
+{
+    if (false == IsValid(FacingArrowComponent.Get()) || nullptr == ReflectorClass) return;
+
+    // 반사판 앞면(+X)에서 간격만큼 떨어진 곳부터 화살표가 시작되도록 화살표 중심을 계산
+    const FVector HalfExtents = ReflectorClass.GetDefaultObject()->GetPlacementHalfExtents();
+    const FVector Forward = PlacementRotation.Vector();
+    const float CenterDistance = HalfExtents.X + FacingArrowGap + FacingArrowLength * 0.5f;
+
+    const FVector ArrowCenter = GroundLocation + Forward * CenterDistance + FVector::UpVector * FacingArrowHeight;
+
+    // 머티리얼이 평면의 로컬 +X 방향으로 화살표를 그리므로 반사판 회전을 그대로 써요
+    FacingArrowComponent->SetWorldLocationAndRotation(ArrowCenter, PlacementRotation);
+    FacingArrowComponent->SetVisibility(true);
+}
+
+void UGameplayAbility_PetReflect::HideFacingArrow()
+{
+    if (true == IsValid(FacingArrowComponent.Get()))
+        FacingArrowComponent->SetVisibility(false);
 }
 
 void UGameplayAbility_PetReflect::UpdateRemoveHover()

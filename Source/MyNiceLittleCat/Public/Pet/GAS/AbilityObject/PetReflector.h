@@ -24,6 +24,10 @@ protected:
 public:
 	float GetHalfWidth() const;
 	FVector GetPlacementHalfExtents() const;
+
+	// 설치 고스트가 같은 메시/위치/크기를 쓰도록 공개 (BP에서 설정한 메시 그대로)
+	UStaticMeshComponent* GetReflectorMesh() const { return ReflectorMesh; }
+
 	virtual bool TryGetReflection_Implementation(const FVector& IncomingDirection, const FHitResult& Hit, FVector& OutDirection) const override;
 
 	// 철거 대상으로 가리켜졌을 때 아웃라인(PP) 표시 on/off

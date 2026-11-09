@@ -23,6 +23,14 @@ namespace MagneticEffectParams
 	const FName IconOffset(TEXT("IconOffset"));
 }
 
+namespace MagneticOverlayParams
+{
+	// 막 오버레이 머티리얼 파라미터 이름 (머티리얼 쪽과 맞춰야 함)
+	const FName Color(TEXT("Color"));
+	const FName Activity(TEXT("Activity"));
+	const FName Polarity(TEXT("Polarity"));
+}
+
 UMagneticComponent::UMagneticComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -39,6 +47,7 @@ void UMagneticComponent::BeginPlay()
 	Super::BeginPlay();
 
 	UpdatePolarityColor();
+	ApplyPolarityOverlay();
 	SpawnPolarityEffect();
 }
 
@@ -215,6 +224,7 @@ void UMagneticComponent::NotifyMagnetInteraction()
 	{
 		PolarityEffectComponent->SetVariableFloat(MagneticEffectParams::Activity, CurrentActivity);
 	}
+	UpdateOverlayActivity();
 }
 
 void UMagneticComponent::SetPolarity(EMagneticPolarity NewPolarity)
@@ -228,6 +238,7 @@ void UMagneticComponent::SetPolarity(EMagneticPolarity NewPolarity)
 	Polarity = NewPolarity;
 
 	UpdatePolarityColor();
+	UpdatePolarityOverlay();
 	UpdatePolarityEffect();
 	OnPolarityChanged.Broadcast(this, NewPolarity, OldPolarity);
 }
@@ -379,7 +390,7 @@ void UMagneticComponent::UpdatePolarityEffect()
 
 void UMagneticComponent::UpdateEffectActivity(float DeltaTime)
 {
-	if (!PolarityEffectComponent || CurrentActivity <= 0.f)
+	if ((!PolarityEffectComponent && !OverlayMaterialInstance) || CurrentActivity <= 0.f)
 	{
 		return;
 	}
@@ -391,5 +402,110 @@ void UMagneticComponent::UpdateEffectActivity(float DeltaTime)
 	}
 
 	CurrentActivity = FMath::Max(0.f, CurrentActivity - ActivityFadeSpeed * DeltaTime);
-	PolarityEffectComponent->SetVariableFloat(MagneticEffectParams::Activity, CurrentActivity);
+	if (PolarityEffectComponent)
+	{
+		PolarityEffectComponent->SetVariableFloat(MagneticEffectParams::Activity, CurrentActivity);
+	}
+	UpdateOverlayActivity();
+}
+
+void UMagneticComponent::ApplyPolarityOverlay()
+{
+	if (!bApplyPolarityOverlay || Polarity == EMagneticPolarity::None || !OverlayMeshes.IsEmpty())
+	{
+		return;
+	}
+
+	AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return;
+	}
+
+	if (!OverlayMaterialInstance)
+	{
+		UMaterialInterface* Material = PolarityOverlay;
+		if (!Material)
+		{
+			Material = GetDefault<UMagneticSettings>()->DefaultPolarityOverlay.LoadSynchronous();
+		}
+		if (!Material)
+		{
+			return;
+		}
+		OverlayMaterialInstance = UMaterialInstanceDynamic::Create(Material, this);
+	}
+
+	TArray<UMeshComponent*> Meshes;
+	Owner->GetComponents(Meshes);
+	for (UMeshComponent* Mesh : Meshes)
+	{
+		if (!OverlayTargetTag.IsNone() && !Mesh->ComponentHasTag(OverlayTargetTag))
+		{
+			continue;
+		}
+
+		OverlayMeshes.Add(Mesh);
+		OriginalOverlays.Add(Mesh->GetOverlayMaterial());
+		Mesh->SetOverlayMaterial(OverlayMaterialInstance);
+	}
+
+	if (!OverlayMeshes.IsEmpty())
+	{
+		UpdatePolarityOverlay();
+	}
+}
+
+void UMagneticComponent::RemovePolarityOverlay()
+{
+	for (int32 Index = 0; Index < OverlayMeshes.Num(); ++Index)
+	{
+		UMeshComponent* Mesh = OverlayMeshes[Index];
+		// 그사이 다른 연출이 오버레이를 바꿨으면 건드리지 않음
+		if (Mesh && Mesh->GetOverlayMaterial() == OverlayMaterialInstance)
+		{
+			Mesh->SetOverlayMaterial(OriginalOverlays[Index]);
+		}
+	}
+	OverlayMeshes.Reset();
+	OriginalOverlays.Reset();
+}
+
+void UMagneticComponent::UpdatePolarityOverlay()
+{
+	if (!bApplyPolarityOverlay)
+	{
+		return;
+	}
+
+	if (Polarity == EMagneticPolarity::None)
+	{
+		RemovePolarityOverlay();
+		return;
+	}
+
+	if (OverlayMeshes.IsEmpty())
+	{
+		// BeginPlay 전이거나 None에서 다시 극성이 생긴 경우 (Apply가 다시 이 함수를 부름)
+		if (HasBegunPlay())
+		{
+			ApplyPolarityOverlay();
+		}
+		return;
+	}
+
+	if (OverlayMaterialInstance)
+	{
+		OverlayMaterialInstance->SetVectorParameterValue(MagneticOverlayParams::Color, GetPolarityColor(Polarity));
+		OverlayMaterialInstance->SetScalarParameterValue(MagneticOverlayParams::Polarity, Polarity == EMagneticPolarity::S ? 1.f : 0.f);
+		UpdateOverlayActivity();
+	}
+}
+
+void UMagneticComponent::UpdateOverlayActivity()
+{
+	if (OverlayMaterialInstance)
+	{
+		OverlayMaterialInstance->SetScalarParameterValue(MagneticOverlayParams::Activity, CurrentActivity);
+	}
 }
