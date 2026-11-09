@@ -18,6 +18,9 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "TimerManager.h"
+#include "NiagaraFunctionLibrary.h"
+#include "Kismet/GameplayStatics.h"
+#include "Camera/PlayerCameraManager.h"
 
 #include "Pet/PetCharacter.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
@@ -144,6 +147,30 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
         AActor* Target = Hit.GetActor();
 
         if (!Target || Target->IsA<APetCharacter>() || Target->ActorHasTag(DeflectTag) || HitActors.Contains(Target)) continue;
+
+        // 데미지 받을 수 있는 대상(ASC 있음)에만 이펙트
+        if (HitEffect && UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Target))
+        {
+            FVector Point = Hit.ImpactPoint;
+
+            // 시작부터 겹친 히트는 ImpactPoint가 부정확 → 대상 중심에서 공격자 쪽 표면 근처로
+            if (Hit.bStartPenetrating || Point.IsNearlyZero())
+            {
+                FVector Origin, Extent;
+                Target->GetActorBounds(true, Origin, Extent);
+                const FVector ToAttacker = (Attacker->GetActorLocation() - Origin).GetSafeNormal2D();
+                Point = Origin + ToAttacker * FMath::Min(Extent.X, Extent.Y);
+            }
+
+            // 몸에 파묻히지 않게 카메라 쪽으로 살짝만
+            if (const APlayerCameraManager* Cam = UGameplayStatics::GetPlayerCameraManager(MeshComp->GetWorld(), 0))
+            {
+                Point += (Cam->GetCameraLocation() - Point).GetSafeNormal() * 40.f;
+            }
+
+            const FRotator Facing = (-Hit.ImpactNormal).Rotation();
+            UNiagaraFunctionLibrary::SpawnSystemAtLocation(MeshComp->GetWorld(), HitEffect, Point, Facing, HitEffectScale);
+        }
 
         HitActors.Add(Target);
 

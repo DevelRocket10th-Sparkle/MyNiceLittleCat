@@ -110,3 +110,10 @@ Content/__ExternalActors__/*
 /Content/Characters/Mannequins/Textures
 /Content/Characters/Mannequins
 /Claude outputs
+/Content/EngineSky
+/SourceArt
+/Content/__ExternalObjects__
+/Content/__ExternalActors__/Pack_Simple_Particle_Burst/04_Maps/SImple_Particle_Burst_Showcased
+/Content/Test/Test_Gimmick/Checkpoint/v1
+/Content/RPGMonsterWavePBR
+/.gitignore
