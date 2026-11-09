@@ -15,6 +15,8 @@
 /// - Thrown:  잡힌 코인의 물리가 다시 켜지면(놓거나 던짐) ThrowGraceTime 동안 던져진 상태로,
 ///            이 동안 MinImpactSpeed 이상으로 부딪히면 자력 조건 없이 피해를 줍니다. 시간이 지나면 Landed로 돌아갑니다.
 ///            펫 코드를 호출하지 않고 물리 상태 변화만으로 판단하므로 펫 능력 쪽 변경이 필요 없습니다.
+///            던져진 코인이 보스(UBossGimmickComponent가 붙은 액터)에 부딪히면 보스 반격 피해(TryApplyCounterDamage)를 줍니다.
+///            보스가 받을 수 없는 페이즈·배리어 중이면 코인은 남습니다 (bDamageBossWhenThrown)
 /// 레벨에 직접 배치하면 bFallOnBeginPlay가 false일 때 바로 Landed로 시작합니다.
 /// TODO(합의): 보스 패턴이 스폰 후 StartFall(극성)을 호출하는 방식은 보스 담당과 확정 필요
 /// TODO: 소멸 상태는 다음 단계에서 추가
@@ -233,6 +235,13 @@ protected:
 	// 피해를 주면(대상이 실제로 피해를 받으면) 코인 소멸
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Damage")
 	bool bDestroyOnDamage = true;
+
+	// 던져진(Thrown) 코인이 보스에 부딪히면 보스 반격 피해 (피해량·허용 페이즈는 보스의 UBossGimmickComponent 설정)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Damage")
+	bool bDamageBossWhenThrown = true;
+
+	// 보스에 부딪혔을 때 처리. 보스가 아니면 false (일반 피해 처리로 넘어감)
+	bool HandleBossHit(AActor* OtherActor);
 
 private:
 	UPROPERTY(VisibleInstanceOnly, Category = "MagneticCoin")
