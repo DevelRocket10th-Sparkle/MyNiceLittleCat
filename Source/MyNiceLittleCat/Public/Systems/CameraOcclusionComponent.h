@@ -10,7 +10,7 @@ class ULockOnComponent;
 class UPrimitiveComponent;
 
 // 카메라와 플레이어 (및 락온 대상) 사이를 가리는 벽 / 천장을 면 단위로 숨기는 컴포넌트
-// 판정은 일정 간격 Sphere Sweep, 숨김은 메인 패스 렌더링만 끄는 방식이라 그림자와 콜리전은 유지
+// 판정은 일정 간격 Sphere Sweep, 숨김은 메인 / 깊이 패스 렌더링만 끄는 방식이라 그림자와 콜리전은 유지
 UCLASS(ClassGroup = (Camera), meta = (BlueprintSpawnableComponent))
 class MYNICELITTLECAT_API UCameraOcclusionComponent : public UActorComponent
 {
@@ -29,6 +29,10 @@ public:
 	// 대상 바로 앞에서 Sweep을 멈추는 거리: 대상 등 뒤에 붙은 벽이 잡히는 것 방지 (cm)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Occlusion", meta = (ClampMin = "0.0"))
 	float TargetEndOffset = 40.f;
+	// 대상 발 기준 높이: 바닥 / 천장 조각의 아랫면이 이보다 낮으면 숨기지 않음 (cm)
+	// 같은 판이 아래층에서는 천장, 위층에서는 바닥이 되므로 대상보다 충분히 위에 있을 때만 천장으로 취급
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Occlusion", meta = (ClampMin = "0.0"))
+	float CeilingMinHeight = 150.f;
 	// 더 이상 가리지 않아도 이 시간 동안은 숨김 유지: 벽 경계에서 깜빡임 방지 (초)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Occlusion", meta = (ClampMin = "0.0"))
 	float RestoreDelay = 0.25f;
@@ -54,6 +58,8 @@ private:
 	{
 		// 숨기기 전 메인 패스 렌더링 여부: 원래 꺼져 있던 조각을 켜지 않기 위함
 		bool bWasRenderInMainPass = true;
+		// 숨기기 전 깊이 패스 렌더링 여부: 메인 패스만 끄면 깊이는 남아 검은 면으로 보이므로 같이 끔
+		bool bWasRenderInDepthPass = true;
 		// 마지막으로 가림 판정된 시각
 		float LastOccludedTime = 0.f;
 	};
@@ -64,8 +70,12 @@ private:
 	void CollectTargets(TArray<AActor*>& OutTargets) const;
 	// 카메라에서 대상까지 Sweep하여 맞은 조각 수집
 	void SweepToTarget(const FVector& CameraLocation, const AActor* Target, TSet<UPrimitiveComponent*>& OutHitPieces) const;
-	// 메인 패스 렌더링을 꺼서 화면에서만 숨김
+	// 바닥 / 천장 조각이 대상 발보다 CeilingMinHeight 이상 위에 있는지 판정. 벽 등 수직 조각은 항상 true
+	bool IsAboveTargetFloor(const UPrimitiveComponent* Piece, float TargetFootZ) const;
+	// 메인 패스 / 깊이 패스 렌더링을 꺼서 화면에서만 숨김
 	void HidePiece(UPrimitiveComponent* Piece, float CurrentTime);
+	// 숨기기 전 렌더링 설정으로 복구
+	void RestorePiece(UPrimitiveComponent* Piece, const FHiddenPiece& Hidden);
 	// 일정 시간 가리지 않은 조각 복구
 	void RestoreExpiredPieces(float CurrentTime);
 	// 숨긴 조각 전부 즉시 복구

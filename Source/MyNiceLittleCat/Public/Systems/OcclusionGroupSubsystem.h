@@ -42,6 +42,8 @@ public:
 
 	// 맞은 조각이 속한 면 전체를 OutMembers에 추가. 판이 아니거나 제외 태그가 있으면 자기 자신만 추가
 	void CollectGroupMembers(UPrimitiveComponent* HitPiece, const FOcclusionGroupSettings& Settings, TSet<UPrimitiveComponent*>& OutMembers);
+	// 바닥 / 천장처럼 위아래를 향한 판 조각인지 판정: 층 높이 조건 적용 대상 구분용
+	bool IsHorizontalPiece(const UPrimitiveComponent* Piece, const FOcclusionGroupSettings& Settings) const;
 	// 레벨 구성이 바뀌었을 때 (스트리밍 등) 그룹 캐시 초기화
 	UFUNCTION(BlueprintCallable, Category = "Occlusion")
 	void ClearGroupCache();

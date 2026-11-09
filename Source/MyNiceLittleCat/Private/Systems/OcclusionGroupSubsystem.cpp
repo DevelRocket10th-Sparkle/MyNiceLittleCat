@@ -45,6 +45,17 @@ void UOcclusionGroupSubsystem::CollectGroupMembers(UPrimitiveComponent* HitPiece
 	AppendGroupMembers(NewIndex, OutMembers);
 }
 
+bool UOcclusionGroupSubsystem::IsHorizontalPiece(const UPrimitiveComponent* Piece, const FOcclusionGroupSettings& Settings) const
+{
+	if (!IsValid(Piece))
+	{
+		return false;
+	}
+	const FPieceShape Shape = CalculatePieceShape(Piece, Settings);
+	// 법선이 위 또는 아래를 향하는 얇은 판
+	return Shape.bIsPlanar && FMath::Abs(Shape.Normal.Z) >= OcclusionGroup::SameDirectionDot;
+}
+
 void UOcclusionGroupSubsystem::ClearGroupCache()
 {
 	Groups.Reset();

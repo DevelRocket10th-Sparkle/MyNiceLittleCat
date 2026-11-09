@@ -119,6 +119,12 @@ void UCameraOcclusionComponent::SweepToTarget(const FVector& CameraLocation, con
 	// 대상 위치에서 카메라 쪽으로 TargetEndOffset만큼 당긴 지점까지만 Sweep
 	const FVector SweepEnd = TargetLocation + ToCamera / Distance * TargetEndOffset;
 
+	// 대상 발 높이: 캐릭터는 캡슐 아랫면, 그 외 액터는 단순 콜리전 원기둥 아랫면
+	float CollisionRadius = 0.f;
+	float CollisionHalfHeight = 0.f;
+	Target->GetSimpleCollisionCylinder(CollisionRadius, CollisionHalfHeight);
+	const float TargetFootZ = TargetLocation.Z - CollisionHalfHeight;
+
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(CameraOcclusionSweep), false, GetOwner());
 	Params.AddIgnoredActor(Target);
 
@@ -129,10 +135,16 @@ void UCameraOcclusionComponent::SweepToTarget(const FVector& CameraLocation, con
 	for (const FHitResult& Hit : Hits)
 	{
 		UPrimitiveComponent* HitPiece = Hit.GetComponent();
-		if (IsValid(HitPiece))
+		if (!IsValid(HitPiece))
 		{
-			OutHitPieces.Add(HitPiece);
+			continue;
 		}
+		// 대상이 서 있는 층의 바닥이나 앞쪽의 높은 바닥은 천장이 아니므로 제외
+		if (!IsAboveTargetFloor(HitPiece, TargetFootZ))
+		{
+			continue;
+		}
+		OutHitPieces.Add(HitPiece);
 	}
 
 	if (bDrawDebug)
@@ -146,13 +158,33 @@ void UCameraOcclusionComponent::SweepToTarget(const FVector& CameraLocation, con
 	}
 }
 
+bool UCameraOcclusionComponent::IsAboveTargetFloor(const UPrimitiveComponent* Piece, float TargetFootZ) const
+{
+	// 벽은 아랫면이 발 높이와 같으므로 높이 조건을 적용하지 않음
+	if (!GroupSubsystem->IsHorizontalPiece(Piece, GroupSettings))
+	{
+		return true;
+	}
+	const float PieceBottomZ = Piece->Bounds.Origin.Z - Piece->Bounds.BoxExtent.Z;
+	return PieceBottomZ >= TargetFootZ + CeilingMinHeight;
+}
+
 void UCameraOcclusionComponent::HidePiece(UPrimitiveComponent* Piece, float CurrentTime)
 {
 	FHiddenPiece& Hidden = HiddenPieces.Add(Piece);
 	Hidden.bWasRenderInMainPass = Piece->bRenderInMainPass;
+	Hidden.bWasRenderInDepthPass = Piece->bRenderInDepthPass;
 	Hidden.LastOccludedTime = CurrentTime;
 	// 화면에서만 숨김: 그림자, 콜리전은 유지되어 실내 음영이 바뀌지 않고 Sweep에도 계속 잡힘
 	Piece->SetRenderInMainPass(false);
+	// 메인 패스를 꺼도 깊이 패스는 기본으로 켜져 있어, 끄지 않으면 색 없는 깊이만 남아 검은 면으로 가림
+	Piece->SetRenderInDepthPass(false);
+}
+
+void UCameraOcclusionComponent::RestorePiece(UPrimitiveComponent* Piece, const FHiddenPiece& Hidden)
+{
+	Piece->SetRenderInMainPass(Hidden.bWasRenderInMainPass);
+	Piece->SetRenderInDepthPass(Hidden.bWasRenderInDepthPass);
 }
 
 void UCameraOcclusionComponent::RestoreExpiredPieces(float CurrentTime)
@@ -171,7 +203,7 @@ void UCameraOcclusionComponent::RestoreExpiredPieces(float CurrentTime)
 		{
 			continue;
 		}
-		Piece->SetRenderInMainPass(Hidden.bWasRenderInMainPass);
+		RestorePiece(Piece, Hidden);
 		It.RemoveCurrent();
 	}
 }
@@ -183,7 +215,7 @@ void UCameraOcclusionComponent::RestoreAllPieces()
 		UPrimitiveComponent* Piece = Pair.Key.Get();
 		if (Piece)
 		{
-			Piece->SetRenderInMainPass(Pair.Value.bWasRenderInMainPass);
+			RestorePiece(Piece, Pair.Value);
 		}
 	}
 	HiddenPieces.Reset();
