@@ -35,4 +35,7 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category = "LockOn")
     float AimPitch = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Movement")
+    bool bIsFalling = false;
 };

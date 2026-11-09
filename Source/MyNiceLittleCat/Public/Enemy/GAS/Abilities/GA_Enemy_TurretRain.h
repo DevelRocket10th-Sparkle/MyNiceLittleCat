@@ -31,6 +31,13 @@ private:
 	void CheckCancel();
 	bool FindGround(const FVector& Around, FVector& OutGround) const;
 
+	// 보스가 죽거나(사망 시작) 사라지면(초기화·플레이어 사망 후 재생성) 떨군 포탑을 모두 파괴
+	void BindOwnerCleanup(AEnemyCharacter* OwnerEnemy);
+	void HandleOwnerDeathStarted(AEnemyCharacter* DeadEnemy);
+	UFUNCTION()
+	void HandleOwnerDestroyed(AActor* DestroyedActor);
+	void KillSpawnedTurrets();
+
 	UPROPERTY(Transient)
 	TObjectPtr<UTurretRainPatternSettings> Settings;
 
@@ -59,4 +66,5 @@ private:
 	int32 CyclesDone = 0;
 	int64 RequestId = 0;
 	bool bOwnsRotationLock = false;
+	bool bCleanupBound = false;
 };
