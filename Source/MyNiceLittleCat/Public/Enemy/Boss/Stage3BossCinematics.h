@@ -74,6 +74,10 @@ class MYNICELITTLECAT_API AStage3BossCinematics : public AActor, public IInterac
 public:
 	AStage3BossCinematics();
 
+	UFUNCTION(BlueprintCallable, Category = "Stage 3")
+	bool StartPhaseOneCut(APlayerCharacter* Player);
+
+	bool TrySkipActiveCut(AActor* InstigatorActor);
 	bool CanStartEncounter() const { return bStartingCombat; }
 	void ResetStaging();
 	void OpenExit();
@@ -93,6 +97,7 @@ private:
 	virtual FVector GetInteractFocusLocation_Implementation(AActor* InstigatorActor) const override;
 	virtual FInteractPromptInfo GetInteractPrompt_Implementation(AActor* InstigatorActor) const override;
 
+	bool CanConfirmPhaseOne() const;
 	void Play(ULevelSequence* Sequence);
 	UFUNCTION()
 	void FinishOpeningCut();
@@ -151,6 +156,10 @@ private:
 
 	UPROPERTY(EditInstanceOnly, Category = "Stage 3")
 	bool bRequirePhaseOneConfirmation = false;
+
+	// A level trigger calls StartPhaseOneCut instead of using the built-in entry area.
+	UPROPERTY(EditInstanceOnly, Category = "Stage 3")
+	bool bUseExternalPhaseOneTrigger = false;
 
 	struct FDoorMotion
 	{

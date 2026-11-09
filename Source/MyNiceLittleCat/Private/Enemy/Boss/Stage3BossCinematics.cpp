@@ -8,6 +8,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Enemy/Boss/BossCharacter.h"
 #include "Enemy/Boss/BossEncounterManager.h"
+#include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Frameworks/Save/GameProgressSubsystem.h"
@@ -129,11 +130,9 @@ void AStage3BossCinematics::Tick(float DeltaSeconds)
 			Play(ArrivalSequence);
 	}
 
-	if (Opening == EOpening::Courtyard && !bRequirePhaseOneConfirmation && HasEnteredArena(PhaseOne))
-	{
-		Opening = EOpening::PhaseOne;
-		Play(FindPhase(PhaseOne)->Sequence);
-	}
+	if (Opening == EOpening::Courtyard && !bUseExternalPhaseOneTrigger
+		&& !bRequirePhaseOneConfirmation && HasEnteredArena(PhaseOne))
+		StartPhaseOneCut(Player);
 	if (OpeningPlayer && DoorIsOpen.IsValidIndex(0))
 	{
 		const double Seconds = OpeningPlayer->GetCurrentTime().AsSeconds();
@@ -180,8 +179,13 @@ FVector AStage3BossCinematics::GetDoorInteractionLocation(int32 DoorIndex) const
 bool AStage3BossCinematics::CanInteract_Implementation(AActor* InstigatorActor) const
 {
 	return InstigatorActor && InstigatorActor == GetPlayer() && !OpeningPlayer
-		&& ((Opening == EOpening::Courtyard && bRequirePhaseOneConfirmation && HasEnteredArena(PhaseOne))
-			|| FindNearestDoor(InstigatorActor) != INDEX_NONE);
+		&& (CanConfirmPhaseOne() || FindNearestDoor(InstigatorActor) != INDEX_NONE);
+}
+
+bool AStage3BossCinematics::CanConfirmPhaseOne() const
+{
+	return Opening == EOpening::Courtyard && !bUseExternalPhaseOneTrigger
+		&& bRequirePhaseOneConfirmation && HasEnteredArena(PhaseOne);
 }
 
 FVector AStage3BossCinematics::GetInteractFocusLocation_Implementation(AActor* InstigatorActor) const
@@ -201,7 +205,7 @@ FInteractPromptInfo AStage3BossCinematics::GetInteractPrompt_Implementation(AAct
 	FInteractPromptInfo Prompt;
 	Prompt.WorldLocation = GetInteractFocusLocation_Implementation(InstigatorActor);
 	const int32 Door = FindNearestDoor(InstigatorActor);
-	if (Opening == EOpening::Courtyard && bRequirePhaseOneConfirmation && HasEnteredArena(PhaseOne))
+	if (CanConfirmPhaseOne())
 		Prompt.ActionText = NSLOCTEXT("Stage3", "StartFight", "전투 시작");
 	else if (Door == 0 && Opening == EOpening::Locked)
 		Prompt.ActionText = NSLOCTEXT("Stage3", "UseKey", "대문 열쇠 사용");
@@ -214,12 +218,8 @@ void AStage3BossCinematics::Interact_Implementation(AActor* InstigatorActor)
 {
 	if (!HasAuthority() || !CanInteract_Implementation(InstigatorActor))
 		return;
-	if (Opening == EOpening::Courtyard && bRequirePhaseOneConfirmation && HasEnteredArena(PhaseOne))
-	{
-		Opening = EOpening::PhaseOne;
-		Play(FindPhase(PhaseOne)->Sequence);
+	if (CanConfirmPhaseOne() && StartPhaseOneCut(Cast<APlayerCharacter>(InstigatorActor)))
 		return;
-	}
 
 	const int32 Door = FindNearestDoor(InstigatorActor);
 	const UInventorySubsystem* Inventory = GetGameInstance()->GetSubsystem<UInventorySubsystem>();
@@ -232,6 +232,36 @@ void AStage3BossCinematics::Interact_Implementation(AActor* InstigatorActor)
 	}
 	if (LockedRattle && Doors.IsValidIndex(Door))
 		UGameplayStatics::PlaySoundAtLocation(this, LockedRattle, Doors[Door].Actor->GetActorLocation());
+}
+
+bool AStage3BossCinematics::StartPhaseOneCut(APlayerCharacter* Player)
+{
+	if (!HasAuthority() || !IsValid(Encounter) || !Player || Player != GetPlayer()
+		|| Opening != EOpening::Courtyard || OpeningPlayer)
+		return false;
+
+	const FStage3CinematicPhase* Setup = FindPhase(PhaseOne);
+	if (!Setup)
+		return false;
+
+	Opening = EOpening::PhaseOne;
+	Play(Setup->Sequence);
+	return true;
+}
+
+bool AStage3BossCinematics::TrySkipActiveCut(AActor* InstigatorActor)
+{
+	if (!HasAuthority() || !IsValid(Encounter) || !InstigatorActor || InstigatorActor != GetPlayer())
+		return false;
+
+	if (IsValid(OpeningPlayer) && (OpeningPlayer->IsPlaying() || OpeningPlayer->IsPaused()))
+	{
+		FinishOpeningCut();
+		return true;
+	}
+
+	ABossCharacter* Boss = Encounter->GetCurrentBoss();
+	return IsValid(Boss) && Boss->GetPhaseComponent()->SkipActiveTransitionSequence();
 }
 
 void AStage3BossCinematics::Play(ULevelSequence* Sequence)
@@ -403,6 +433,9 @@ void AStage3BossCinematics::BeginPhaseCut(FName Phase, ABossCharacter* Boss)
 
 void AStage3BossCinematics::FinishPhaseCut(FName Phase, ABossCharacter* Boss)
 {
+	if (Phase == Barrier30)
+		WarningTime = 0.f;
+
 	if (const FStage3CinematicPhase* Setup = FindPhase(Phase); Setup && Boss)
 	{
 		if (Setup->BossStart)
