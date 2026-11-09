@@ -84,7 +84,36 @@ void AReflectTutorialManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 			Reflector->OnEndPlay.RemoveDynamic(this, &AReflectTutorialManager::HandleReflectorEndPlay);
 	TrackedReflectors.Reset();
 
+	// 문이 매니저보다 오래 남아도 사라진 객체를 부르지 않게 바인딩만 해제 (레벨 종료 시 문은 열지 않음)
+	if (IsValid(EntranceDoor))
+		EntranceDoor->OnActivationChanged.RemoveDynamic(this, &AReflectTutorialManager::HandleEntranceDoorChanged);
+
 	Super::EndPlay(EndPlayReason);
+}
+
+void AReflectTutorialManager::SetEntranceDoorLocked(bool _bLock)
+{
+	if (false == IsValid(EntranceDoor) || bEntranceDoorLocked == _bLock) return;
+	bEntranceDoorLocked = _bLock;
+
+	if (true == _bLock)
+	{
+		// 닫은 뒤에도 골목 수신기 신호로 다시 열리는지 감시
+		EntranceDoor->OnActivationChanged.AddUniqueDynamic(this, &AReflectTutorialManager::HandleEntranceDoorChanged);
+		EntranceDoor->SetActivated(false, this);
+	}
+	else
+	{
+		EntranceDoor->OnActivationChanged.RemoveDynamic(this, &AReflectTutorialManager::HandleEntranceDoorChanged);
+		EntranceDoor->SetActivated(true, this);
+	}
+}
+
+void AReflectTutorialManager::HandleEntranceDoorChanged(AGimmickActorBase* _gimmick, bool _bActivated, AActor* _changeInstigator)
+{
+	// 튜토리얼 중에는 어떤 신호로 열리든 다시 닫음
+	if (true == bEntranceDoorLocked && true == _bActivated && IsValid(_gimmick))
+		_gimmick->SetActivated(false, this);
 }
 
 void AReflectTutorialManager::TryStart()
@@ -98,15 +127,16 @@ void AReflectTutorialManager::TryStart()
 	Pet = FoundPet;
 	GetWorldTimerManager().ClearTimer(StartTimerHandle);
 
-	// 수신기가 이미 켜진 상태(체크포인트 재시작 등)면 튜토리얼 없이 끝
-	if (true == IsReceiverOn())
+	// 이미 반사 능력을 가졌거나 수신기가 이미 켜진 상태(체크포인트 재시작 등)면 튜토리얼 없이 끝
+	// 의도: 이 스테이지에서 배울 능력을 이미 알고 있으면 다시 가르치지 않음
+	if (true == FoundPet->IsModeUnlocked(EPetMode::Reflect) || true == IsReceiverOn())
 	{
 		CurrentStep = EReflectTutorialStep::Completed;
 		return;
 	}
 
-	// 이미 반사 능력을 가진 상태면 획득 단계는 건너뜀
-	EnterStep(FoundPet->IsModeUnlocked(EPetMode::Reflect) ? EReflectTutorialStep::Preview : EReflectTutorialStep::Acquire);
+	SetEntranceDoorLocked(true); // 튜토리얼 시작 → 입구 문 닫기
+	EnterStep(EReflectTutorialStep::Acquire);
 	GetWorldTimerManager().SetTimer(CheckTimerHandle, this, &AReflectTutorialManager::CheckStep, CheckInterval, true);
 }
 
@@ -141,12 +171,13 @@ void AReflectTutorialManager::EnterStep(EReflectTutorialStep _step)
 		break;
 
 	case EReflectTutorialStep::Solve:
-		PetSay(LOCTEXT("Solve", "이제 레이저를 꺾어서 수신기로 보내봐!"));
+		PetSay(LOCTEXT("Solve", "레이저를 꺾어서 수신기로 보내봐!"));
 		break;
 
 	case EReflectTutorialStep::Completed:
 		GetWorldTimerManager().ClearTimer(CheckTimerHandle);
-		PetSay(LOCTEXT("Done", "문이 열렸다! 이제 같이 가자!"), 3.f);
+		SetEntranceDoorLocked(false); // 튜토리얼 끝 → 입구 문 다시 열기
+		//PetSay(LOCTEXT("Done", "문이 열렸다! 이제 같이 가자!"), 3.f);
 		break;
 
 	default:
