@@ -9,6 +9,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 #include "TimerManager.h"
+#include "UObject/UObjectIterator.h"
 
 AGimmickPolarityField::AGimmickPolarityField()
 {
@@ -116,13 +117,11 @@ void AGimmickPolarityField::CheckField()
 		ObjectParams, FieldVolume->GetCollisionShape(), QueryParams);
 
 	TSet<UMagneticComponent*> Inside;
-	for (const FOverlapResult& Overlap : Overlaps)
+	auto ApplyTo = [this, &Inside](UMagneticComponent* Magnetic)
 	{
-		AActor* Actor = Overlap.GetActor();
-		UMagneticComponent* Magnetic = IsValid(Actor) ? Actor->FindComponentByClass<UMagneticComponent>() : nullptr;
 		if (!Magnetic || Inside.Contains(Magnetic))
 		{
-			continue;
+			return;
 		}
 		Inside.Add(Magnetic);
 
@@ -135,7 +134,31 @@ void AGimmickPolarityField::CheckField()
 		{
 			Magnetic->SetPolarity(FieldPolarity);
 			Magnetic->NotifyMagnetInteraction();
-			OnFieldApplied.Broadcast(this, Actor, Old);
+			OnFieldApplied.Broadcast(this, Magnetic->GetOwner(), Old);
+		}
+	};
+
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AActor* Actor = Overlap.GetActor();
+		ApplyTo(IsValid(Actor) ? Actor->FindComponentByClass<UMagneticComponent>() : nullptr);
+	}
+
+	// 펫이 들고 있는 물체는 콜리전이 꺼져 있어 오버랩에 안 잡히므로 위치로도 검사
+	const FTransform VolumeTransform = FieldVolume->GetComponentTransform();
+	const FVector Extent = FieldVolume->GetUnscaledBoxExtent();
+	for (TObjectIterator<UMagneticComponent> It; It; ++It)
+	{
+		UMagneticComponent* Magnetic = *It;
+		const AActor* MagneticOwner = IsValid(Magnetic) ? Magnetic->GetOwner() : nullptr;
+		if (!MagneticOwner || Magnetic->GetWorld() != World || Inside.Contains(Magnetic))
+		{
+			continue;
+		}
+		const FVector Local = VolumeTransform.InverseTransformPosition(MagneticOwner->GetActorLocation());
+		if (FMath::Abs(Local.X) <= Extent.X && FMath::Abs(Local.Y) <= Extent.Y && FMath::Abs(Local.Z) <= Extent.Z)
+		{
+			ApplyTo(Magnetic);
 		}
 	}
 
