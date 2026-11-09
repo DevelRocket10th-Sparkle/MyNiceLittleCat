@@ -68,6 +68,7 @@ public:
 	// 재생 취소도 연출 종료로 처리하여 해당 요청의 다음 페이즈 진입 허용
 	UFUNCTION(BlueprintCallable, Category = "Boss|Phase")
 	bool CancelTransitionSequence(int64 TransitionId);
+	bool SkipActiveTransitionSequence();
 	// 요청 ID가 일치하는 전환 결과 조회
 	// 현재 전환 번호와 일치하는 결과만 반환
 	EEnemyPatternResult GetTransitionResult(int64 TransitionId) const;
