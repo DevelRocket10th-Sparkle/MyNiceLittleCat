@@ -15,6 +15,39 @@
 
 #include "Gimmicks/Magnetic/MagneticComponent.h"
 
+namespace
+{
+	// 보스가 죽거나 사라지거나 플레이어가 죽으면 스폰된 액터를 제거하는 감시 타이머 (어빌리티 인스턴스 수명과 무관)
+	// 보스 사망 시 패턴 컴포넌트가 GA를 회수해서 GA 쪽 바인딩만으로는 정리가 안 됨
+	template <typename TSpawned, typename TKillFunc>
+	void WatchTurretOwner(UWorld* World, TSpawned* Spawned, AEnemyCharacter* Boss, TKillFunc KillFunc)
+	{
+		if (!World || !IsValid(Spawned)) return;
+
+		TSharedRef<FTimerHandle> Handle = MakeShared<FTimerHandle>();
+		TWeakObjectPtr<UWorld> WeakWorld(World);
+		TWeakObjectPtr<TSpawned> WeakSpawned(Spawned);
+		TWeakObjectPtr<AEnemyCharacter> WeakBoss(Boss);
+
+		World->GetTimerManager().SetTimer(*Handle, FTimerDelegate::CreateLambda([WeakWorld, WeakSpawned, WeakBoss, Handle, KillFunc]()
+		{
+			UWorld* W = WeakWorld.Get();
+			if (!W || W->bIsTearingDown) return;
+
+			const APlayerCharacter* Player = Cast<APlayerCharacter>(UGameplayStatics::GetPlayerCharacter(W, 0));
+			const bool bBossGone = !WeakBoss.IsValid() || !WeakBoss->IsAlive();
+			const bool bPlayerDead = Player && Player->GetbIsDead();
+			if (WeakSpawned.IsValid() && !bBossGone && !bPlayerDead) return;
+
+			W->GetTimerManager().ClearTimer(*Handle);
+			if (TSpawned* Target = WeakSpawned.Get())
+			{
+				KillFunc(Target);
+			}
+		}), 0.1f, true);
+	}
+}
+
 UGA_Enemy_TurretRain::UGA_Enemy_TurretRain()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
@@ -62,6 +95,8 @@ void UGA_Enemy_TurretRain::ActivateAbility(const FGameplayAbilitySpecHandle Hand
 		Enemy->AcquireRotationLock();
 		bOwnsRotationLock = true;
 	}
+
+	BindOwnerCleanup(Enemy.Get());
 
 	CyclesDone = 0;
 	GetWorld()->GetTimerManager().SetTimer(CancelCheckTimer, this, &UGA_Enemy_TurretRain::CheckCancel, 0.1f, true);
@@ -116,6 +151,16 @@ void UGA_Enemy_TurretRain::DropNext()
 				Body->SetPhysicsLinearVelocity(FVector(0.f, 0.f, -Settings->DropSpeed));
 			}
 			Turrets.Add(Turret);
+
+			// 보스 사망·제거, 플레이어 사망 시 정리 (FX 설정은 데이터 에셋이라 GA가 사라져도 유효)
+			TWeakObjectPtr<UTurretRainPatternSettings> WeakFX(Settings);
+			TWeakObjectPtr<UGA_Enemy_TurretRain> WeakThis(this);
+			WatchTurretOwner(GetWorld(), Turret, Enemy.Get(), [WeakFX, WeakThis](ATurret* T)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[TurretRain] Boss gone or player dead -> destroying %s"), *GetNameSafe(T));
+				if (WeakThis.IsValid() && WeakThis->GetWorld()) WeakThis->DestroyWithFX(T);
+				else T->Destroy();
+			});
 		}
 	}
 
@@ -241,6 +286,45 @@ void UGA_Enemy_TurretRain::CheckCancel()
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 	}
+}
+
+void UGA_Enemy_TurretRain::BindOwnerCleanup(AEnemyCharacter* OwnerEnemy)
+{
+	if (bCleanupBound || !IsValid(OwnerEnemy)) return;
+	OwnerEnemy->OnDeathStarted.AddUObject(this, &UGA_Enemy_TurretRain::HandleOwnerDeathStarted);
+	OwnerEnemy->OnDestroyed.AddUniqueDynamic(this, &UGA_Enemy_TurretRain::HandleOwnerDestroyed);
+	bCleanupBound = true;
+}
+
+void UGA_Enemy_TurretRain::HandleOwnerDeathStarted(AEnemyCharacter* DeadEnemy)
+{
+	KillSpawnedTurrets();
+}
+
+void UGA_Enemy_TurretRain::HandleOwnerDestroyed(AActor* DestroyedActor)
+{
+	KillSpawnedTurrets();
+}
+
+void UGA_Enemy_TurretRain::KillSpawnedTurrets()
+{
+	UWorld* World = GetWorld();
+	if (!World || World->bIsTearingDown) return;
+
+	World->GetTimerManager().ClearTimer(StepTimer);
+	World->GetTimerManager().ClearTimer(BackgroundDestroyTimer);
+
+	// 들고 있는 포탑도 예외 없이 파괴
+	for (ATurret* Turret : Turrets)
+	{
+		if (IsValid(Turret)) DestroyWithFX(Turret);
+	}
+	for (ATurret* Turret : BackgroundTurrets)
+	{
+		if (IsValid(Turret)) DestroyWithFX(Turret);
+	}
+	Turrets.Reset();
+	BackgroundTurrets.Reset();
 }
 
 bool UGA_Enemy_TurretRain::FindGround(const FVector& Around, FVector& OutGround) const
