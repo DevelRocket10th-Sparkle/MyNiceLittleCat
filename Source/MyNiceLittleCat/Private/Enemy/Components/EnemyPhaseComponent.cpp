@@ -344,6 +344,13 @@ bool UEnemyPhaseComponent::CancelTransitionSequence(int64 TransitionId)
 	return true;
 }
 
+bool UEnemyPhaseComponent::SkipActiveTransitionSequence()
+{
+	return StageCinematics.IsValid() && IsValid(TransitionSequencePlayer)
+		&& (TransitionSequencePlayer->IsPlaying() || TransitionSequencePlayer->IsPaused())
+		&& CancelTransitionSequence(SequenceTransitionId);
+}
+
 // 재생 상태를 먼저 완료로 바꾼 뒤 정리하여 Stop 콜백의 중복 완료 방지
 void UEnemyPhaseComponent::FinishTransitionSequence(const TCHAR* Reason)
 {
