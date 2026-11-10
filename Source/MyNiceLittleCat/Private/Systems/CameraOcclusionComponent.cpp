@@ -29,6 +29,20 @@ UCameraOcclusionComponent::UCameraOcclusionComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
+void UCameraOcclusionComponent::SetOcclusionSuspended(bool bSuspended)
+{
+	if (bOcclusionSuspended == bSuspended)
+		return;
+
+	bOcclusionSuspended = bSuspended;
+
+	// 컷신 시작 전에 숨긴 메시 복원
+	if (bOcclusionSuspended)
+	{
+		RestoreAllPieces();
+	}
+}
+
 void UCameraOcclusionComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -60,6 +74,10 @@ void UCameraOcclusionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
 
 void UCameraOcclusionComponent::UpdateOcclusion()
 {
+	// 재생 중 숨기지 않도록 제한
+	if (bOcclusionSuspended)
+		return;
+
 	// 화면을 보는 로컬 플레이어에서만 의미 있음
 	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	if (!OwnerPawn || !OwnerPawn->IsLocallyControlled())

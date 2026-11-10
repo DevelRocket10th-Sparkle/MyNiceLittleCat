@@ -15,6 +15,10 @@
 
 #include "Engine/TargetPoint.h"
 
+#include "GameFramework/Character.h"
+#include "Kismet/GameplayStatics.h"
+#include "Systems/CameraOcclusionComponent.h"
+
 // 컴포넌트의 기본 실행 상태를 설정한다.
 UEnemyPhaseComponent::UEnemyPhaseComponent()
 {
@@ -290,8 +294,22 @@ bool UEnemyPhaseComponent::BeginPendingTransition(int64& OutTransitionId)
 	TransitionSequencePlayer->OnStop.AddDynamic(this, &UEnemyPhaseComponent::HandleTransitionSequenceStopped);
 	GetWorld()->GetTimerManager().SetTimer(TransitionTimeoutHandle, this,
 		&UEnemyPhaseComponent::HandleTransitionTimeout, Phase.TransitionTimeout, false);
+
 	SetComponentTickEnabled(true);
+
+	if (Staging)
+	{
+		if (ACharacter* Player = UGameplayStatics::GetPlayerCharacter(this, 0))
+		{
+			if (UCameraOcclusionComponent* Occlusion = Player->FindComponentByClass<UCameraOcclusionComponent>())
+			{
+				TransitionOcclusion = Occlusion;
+				Occlusion->SetOcclusionSuspended(true);
+			}
+		}
+	}
 	TransitionSequencePlayer->Play();
+
 	// Play 중 즉시 종료된 경우에는 이미 완료된 요청을 다시 처리하지 않음
 	if (TransitionResult == EEnemyPatternResult::Running && IsValid(TransitionSequencePlayer)
 		&& !TransitionSequencePlayer->IsPlaying() && !TransitionSequencePlayer->IsPaused())
@@ -393,6 +411,13 @@ void UEnemyPhaseComponent::CleanupTransitionSequence()
 				WeakActor->Destroy();
 		});
 	}
+
+	// 정상 종료, 스킵, 리셋 시 시퀀스 때 지연시킨 Occlusion 설정 복구
+	if (UCameraOcclusionComponent* Occlusion = TransitionOcclusion.Get())
+	{
+		Occlusion->SetOcclusionSuspended(false);
+	}
+	TransitionOcclusion.Reset();
 }
 
 bool UEnemyPhaseComponent::ValidateMovementRoutes(FString& OutError) const

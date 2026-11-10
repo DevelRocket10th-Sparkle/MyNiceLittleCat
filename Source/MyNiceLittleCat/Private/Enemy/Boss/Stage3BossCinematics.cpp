@@ -28,6 +28,8 @@
 #include "NiagaraFunctionLibrary.h"
 #include "TimerManager.h"
 
+#include "Systems/CameraOcclusionComponent.h"
+
 namespace
 {
 	const FName ArrivalSeen(TEXT("Stage3.MansionArrivalSeen"));
@@ -59,6 +61,7 @@ AStage3BossCinematics::AStage3BossCinematics()
 void AStage3BossCinematics::BeginPlay()
 {
 	Super::BeginPlay();
+
 	DoorMotion.SetNum(Doors.Num());
 	DoorIsOpen.Init(false, Doors.Num());
 	for (int32 Index = 0; Index < Doors.Num(); ++Index)
@@ -296,7 +299,14 @@ void AStage3BossCinematics::Play(ULevelSequence* Sequence)
 	BindSequence(Sequence, Actor, Encounter->GetCurrentBoss());
 	OpeningPlayer->OnFinished.AddDynamic(this, &AStage3BossCinematics::FinishOpeningCut);
 	OpeningPlayer->OnStop.AddDynamic(this, &AStage3BossCinematics::FinishOpeningCut);
+
+	if (UCameraOcclusionComponent* Occlusion = Player->FindComponentByClass<UCameraOcclusionComponent>())
+	{
+		OpeningOcclusion = Occlusion;
+		Occlusion->SetOcclusionSuspended(true);
+	}
 	OpeningPlayer->Play();
+
 	if (OpeningPlayer && !OpeningPlayer->IsPlaying())
 		FinishOpeningCut();
 }
@@ -316,11 +326,18 @@ void AStage3BossCinematics::StopOpeningCut()
 		const TWeakObjectPtr<ALevelSequenceActor> Actor = OpeningActor.Get();
 		OpeningActor = nullptr;
 		GetWorldTimerManager().SetTimerForNextTick([Actor]
-		{
-			if (Actor.IsValid())
-				Actor->Destroy();
-		});
+			{
+				if (Actor.IsValid())
+					Actor->Destroy();
+			});
 	}
+
+	// 플레이어 참조가 이미 비어 있어도 가림을 복구하기 위해 'if (OpeningPlayer)' 밖에서 실행
+	if (UCameraOcclusionComponent* Occlusion = OpeningOcclusion.Get())
+	{
+		Occlusion->SetOcclusionSuspended(false);
+	}
+	OpeningOcclusion.Reset();
 }
 
 void AStage3BossCinematics::FinishOpeningCut()

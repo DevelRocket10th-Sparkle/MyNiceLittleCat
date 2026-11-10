@@ -20,6 +20,17 @@ public:
 	// Tick 비활성화: 판정은 타이머로만 실행
 	UCameraOcclusionComponent();
 
+	// 숨긴 조각의 복구 정보
+	struct FHiddenPiece
+	{
+		// 숨기기 전 메인 패스 렌더링 여부: 원래 꺼져 있던 조각을 켜지 않기 위함
+		bool bWasRenderInMainPass = true;
+		// 숨기기 전 깊이 패스 렌더링 여부: 메인 패스만 끄면 깊이는 남아 검은 면으로 보이므로 같이 끔
+		bool bWasRenderInDepthPass = true;
+		// 마지막으로 가림 판정된 시각
+		float LastOccludedTime = 0.f;
+	};
+
 	// 가림 판정 간격 (초)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Occlusion", meta = (ClampMin = "0.016"))
 	float UpdateInterval = 0.05f;
@@ -46,6 +57,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Occlusion|Debug")
 	bool bDrawDebug = false;
 
+	// Occlusion 실행 할지 말지 설정
+	void SetOcclusionSuspended(bool bSuspended);
+
 protected:
 	// 카메라, 락온, 그룹 서브시스템 참조 확보 후 판정 타이머 시작
 	virtual void BeginPlay() override;
@@ -53,16 +67,6 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-	// 숨긴 조각의 복구 정보
-	struct FHiddenPiece
-	{
-		// 숨기기 전 메인 패스 렌더링 여부: 원래 꺼져 있던 조각을 켜지 않기 위함
-		bool bWasRenderInMainPass = true;
-		// 숨기기 전 깊이 패스 렌더링 여부: 메인 패스만 끄면 깊이는 남아 검은 면으로 보이므로 같이 끔
-		bool bWasRenderInDepthPass = true;
-		// 마지막으로 가림 판정된 시각
-		float LastOccludedTime = 0.f;
-	};
 
 	// 타이머 콜백: Sweep → 면 단위 확장 → 숨김 / 복구 순서로 처리
 	void UpdateOcclusion();
@@ -81,6 +85,8 @@ private:
 	// 숨긴 조각 전부 즉시 복구
 	void RestoreAllPieces();
 
+private:
+
 	// 시점 기준 카메라: 락온으로 각도가 바뀌어도 실제 위치를 매번 사용
 	TWeakObjectPtr<UCameraComponent> Camera;
 	// 락온 대상 조회용
@@ -91,4 +97,6 @@ private:
 	TMap<TWeakObjectPtr<UPrimitiveComponent>, FHiddenPiece> HiddenPieces;
 	// 판정 반복 타이머
 	FTimerHandle UpdateTimerHandle;
+
+	bool bOcclusionSuspended = false;
 };
