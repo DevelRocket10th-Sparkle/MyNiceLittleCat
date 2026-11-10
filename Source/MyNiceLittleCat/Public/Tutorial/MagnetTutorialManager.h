@@ -63,6 +63,15 @@ protected:
 	void HandleStartTriggerOverlap(AActor* _overlappedActor, AActor* _otherActor);
 
 	void UnbindStartTriggers(); // 한 번 시작하면 트리거 감시 해제
+
+	// FenceGateTag 가 붙은 울타리 입구를 모두 막거나 엶
+	// (자성 없이 울타리 안 시작 트리거에 들어오면 막고, 자성 튜토리얼이 끝나면 엶.
+	//  들어올 때 이미 자성을 가졌으면 튜토리얼을 건너뛰고 절대 막지 않음)
+	void SetFenceGatesClosed(bool _bClosed);
+
+	// 울타리를 닫기 직전, 펫이 울타리 밖(또는 문틀 사이)에 있으면 플레이어 옆으로 데려옴
+	// 의도: 플레이어가 먼저 들어와 닫혀 버리면 뒤따라오던 펫이 밖에 갇히는 문제 방지
+	void BringPetInsideFence();
 	// =============================================================================
 protected:
 	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Tutorial")
@@ -84,6 +93,15 @@ protected:
 	// 의도: 트리거는 메인 레벨, 매니저는 레벨 인스턴스 안이라 직접 참조가 안 되므로 런타임에 태그로 찾음
 	UPROPERTY(EditAnywhere, Category = "Tutorial|Start", meta = (EditCondition = "bStartOnTrigger"))
 	FName StartTriggerTag = TEXT("MagnetTutorialStart");
+
+	// 튜토리얼 동안 막을 울타리 입구(ATutorialFenceGate)에 붙인 태그
+	// 의도: 입구는 메인 레벨, 매니저는 레벨 인스턴스 안이라 시작 트리거처럼 런타임에 태그로 찾음
+	UPROPERTY(EditAnywhere, Category = "Tutorial|Level")
+	FName FenceGateTag = TEXT("MagnetTutorialFence");
+
+	// 펫이 울타리 면에서 이 거리 안에 있으면 문틀 사이에 끼었다고 보고 안쪽으로 옮김
+	UPROPERTY(EditAnywhere, Category = "Tutorial|Level", meta = (ClampMin = "0.0", Units = "cm"))
+	float PetFenceMargin = 150.f;
 
 	UPROPERTY(EditAnywhere, Category = "Tutorial|Timing", meta = (ClampMin = "0.05", Units = "s"))
 	float CheckInterval = 0.2f;      // 조건 확인 주기
