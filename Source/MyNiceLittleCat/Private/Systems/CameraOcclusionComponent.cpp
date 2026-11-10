@@ -3,24 +3,40 @@
 #include "Components/PrimitiveComponent.h"
 #include "GameFramework/Pawn.h"
 #include "Characters/PlayerComponents/LockOnComponent.h"
+#include "Characters/Camera/RoomMaskVolume.h"
+#include "Components/MeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "TimerManager.h"
 
 namespace
 {
-	const FName StairSurfaceTag(TEXT("OcclusionStairSurface"));
-
-	FName GetCeilingFace(const UPrimitiveComponent* Piece)
+	// 방 컷어웨이 후보: 화면에 보이는 메시만, 캐릭터 / 펫 등 Pawn과 거기 붙은 액터, 방에서 제외 지정한 액터는 제외
+	bool IsRoomCutawayCandidate(const UPrimitiveComponent* Piece, const AActor* Owner, const ARoomMaskVolume* Room)
 	{
-		for (const FName Tag : Piece->ComponentTags)
+		if (!Piece->IsA<UMeshComponent>() || !Piece->IsRegistered() || !Piece->IsVisible() || Piece->bHiddenInGame)
 		{
-			if (Tag.ToString().StartsWith(TEXT("OcclusionWallFace.Ceiling")))
+			return false;
+		}
+		const AActor* AttachRoot = Owner;
+		while (AttachRoot->GetAttachParentActor())
+		{
+			AttachRoot = AttachRoot->GetAttachParentActor();
+		}
+		return !AttachRoot->IsA<APawn>() && !AttachRoot->IsA<ARoomMaskVolume>() && !Room->IsCutawayIgnored(AttachRoot);
+	}
+
+	bool IsInsideAnyOtherBox(const FVector& Point, const TArray<FBox>& Boxes, int32 SkipIndex)
+	{
+		for (int32 i = 0; i < Boxes.Num(); ++i)
+		{
+			if (i != SkipIndex && Boxes[i].IsInside(Point))
 			{
-				return Tag;
+				return true;
 			}
 		}
-		return NAME_None;
+		return false;
 	}
 }
 
@@ -69,6 +85,7 @@ void UCameraOcclusionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
 		World->GetTimerManager().ClearTimer(UpdateTimerHandle);
 	}
 	RestoreAllPieces();
+	RoomCaches.Reset();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -90,13 +107,21 @@ void UCameraOcclusionComponent::UpdateOcclusion()
 	}
 	const FVector CameraLocation = Camera->GetComponentLocation();
 
-	// 1. 대상별 Sweep으로 시야를 가린 조각 수집
-	TArray<AActor*> Targets;
-	CollectTargets(Targets);
+	// 1. 방 안이면 카메라 쪽 벽면 / 천장 / 윗층 / 방 밖을 방 기준으로 수집
+	ARoomMaskVolume::UpdatePlayerLocation(OwnerPawn->GetActorLocation());
 	TSet<UPrimitiveComponent*> OccludingPieces;
-	for (const AActor* Target : Targets)
+	CollectRoomCutaway(CameraLocation, OccludingPieces);
+
+	// 2. 방 밖이면 대상별 Sweep으로 시야를 가린 조각 수집
+	//    방 안에서는 Sweep을 쓰지 않음: 가까이 간 가구 / 계단이 사라지는 것 방지
+	if (!bInCutawayRoom)
 	{
-		SweepToTarget(CameraLocation, Target, OccludingPieces);
+		TArray<AActor*> Targets;
+		CollectTargets(Targets);
+		for (const AActor* Target : Targets)
+		{
+			SweepToTarget(CameraLocation, Target, OccludingPieces);
+		}
 	}
 
 	// 3. 새로 가린 조각은 숨기고, 이미 숨긴 조각은 가림 시각만 갱신
@@ -158,7 +183,7 @@ void UCameraOcclusionComponent::SweepToTarget(const FVector& CameraLocation, con
 
 	// 벽 / 천장은 가림 채널에 Overlap으로 반응하므로 첫 조각에서 멈추지 않고 경로상의 조각 전부 수집
 	TArray<FHitResult> Hits;
-	TSet<UPrimitiveComponent*> WallGroupPieces;
+	TSet<UPrimitiveComponent*> GroupPieces;
 	GetWorld()->SweepMultiByChannel(Hits, CameraLocation, SweepEnd, FQuat::Identity,
 		GroupSettings.TraceChannel, FCollisionShape::MakeSphere(SweepRadius), Params);
 	for (const FHitResult& Hit : Hits)
@@ -168,14 +193,13 @@ void UCameraOcclusionComponent::SweepToTarget(const FVector& CameraLocation, con
 		{
 			continue;
 		}
-		if (HitPiece->ComponentHasTag(StairSurfaceTag))
+		if (!IsAboveTargetFloor(HitPiece, TargetFootZ))
 		{
-			// 경사진 계단은 밟고 있는 구간을 남기고, 머리 위에서 가리는 부분만 처리한다.
-			if (Hit.ImpactPoint.Z < TargetFootZ + CeilingMinHeight)
-			{
-				continue;
-			}
-
+			continue;
+		}
+		// 대상이 밟고 있는 조각 (계단, 경사로)은 발 높이 아래로 맞은 경우 숨기지 않음
+		if (Hit.ImpactPoint.Z < TargetFootZ + CeilingMinHeight)
+		{
 			const FVector TargetFoot(TargetLocation.X, TargetLocation.Y, TargetFootZ);
 			FHitResult SupportHit;
 			if (HitPiece->LineTraceComponent(SupportHit, TargetFoot + FVector(0.f, 0.f, 30.f),
@@ -184,48 +208,15 @@ void UCameraOcclusionComponent::SweepToTarget(const FVector& CameraLocation, con
 				continue;
 			}
 		}
-		else if (!IsAboveTargetFloor(HitPiece, TargetFootZ))
+		// 맞은 조각과 같은 평면에 이어진 조각까지 묶어서 숨김
+		GroupPieces.Reset();
+		GroupSubsystem->CollectGroupMembers(HitPiece, GroupSettings, GroupPieces);
+		for (UPrimitiveComponent* Piece : GroupPieces)
 		{
-			continue;
-		}
-		TSet<UPrimitiveComponent*>& Pieces = GetCeilingFace(HitPiece).IsNone() ? WallGroupPieces : OutOccludingPieces;
-		GroupSubsystem->CollectGroupMembers(HitPiece, GroupSettings, Pieces);
-	}
-
-	// 외벽은 여러 방에 걸치므로 벽과 함께 숨길 천장은 대상 바로 위의 면으로 제한한다.
-	TMap<FName, FBox> CeilingBounds;
-	TMap<UPrimitiveComponent*, FName> LinkedCeilingPieces;
-	for (UPrimitiveComponent* Piece : WallGroupPieces)
-	{
-		if (!IsAboveTargetFloor(Piece, TargetFootZ))
-		{
-			continue;
-		}
-		const FName CeilingFace = GetCeilingFace(Piece);
-		if (CeilingFace.IsNone())
-		{
-			OutOccludingPieces.Add(Piece);
-			continue;
-		}
-		CeilingBounds.FindOrAdd(CeilingFace, FBox(ForceInit)) += Piece->Bounds.GetBox();
-		LinkedCeilingPieces.Add(Piece, CeilingFace);
-	}
-
-	FName NearestCeiling = NAME_None;
-	double NearestCeilingZ = TNumericLimits<double>::Max();
-	for (const TPair<FName, FBox>& Entry : CeilingBounds)
-	{
-		if (Entry.Value.IsInsideOrOnXY(TargetLocation) && Entry.Value.Min.Z < NearestCeilingZ)
-		{
-			NearestCeiling = Entry.Key;
-			NearestCeilingZ = Entry.Value.Min.Z;
-		}
-	}
-	for (const TPair<UPrimitiveComponent*, FName>& Entry : LinkedCeilingPieces)
-	{
-		if (Entry.Value == NearestCeiling)
-		{
-			OutOccludingPieces.Add(Entry.Key);
+			if (IsAboveTargetFloor(Piece, TargetFootZ))
+			{
+				OutOccludingPieces.Add(Piece);
+			}
 		}
 	}
 
@@ -238,6 +229,197 @@ void UCameraOcclusionComponent::SweepToTarget(const FVector& CameraLocation, con
 			DrawDebugPoint(GetWorld(), Hit.ImpactPoint, 12.f, FColor::Red, false, UpdateInterval);
 		}
 	}
+}
+
+void UCameraOcclusionComponent::CollectRoomCutaway(const FVector& CameraLocation, TSet<UPrimitiveComponent*>& OutOccludingPieces)
+{
+	bInCutawayRoom = false;
+	if (!RoomCutaway.bEnabled)
+	{
+		return;
+	}
+	ARoomMaskVolume* Room = ARoomMaskVolume::GetCurrentRoom();
+	if (!Room || Room->GetWorld() != GetWorld() || !Room->IsCutawayEnabled())
+	{
+		return;
+	}
+	bInCutawayRoom = true;
+	const FRoomCutawayCache& Cache = GetOrBuildRoomCache(Room);
+
+	// 천장 / 윗층, 방 밖 (옆방, 건물 밖)은 카메라 각도와 관계없이 항상 숨김
+	for (const TWeakObjectPtr<UPrimitiveComponent>& Piece : Cache.TopPieces)
+	{
+		if (Piece.IsValid())
+		{
+			OutOccludingPieces.Add(Piece.Get());
+		}
+	}
+	if (RoomCutaway.bHideOutsideRoom)
+	{
+		for (const TWeakObjectPtr<UPrimitiveComponent>& Piece : Cache.OutsidePieces)
+		{
+			if (Piece.IsValid())
+			{
+				OutOccludingPieces.Add(Piece.Get());
+			}
+		}
+	}
+
+	// 옆면은 플레이어 기준 카메라가 있는 쪽만 숨김
+	static const FVector SideNormals[FRoomCutawayCache::SideCount] =
+	{
+		FVector(-1.f, 0.f, 0.f), FVector(1.f, 0.f, 0.f), FVector(0.f, -1.f, 0.f), FVector(0.f, 1.f, 0.f)
+	};
+	const FVector ToCamera = (CameraLocation - GetOwner()->GetActorLocation()).GetSafeNormal2D();
+	for (int32 Side = 0; Side < FRoomCutawayCache::SideCount; ++Side)
+	{
+		if (FVector::DotProduct(SideNormals[Side], ToCamera) <= RoomCutaway.FaceDotThreshold)
+		{
+			continue;
+		}
+		for (const TWeakObjectPtr<UPrimitiveComponent>& Piece : Cache.SidePieces[Side])
+		{
+			if (Piece.IsValid())
+			{
+				OutOccludingPieces.Add(Piece.Get());
+			}
+		}
+	}
+
+	if (bDrawDebug)
+	{
+		TArray<FBox> Boxes;
+		Room->GetRoomBounds(Boxes);
+		for (const FBox& Box : Boxes)
+		{
+			DrawDebugBox(GetWorld(), Box.GetCenter(), Box.GetExtent(), FColor::Cyan, false, UpdateInterval);
+		}
+	}
+}
+
+const FRoomCutawayCache& UCameraOcclusionComponent::GetOrBuildRoomCache(ARoomMaskVolume* Room)
+{
+	if (const FRoomCutawayCache* Found = RoomCaches.Find(Room))
+	{
+		return *Found;
+	}
+	FRoomCutawayCache& Cache = RoomCaches.Add(Room);
+
+	TArray<FBox> Boxes;
+	Room->GetRoomBounds(Boxes);
+	const FRoomCutawaySettings& S = RoomCutaway;
+
+	// 방을 처음 들어갈 때 한 번만 월드 메시를 훑어 면별로 분류
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		const AActor* Actor = *It;
+		TInlineComponentArray<UPrimitiveComponent*> Pieces;
+		Actor->GetComponents(Pieces);
+		for (UPrimitiveComponent* Piece : Pieces)
+		{
+			if (!IsRoomCutawayCandidate(Piece, Actor, Room))
+			{
+				continue;
+			}
+			const FBox PieceBox = Piece->Bounds.GetBox();
+			const FVector PieceCenter = PieceBox.GetCenter();
+
+			// 방 박스 (XY만 Inset만큼 축소)와 전혀 겹치지 않으면 방 밖 조각
+			bool bTouchesRoom = false;
+			bool bNearRoom = false;
+			for (const FBox& Box : Boxes)
+			{
+				const FVector Inset(S.OutsideInset, S.OutsideInset, 0.f);
+				if (FBox(Box.Min + Inset, Box.Max - Inset).Intersect(PieceBox))
+				{
+					bTouchesRoom = true;
+					break;
+				}
+				bNearRoom |= Box.ExpandBy(S.OutsideRadius).Intersect(PieceBox);
+			}
+			if (!bTouchesRoom)
+			{
+				// 윗층 판정에 해당하면 TopPieces로, 아니면 OutsidePieces로 분류
+				bool bIsTop = false;
+				for (const FBox& Box : Boxes)
+				{
+					const FBox Footprint = Box.ExpandBy(FVector(S.TopFootprintMargin, S.TopFootprintMargin, 0.f));
+					if (PieceCenter.Z >= Box.Max.Z - S.TopTolerance &&
+						PieceBox.Min.X < Footprint.Max.X && PieceBox.Max.X > Footprint.Min.X &&
+						PieceBox.Min.Y < Footprint.Max.Y && PieceBox.Max.Y > Footprint.Min.Y)
+					{
+						bIsTop = true;
+						break;
+					}
+				}
+				if (bIsTop)
+				{
+					Cache.TopPieces.AddUnique(Piece);
+				}
+				else if (bNearRoom)
+				{
+					Cache.OutsidePieces.AddUnique(Piece);
+				}
+				continue;
+			}
+
+			for (int32 BoxIndex = 0; BoxIndex < Boxes.Num(); ++BoxIndex)
+			{
+				const FBox& Box = Boxes[BoxIndex];
+
+				// 윗층: 중심이 박스 윗면 근처 이상이고, 방 바닥 면적 (+여유) 위에 걸친 메시
+				if (PieceCenter.Z >= Box.Max.Z - S.TopTolerance)
+				{
+					const FBox Footprint = Box.ExpandBy(FVector(S.TopFootprintMargin, S.TopFootprintMargin, 0.f));
+					if (PieceBox.Min.X < Footprint.Max.X && PieceBox.Max.X > Footprint.Min.X &&
+						PieceBox.Min.Y < Footprint.Max.Y && PieceBox.Max.Y > Footprint.Min.Y)
+					{
+						Cache.TopPieces.AddUnique(Piece);
+						break;
+					}
+					continue;
+				}
+				// 방 바닥보다 아래 (기초, 지면 소품)는 제외
+				if (PieceCenter.Z < Box.Min.Z)
+				{
+					continue;
+				}
+				// L / T자 방에서 박스끼리 맞닿은 안쪽 면 조각 제외
+				if (IsInsideAnyOtherBox(PieceCenter, Boxes, BoxIndex))
+				{
+					continue;
+				}
+
+				for (int32 Side = 0; Side < FRoomCutawayCache::SideCount; ++Side)
+				{
+					const int32 Axis = Side / 2;          // 0 = X, 1 = Y
+					const int32 LateralAxis = 1 - Axis;
+					const bool bMinSide = (Side % 2) == 0;
+
+					// 면에서 방 안쪽으로 들어온 깊이: 음수면 면 바깥 (벽 두께, 외벽 장식)
+					const double Reach = bMinSide ? PieceBox.Max[Axis] - Box.Min[Axis] : Box.Max[Axis] - PieceBox.Min[Axis];
+					// 면을 뚫고 벽 안 / 밖으로 나간 깊이: 벽난로, 문틀처럼 벽에 박힌 메시 판별
+					const double Embed = bMinSide ? Box.Min[Axis] - PieceBox.Min[Axis] : PieceBox.Max[Axis] - Box.Max[Axis];
+					const bool bAttached = Reach <= S.InnerDepth;
+					const bool bEmbedded = Embed >= S.WallEmbedDepth && Reach <= S.MaxEmbeddedReach;
+					if ((!bAttached && !bEmbedded) || Reach < -S.OuterDepth)
+					{
+						continue;
+					}
+					// 면의 가로 범위와 겹쳐야 함: 옆방 벽까지 번지는 것 방지
+					if (PieceBox.Max[LateralAxis] <= Box.Min[LateralAxis] || PieceBox.Min[LateralAxis] >= Box.Max[LateralAxis])
+					{
+						continue;
+					}
+					Cache.SidePieces[Side].AddUnique(Piece);
+				}
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[RoomCutaway] %s: top %d, outside %d, -X %d, +X %d, -Y %d, +Y %d"), *Room->GetActorNameOrLabel(),
+		Cache.TopPieces.Num(), Cache.OutsidePieces.Num(), Cache.SidePieces[0].Num(), Cache.SidePieces[1].Num(), Cache.SidePieces[2].Num(), Cache.SidePieces[3].Num());
+	return Cache;
 }
 
 bool UCameraOcclusionComponent::IsAboveTargetFloor(const UPrimitiveComponent* Piece, float TargetFootZ) const
