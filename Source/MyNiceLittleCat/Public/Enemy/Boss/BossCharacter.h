@@ -104,6 +104,12 @@ public :
 	// 보스방 관리자가 보스 사망을 받아 클리어 처리하는 이벤트
 	UPROPERTY(BlueprintAssignable, Category = "Boss")
 	FBossEncounterSignal OnDefeated;
+
+	virtual void FinishDeath() override;
+	bool HasFinishedDeath() const { return LifeState == EEnemyLifeState::Dead; }
+
+	FBossEncounterSignal OnDeathFinished;
+
 	// 전환 실패 등의 사유로 보스방 초기화를 요청하는 이벤트
 	UPROPERTY(BlueprintAssignable, Category = "Boss")
 	FBossEncounterSignal OnEncounterFailed;

@@ -13,6 +13,8 @@ class AStage3BossCinematics;
 
 class AMainHUD;
 
+class UWorld;
+
 // 보스방의 준비, 전투, 초기화, 클리어 및 재도전 대기 상태
 UENUM(BlueprintType)
 enum class EBossEncounterState : uint8 {
@@ -54,6 +56,13 @@ protected :
 	// 현재 보스 사망 시 클리어 처리: 새 보스를 생성하지 않음
 	UFUNCTION()
 	void HandleBossDefeated(ABossCharacter* Boss);
+
+	UPROPERTY(EditInstanceOnly, Category = "Boss|Clear")
+	TSoftObjectPtr<UWorld> LevelAfterDefeat;
+
+	UFUNCTION()
+	void TryOpenLevelAfterDefeat(ABossCharacter* Boss);
+
 	// 전환 실패 등의 이벤트를 받아 다음 Tick에 초기화
 	UFUNCTION()
 	void HandleBossFailed(ABossCharacter* Boss);
