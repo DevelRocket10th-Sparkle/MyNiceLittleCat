@@ -16,7 +16,7 @@ public:
 	FName SourceName = TEXT("Body");
 
 #if WITH_EDITORONLY_DATA
-	// 목록 조회용 메시 에셋. 실제 판정은 SourceName에 등록된 메시 컴포넌트 사용.
+	// 에디터의 소켓 목록 조회용 메시 에셋.
 	UPROPERTY(EditAnywhere, Category = "Melee", meta = (AllowedClasses = "/Script/Engine.SkeletalMesh,/Script/Engine.StaticMesh"))
 	TSoftObjectPtr<UObject> SocketSourceMesh;
 #endif
