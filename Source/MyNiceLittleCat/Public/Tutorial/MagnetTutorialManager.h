@@ -2,6 +2,7 @@
 // 작성일자: 2026-11-07
 //
 // 스테이지 1 시작 구간 자성 튜토리얼
+// 플레이어가 StartTriggerTag 태그가 붙은 트리거(TriggerBoxMagnetMode)에 들어오면 시작, 자성을 이미 가졌으면 생략
 // (1) 자성 구슬 획득 → (2) 우클릭 유지로 자기장 켜기 → (3) 우클릭 중 Q로 극 변경 → (4) 발판 위에서 우클릭 떼서 내려놓기
 // 의도: 기존 ATutorialManager는 튜토리얼 맵 전용 연출이 많아서, 단계가 적은 자성 튜토리얼은
 //       "현재 단계 + 0.2초마다 조건 확인" 구조로 따로 가볍게 만듦.
@@ -56,6 +57,12 @@ protected:
 
 	UFUNCTION()
 	void HandleAbilityAcquireFinished(FGameplayTag _abilityTag, class UItemData* _item);
+
+	// 시작 트리거에 플레이어가 들어옴 → 튜토리얼 시작 허용
+	UFUNCTION()
+	void HandleStartTriggerOverlap(AActor* _overlappedActor, AActor* _otherActor);
+
+	void UnbindStartTriggers(); // 한 번 시작하면 트리거 감시 해제
 	// =============================================================================
 protected:
 	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Tutorial")
@@ -68,6 +75,15 @@ protected:
 	// 박스를 올릴 발판 (발판이 문과 연결돼 있어야 함)
 	UPROPERTY(EditInstanceOnly, Category = "Tutorial|Level")
 	TObjectPtr<class AGimmickPressurePlate> Plate;
+
+	// 끄면 예전처럼 레벨 시작하자마자 튜토리얼 시작 (테스트용)
+	UPROPERTY(EditAnywhere, Category = "Tutorial|Start")
+	bool bStartOnTrigger = true;
+
+	// 시작 트리거 액터에 붙인 태그
+	// 의도: 트리거는 메인 레벨, 매니저는 레벨 인스턴스 안이라 직접 참조가 안 되므로 런타임에 태그로 찾음
+	UPROPERTY(EditAnywhere, Category = "Tutorial|Start", meta = (EditCondition = "bStartOnTrigger"))
+	FName StartTriggerTag = TEXT("MagnetTutorialStart");
 
 	UPROPERTY(EditAnywhere, Category = "Tutorial|Timing", meta = (ClampMin = "0.05", Units = "s"))
 	float CheckInterval = 0.2f;      // 조건 확인 주기
@@ -89,12 +105,20 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Tutorial|Magnet", meta = (ClampMin = "0.0", Units = "s"))
 	float HoldFieldRequiredTime = 1.f;
 
+	// 2단계에서 상자와 이 거리보다 멀어지면 극 고정 해제 (돌아오면 다시 고정)
+	// 의도: 튜토리얼 도중 뒤로 빠졌을 때 다른 자성 기믹을 극 고정 때문에 못 푸는 일이 없게
+	UPROPERTY(EditAnywhere, Category = "Tutorial|Magnet", meta = (ClampMin = "0.0", Units = "cm"))
+	float PolarityLockDistance = 1500.f;
+
 private:
 	TWeakObjectPtr<class APetCharacter> Pet;
 
 	FTimerHandle StartTimerHandle;
 	FTimerHandle CheckTimerHandle;
 	FTimerHandle NextStepTimerHandle;
+
+	TArray<TWeakObjectPtr<AActor>> StartTriggers; // 바인딩한 시작 트리거들 (해제용)
+	bool bPlayerEntered = false;                  // 플레이어가 시작 트리거에 들어왔나
 
 	bool bAcquireFinished = false; // 구슬 획득 연출이 끝났나
 	bool bStepDone = false;        // 완료 처리 중복 방지 (StepDelay 동안)

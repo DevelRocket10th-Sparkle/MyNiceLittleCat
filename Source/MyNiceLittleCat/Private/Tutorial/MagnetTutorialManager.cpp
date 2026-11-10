@@ -6,6 +6,7 @@
 #include "Items/InventorySubsystem.h"
 #include "Items/ItemAbilityTags.h"
 #include "Kismet/GameplayStatics.h"
+#include "GameFramework/Pawn.h"
 #include "Engine/GameInstance.h"
 #include "TimerManager.h"
 
@@ -25,13 +26,63 @@ void AMagnetTutorialManager::BeginPlay()
 		if (UInventorySubsystem* Inventory = GI->GetSubsystem<UInventorySubsystem>())
 			Inventory->OnAbilityAcquireFinished.AddUniqueDynamic(this, &AMagnetTutorialManager::HandleAbilityAcquireFinished);
 
-	// 펫은 GameMode가 나중에 스폰/초기화하므로 준비될 때까지 반복 확인
+	// 시작 트리거 감시 (끄면 바로 시작 가능 상태)
+	if (false == bStartOnTrigger)
+	{
+		bPlayerEntered = true;
+	}
+	else
+	{
+		TArray<AActor*> FoundTriggers;
+		UGameplayStatics::GetAllActorsWithTag(this, StartTriggerTag, FoundTriggers);
+
+		if (true == FoundTriggers.IsEmpty())
+			UE_LOG(LogTemp, Warning, TEXT("MagnetTutorial: '%s' 태그가 붙은 시작 트리거가 없어요."), *StartTriggerTag.ToString());
+
+		for (AActor* Trigger : FoundTriggers)
+		{
+			Trigger->OnActorBeginOverlap.AddUniqueDynamic(this, &AMagnetTutorialManager::HandleStartTriggerOverlap);
+			StartTriggers.Add(Trigger);
+
+			// 플레이어가 트리거 안에서 시작하면(체크포인트 재시작 등) 겹침 시작 알림을 놓치므로 한 번 직접 확인
+			TArray<AActor*> AlreadyOverlapping;
+			Trigger->GetOverlappingActors(AlreadyOverlapping, APawn::StaticClass());
+			for (AActor* Actor : AlreadyOverlapping)
+				HandleStartTriggerOverlap(Trigger, Actor);
+		}
+	}
+
+	// 펫은 GameMode가 나중에 스폰/초기화하므로 준비될 때까지 반복 확인 (트리거에 들어오기 전엔 대기)
 	GetWorldTimerManager().SetTimer(StartTimerHandle, this, &AMagnetTutorialManager::TryStart, 0.2f, true);
+}
+
+void AMagnetTutorialManager::HandleStartTriggerOverlap(AActor* _overlappedActor, AActor* _otherActor)
+{
+	if (true == bPlayerEntered) return;
+
+	// 플레이어만 시작시킴 (펫이 먼저 들어와도 무시)
+	const APawn* Pawn = Cast<APawn>(_otherActor);
+	if (nullptr == Pawn || false == Pawn->IsPlayerControlled()) return;
+
+	bPlayerEntered = true;
+	UnbindStartTriggers(); // 한 번만 쓰므로 바로 해제
+}
+
+void AMagnetTutorialManager::UnbindStartTriggers()
+{
+	for (const TWeakObjectPtr<AActor>& Entry : StartTriggers)
+		if (AActor* Trigger = Entry.Get())
+			Trigger->OnActorBeginOverlap.RemoveDynamic(this, &AMagnetTutorialManager::HandleStartTriggerOverlap);
+
+	StartTriggers.Reset();
 }
 
 void AMagnetTutorialManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearAllTimersForObject(this);
+
+	// 매니저가 먼저 사라져도 트리거가 사라진 객체를 부르지 않게 바인딩 해제
+	UnbindStartTriggers();
 
 	if (UGameInstance* GI = GetGameInstance())
 		if (UInventorySubsystem* Inventory = GI->GetSubsystem<UInventorySubsystem>())
@@ -46,6 +97,8 @@ void AMagnetTutorialManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AMagnetTutorialManager::TryStart()
 {
+	if (false == bPlayerEntered) return; // TriggerBoxMagnetMode에 들어올 때까지 대기
+
 	APetCharacter* FoundPet = FindPet();
 	if (false == IsValid(FoundPet) || false == FoundPet->IsPetInitialized()) return;
 	if (nullptr == UGameplayStatics::GetPlayerPawn(this, 0)) return;
@@ -53,15 +106,17 @@ void AMagnetTutorialManager::TryStart()
 	Pet = FoundPet;
 	GetWorldTimerManager().ClearTimer(StartTimerHandle);
 
-	// 문이 이미 열린 상태(체크포인트 재시작 등)면 튜토리얼 없이 끝
-	if (IsValid(Plate) && true == Plate->IsActivated())
+	// 이미 자성을 가졌거나 문이 이미 열린 상태(체크포인트 재시작 등)면 튜토리얼 없이 끝
+	// 의도: 이 스테이지에서 배울 능력을 이미 알고 있으면 다시 가르치지 않음
+	//       (+ 세이브 이후 통과할 수 없는 2단계에 들어가 극이 N으로 잠기던 문제도 같이 막힘)
+	if (true == FoundPet->IsModeUnlocked(EPetMode::Magnet) || (IsValid(Plate) && true == Plate->IsActivated()))
 	{
 		CurrentStep = EMagnetTutorialStep::Completed;
+		FoundPet->UnlockMagnetPolarity();
 		return;
 	}
 
-	// 이미 자성을 가진 상태면 획득 단계는 건너뜀
-	EnterStep(FoundPet->IsModeUnlocked(EPetMode::Magnet) ? EMagnetTutorialStep::HoldField : EMagnetTutorialStep::Acquire);
+	EnterStep(EMagnetTutorialStep::Acquire);
 	GetWorldTimerManager().SetTimer(CheckTimerHandle, this, &AMagnetTutorialManager::CheckStep, CheckInterval, true);
 }
 
@@ -81,8 +136,8 @@ void AMagnetTutorialManager::EnterStep(EMagnetTutorialStep _step)
 
 	case EMagnetTutorialStep::HoldField:
 		HoldFieldTime = 0.f;
-		P->RequestMode(EPetMode::Magnet);             // 획득 단계를 건너뛰고 들어온 경우 대비
-		P->LockMagnetPolarity(EPetMagnetPolarity::N); // Q로 미리 바꿔서 단계를 건너뛰지 못하게
+		P->RequestMode(EPetMode::Magnet); // 획득 단계를 건너뛰고 들어온 경우 대비
+		// 극 고정(Q로 미리 바꿔 단계를 건너뛰지 못하게)은 CheckStep에서 상자와의 거리에 따라 걸고 풂
 		PetSay(LOCTEXT("Hold", "나 이제 자석이야! 상자 가까이 가서 마우스 우클릭을 꾹 누르고 있어봐!"));
 		break;
 
@@ -98,7 +153,9 @@ void AMagnetTutorialManager::EnterStep(EMagnetTutorialStep _step)
 
 	case EMagnetTutorialStep::Completed:
 		GetWorldTimerManager().ClearTimer(CheckTimerHandle);
-		PetSay(LOCTEXT("Done", "문이 열렸다! 이제 같이 가자!"), 3.f);
+		// 의도: 2단계에서 발판이 먼저 켜져 3단계(잠금 해제)를 건너뛰어도 N 고정이 남지 않게
+		P->UnlockMagnetPolarity();
+		//PetSay(LOCTEXT("Done", "문이 열렸다! 이제 같이 가자!"), 3.f);
 		break;
 
 	default:
@@ -134,6 +191,21 @@ void AMagnetTutorialManager::CheckStep()
 		break;
 
 	case EMagnetTutorialStep::HoldField:
+	{
+		// 튜토리얼 구역(상자 근처)에 있을 때만 N 고정, 벗어나면 해제
+		// 의도: 구역 안에서는 Q로 단계를 건너뛰지 못하게 하고, 뒤로 빠지면 다른 기믹을 자유롭게 풀 수 있게
+		//       (밖에서 S로 바꿨어도 다시 고정되면 펫 능력이 고정 극 N으로 되돌림)
+		if (GetPlayerDistanceTo(MagnetBox) <= PolarityLockDistance)
+		{
+			P->LockMagnetPolarity(EPetMagnetPolarity::N);
+		}
+		else
+		{
+			P->UnlockMagnetPolarity();
+			HoldFieldTime = 0.f;
+			return; // 구역 밖에서는 힌트 말풍선도 쉼
+		}
+
 		if (EPetMode::Magnet != P->GetCurrentMode())
 		{
 			SayHint(LOCTEXT("ModeHint", "왼쪽 Ctrl을 눌러 다이얼에서 자성 모드를 골라줘!"));
@@ -158,6 +230,7 @@ void AMagnetTutorialManager::CheckStep()
 		SayHint(IsMagnetHeld() ? LOCTEXT("HoldNearHint", "상자 가까이 가서 계속 누르고 있어!")
 		                       : LOCTEXT("HoldHint", "상자 근처에서 마우스 우클릭을 꾹!"));
 		break;
+	}
 
 	case EMagnetTutorialStep::SwapPolarity:
 		if (true == IsCarryingBox())
