@@ -1,7 +1,9 @@
 #include "Systems/OcclusionGroupSubsystem.h"
 #include "Components/PrimitiveComponent.h"
+#include "Engine/Level.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
+#include "GameFramework/Actor.h"
 
 const FName UOcclusionGroupSubsystem::NoGroupTag(TEXT("NoOcclusionGroup"));
 
@@ -9,6 +11,19 @@ namespace OcclusionGroup
 {
 	// 같은 방향으로 간주하는 법선 내적 최소값 (약 11도 이내)
 	constexpr float SameDirectionDot = 0.98f;
+	constexpr TCHAR WallFacePrefix[] = TEXT("OcclusionWallFace.");
+
+	FName GetWallFaceTag(const UPrimitiveComponent* Piece)
+	{
+		for (const FName Tag : Piece->ComponentTags)
+		{
+			if (Tag.ToString().StartsWith(WallFacePrefix))
+			{
+				return Tag;
+			}
+		}
+		return NAME_None;
+	}
 }
 
 bool UOcclusionGroupSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
@@ -34,6 +49,41 @@ void UOcclusionGroupSubsystem::CollectGroupMembers(UPrimitiveComponent* HitPiece
 		AppendGroupMembers(*CachedIndex, OutMembers);
 		return;
 	}
+
+	const FName WallFaceTag = OcclusionGroup::GetWallFaceTag(HitPiece);
+	const ULevel* Level = HitPiece->GetComponentLevel();
+	if (!WallFaceTag.IsNone() && Level)
+	{
+		const int32 GroupIndex = Groups.AddDefaulted();
+		FOcclusionGroup& Group = Groups[GroupIndex];
+		const FName WallMemberTag(*(TEXT("OcclusionWallMember.") + WallFaceTag.ToString().RightChop(UE_ARRAY_COUNT(OcclusionGroup::WallFacePrefix) - 1)));
+		// 문이나 창으로 끊겨 있어도 같은 벽 면의 조각은 함께 숨긴다.
+		for (const AActor* Actor : Level->Actors)
+		{
+			if (!IsValid(Actor))
+			{
+				continue;
+			}
+			TInlineComponentArray<UPrimitiveComponent*> Components;
+			Actor->GetComponents(Components);
+			for (UPrimitiveComponent* Component : Components)
+			{
+				if (Component->ComponentHasTag(WallFaceTag) && !Component->ComponentHasTag(NoGroupTag))
+				{
+					Group.Members.Add(Component);
+					GroupIndexByPiece.Add(Component, GroupIndex);
+				}
+				else if (Component->ComponentHasTag(WallMemberTag))
+				{
+					// 기둥은 여러 면에 속할 수 있으며, 기둥만 가릴 때는 벽 전체를 숨기지 않는다.
+					Group.Members.Add(Component);
+				}
+			}
+		}
+		AppendGroupMembers(GroupIndex, OutMembers);
+		return;
+	}
+
 	const FPieceShape HitShape = CalculatePieceShape(HitPiece, Settings);
 	// 기둥, 모서리 등 덩어리 조각은 면을 정의할 수 없으므로 자기 자신만 숨김
 	if (!HitShape.bIsPlanar)
@@ -161,7 +211,7 @@ int32 UOcclusionGroupSubsystem::BuildGroup(UPrimitiveComponent* SeedPiece, const
 			Visited.Add(Candidate);
 
 			// 제외 태그가 있는 조각은 그룹에 포함하지 않음
-			if (Candidate->ComponentHasTag(NoGroupTag))
+			if (Candidate->ComponentHasTag(NoGroupTag) || !OcclusionGroup::GetWallFaceTag(Candidate).IsNone())
 			{
 				continue;
 			}

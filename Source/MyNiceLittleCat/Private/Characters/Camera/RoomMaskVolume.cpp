@@ -23,6 +23,11 @@ void ARoomMaskVolume::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (ActorHasTag(TEXT("DisableRoomMask")))
+	{
+		return;
+	}
+
 	TArray<UBoxComponent*> Boxes;
 	GatherBoxes(Boxes);
 	for (UBoxComponent* B : Boxes)

@@ -1,11 +1,16 @@
 #include "Systems/CameraOcclusionComponent.h"
-#include "Characters/PlayerComponents/LockOnComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "GameFramework/Pawn.h"
+#include "Characters/PlayerComponents/LockOnComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+
+namespace
+{
+	const FName StairSurfaceTag(TEXT("OcclusionStairSurface"));
+}
 
 UCameraOcclusionComponent::UCameraOcclusionComponent()
 {
@@ -139,8 +144,23 @@ void UCameraOcclusionComponent::SweepToTarget(const FVector& CameraLocation, con
 		{
 			continue;
 		}
-		// 대상이 서 있는 층의 바닥이나 앞쪽의 높은 바닥은 천장이 아니므로 제외
-		if (!IsAboveTargetFloor(HitPiece, TargetFootZ))
+		if (HitPiece->ComponentHasTag(StairSurfaceTag))
+		{
+			// 경사진 계단은 밟고 있는 구간을 남기고, 머리 위에서 가리는 부분만 처리한다.
+			if (Hit.ImpactPoint.Z < TargetFootZ + CeilingMinHeight)
+			{
+				continue;
+			}
+
+			const FVector TargetFoot(TargetLocation.X, TargetLocation.Y, TargetFootZ);
+			FHitResult SupportHit;
+			if (HitPiece->LineTraceComponent(SupportHit, TargetFoot + FVector(0.f, 0.f, 30.f),
+				TargetFoot - FVector(0.f, 0.f, 10.f), Params))
+			{
+				continue;
+			}
+		}
+		else if (!IsAboveTargetFloor(HitPiece, TargetFootZ))
 		{
 			continue;
 		}
