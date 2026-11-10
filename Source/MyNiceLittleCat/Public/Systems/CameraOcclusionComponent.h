@@ -69,7 +69,7 @@ private:
 	// 가림 판정 대상 수집: 플레이어 자신 + 락온 대상
 	void CollectTargets(TArray<AActor*>& OutTargets) const;
 	// 카메라에서 대상까지 Sweep하여 맞은 조각 수집
-	void SweepToTarget(const FVector& CameraLocation, const AActor* Target, TSet<UPrimitiveComponent*>& OutHitPieces) const;
+	void SweepToTarget(const FVector& CameraLocation, const AActor* Target, TSet<UPrimitiveComponent*>& OutOccludingPieces) const;
 	// 바닥 / 천장 조각이 대상 발보다 CeilingMinHeight 이상 위에 있는지 판정. 벽 등 수직 조각은 항상 true
 	bool IsAboveTargetFloor(const UPrimitiveComponent* Piece, float TargetFootZ) const;
 	// 메인 패스 / 깊이 패스 렌더링을 꺼서 화면에서만 숨김

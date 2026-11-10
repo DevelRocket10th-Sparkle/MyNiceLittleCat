@@ -25,6 +25,7 @@ void ARoomMaskVolume::BeginPlay()
 
 	if (ActorHasTag(TEXT("DisableRoomMask")))
 	{
+		SetActorEnableCollision(false);
 		return;
 	}
 
@@ -32,12 +33,25 @@ void ARoomMaskVolume::BeginPlay()
 	GatherBoxes(Boxes);
 	for (UBoxComponent* B : Boxes)
 	{
-		B->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 		B->SetCollisionObjectType(ECC_WorldDynamic);
 		B->SetCollisionResponseToAllChannels(ECR_Ignore);
 		B->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);   // 플레이어만 충돌 감지
 		B->OnComponentBeginOverlap.AddDynamic(this, &ARoomMaskVolume::OnBegin);
 		B->OnComponentEndOverlap.AddDynamic(this, &ARoomMaskVolume::OnEnd);
+		B->SetGenerateOverlapEvents(true);
+		B->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	}
+
+	for (const UBoxComponent* B : Boxes)
+	{
+		TArray<AActor*> Players;
+		B->GetOverlappingActors(Players, APlayerCharacter::StaticClass());
+		if (!Players.IsEmpty())
+		{
+			ActiveRooms.AddUnique(this);
+			Refresh(this, RoomMPC);
+			break;
+		}
 	}
 }
 

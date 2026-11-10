@@ -10,6 +10,18 @@
 namespace
 {
 	const FName StairSurfaceTag(TEXT("OcclusionStairSurface"));
+
+	FName GetCeilingFace(const UPrimitiveComponent* Piece)
+	{
+		for (const FName Tag : Piece->ComponentTags)
+		{
+			if (Tag.ToString().StartsWith(TEXT("OcclusionWallFace.Ceiling")))
+			{
+				return Tag;
+			}
+		}
+		return NAME_None;
+	}
 }
 
 UCameraOcclusionComponent::UCameraOcclusionComponent()
@@ -63,17 +75,10 @@ void UCameraOcclusionComponent::UpdateOcclusion()
 	// 1. 대상별 Sweep으로 시야를 가린 조각 수집
 	TArray<AActor*> Targets;
 	CollectTargets(Targets);
-	TSet<UPrimitiveComponent*> HitPieces;
+	TSet<UPrimitiveComponent*> OccludingPieces;
 	for (const AActor* Target : Targets)
 	{
-		SweepToTarget(CameraLocation, Target, HitPieces);
-	}
-
-	// 2. 맞은 조각을 같은 면 전체로 확장
-	TSet<UPrimitiveComponent*> OccludingPieces;
-	for (UPrimitiveComponent* HitPiece : HitPieces)
-	{
-		GroupSubsystem->CollectGroupMembers(HitPiece, GroupSettings, OccludingPieces);
+		SweepToTarget(CameraLocation, Target, OccludingPieces);
 	}
 
 	// 3. 새로 가린 조각은 숨기고, 이미 숨긴 조각은 가림 시각만 갱신
@@ -108,7 +113,7 @@ void UCameraOcclusionComponent::CollectTargets(TArray<AActor*>& OutTargets) cons
 	}
 }
 
-void UCameraOcclusionComponent::SweepToTarget(const FVector& CameraLocation, const AActor* Target, TSet<UPrimitiveComponent*>& OutHitPieces) const
+void UCameraOcclusionComponent::SweepToTarget(const FVector& CameraLocation, const AActor* Target, TSet<UPrimitiveComponent*>& OutOccludingPieces) const
 {
 	if (!IsValid(Target))
 	{
@@ -135,6 +140,7 @@ void UCameraOcclusionComponent::SweepToTarget(const FVector& CameraLocation, con
 
 	// 벽 / 천장은 가림 채널에 Overlap으로 반응하므로 첫 조각에서 멈추지 않고 경로상의 조각 전부 수집
 	TArray<FHitResult> Hits;
+	TSet<UPrimitiveComponent*> WallGroupPieces;
 	GetWorld()->SweepMultiByChannel(Hits, CameraLocation, SweepEnd, FQuat::Identity,
 		GroupSettings.TraceChannel, FCollisionShape::MakeSphere(SweepRadius), Params);
 	for (const FHitResult& Hit : Hits)
@@ -164,7 +170,45 @@ void UCameraOcclusionComponent::SweepToTarget(const FVector& CameraLocation, con
 		{
 			continue;
 		}
-		OutHitPieces.Add(HitPiece);
+		TSet<UPrimitiveComponent*>& Pieces = GetCeilingFace(HitPiece).IsNone() ? WallGroupPieces : OutOccludingPieces;
+		GroupSubsystem->CollectGroupMembers(HitPiece, GroupSettings, Pieces);
+	}
+
+	// 외벽은 여러 방에 걸치므로 벽과 함께 숨길 천장은 대상 바로 위의 면으로 제한한다.
+	TMap<FName, FBox> CeilingBounds;
+	TMap<UPrimitiveComponent*, FName> LinkedCeilingPieces;
+	for (UPrimitiveComponent* Piece : WallGroupPieces)
+	{
+		if (!IsAboveTargetFloor(Piece, TargetFootZ))
+		{
+			continue;
+		}
+		const FName CeilingFace = GetCeilingFace(Piece);
+		if (CeilingFace.IsNone())
+		{
+			OutOccludingPieces.Add(Piece);
+			continue;
+		}
+		CeilingBounds.FindOrAdd(CeilingFace, FBox(ForceInit)) += Piece->Bounds.GetBox();
+		LinkedCeilingPieces.Add(Piece, CeilingFace);
+	}
+
+	FName NearestCeiling = NAME_None;
+	double NearestCeilingZ = TNumericLimits<double>::Max();
+	for (const TPair<FName, FBox>& Entry : CeilingBounds)
+	{
+		if (Entry.Value.IsInsideOrOnXY(TargetLocation) && Entry.Value.Min.Z < NearestCeilingZ)
+		{
+			NearestCeiling = Entry.Key;
+			NearestCeilingZ = Entry.Value.Min.Z;
+		}
+	}
+	for (const TPair<UPrimitiveComponent*, FName>& Entry : LinkedCeilingPieces)
+	{
+		if (Entry.Value == NearestCeiling)
+		{
+			OutOccludingPieces.Add(Entry.Key);
+		}
 	}
 
 	if (bDrawDebug)
