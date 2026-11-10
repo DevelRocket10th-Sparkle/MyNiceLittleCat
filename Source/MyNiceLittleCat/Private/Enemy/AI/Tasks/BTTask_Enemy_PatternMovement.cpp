@@ -88,6 +88,12 @@ EBTNodeResult::Type UBTTask_Enemy_PatternMovement::ExecuteTask(UBehaviorTreeComp
 
 	RecoveryStartedHandle = CachedPatternComp->OnRecoveryStarted.AddUObject(this, &UBTTask_Enemy_PatternMovement::RefreshMovement);
 	
+	CachedPath = CachedAI->GetPathFollowingComponent();
+	if (CachedPhaseComp.IsValid() && CachedPath.IsValid())
+	{
+		MoveFinishedHandle = CachedPath->OnRequestFinished.AddUObject(this, &UBTTask_Enemy_PatternMovement::OnMoveFinished);
+	}
+
 	RefreshMovement();	// 구독 직후 상태 업데이트를 위해 직접 한 번 호출
 	return EBTNodeResult::InProgress;
 }
@@ -204,7 +210,7 @@ void UBTTask_Enemy_PatternMovement::RefreshMovement()
 
 	AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(CachedAI->GetPawn());
 
-	UPathFollowingComponent* Path = CachedAI->GetPathFollowingComponent();
+	UPathFollowingComponent* Path = CachedPath.Get();
 
 	// Enemy와 Path가 유효하지 않으면 이동 취소
 	if (!IsValid(Enemy) || !Enemy->CanRunEnemyAI() || !Path)
@@ -366,20 +372,38 @@ void UBTTask_Enemy_PatternMovement::RefreshMovement()
 	{
 		OwnedMoveId = Result.MoveId;
 	}
+	else if (Move == EResolvedMove::Waypoint && Result.Code == EPathFollowingRequestResult::AlreadyAtGoal)
+	{
+		// MoveTo는 NavMesh에 투영한 좌표로 도착을 판정할 수 있다.
+		CachedPhaseComp->AdvanceWaypoint(CachedPhaseExecutionId);
+	}
+}
+
+void UBTTask_Enemy_PatternMovement::OnMoveFinished(FAIRequestID RequestId, const FPathFollowingResult& Result)
+{
+	if (!OwnedMoveId.IsValid() || RequestId != OwnedMoveId)
+	{
+		return;
+	}
+
+	OwnedMoveId = FAIRequestID::InvalidRequest;
+	if (CachedMove == EResolvedMove::Waypoint && Result.IsSuccess()
+		&& CachedPath.IsValid() && CachedPath->DidMoveReachGoal() && CachedPhaseComp.IsValid())
+	{
+		CachedPhaseComp->AdvanceWaypoint(CachedPhaseExecutionId);
+	}
 }
 
 void UBTTask_Enemy_PatternMovement::CancelOwnedMove()
 {
-	if (CachedAI.IsValid() && OwnedMoveId.IsValid())
-	{
-		UPathFollowingComponent* Path = CachedAI->GetPathFollowingComponent();
-		if (Path && Path->GetCurrentRequestId() == OwnedMoveId)
-		{
-			// 늦게 실행된 BT 종료 처리가 다른 행동의 새 이동을 중단하지 않도록 한다.
-			Path->AbortMove(*this, FPathFollowingResultFlags::OwnerFinished, OwnedMoveId);
-		}
-	}
+	const FAIRequestID MoveId = OwnedMoveId;
 	OwnedMoveId = FAIRequestID::InvalidRequest;
+	UPathFollowingComponent* Path = CachedPath.Get();
+	if (MoveId.IsValid() && Path && Path->GetCurrentRequestId() == MoveId)
+	{
+		// 늦게 실행된 BT 종료 처리가 다른 행동의 새 이동을 중단하지 않도록 한다.
+		Path->AbortMove(*this, FPathFollowingResultFlags::OwnerFinished, MoveId);
+	}
 }
 
 void UBTTask_Enemy_PatternMovement::Cleanup()
@@ -391,7 +415,13 @@ void UBTTask_Enemy_PatternMovement::Cleanup()
 
 	RecoveryStartedHandle.Reset();
 
+	if (CachedPath.IsValid())
+	{
+		CachedPath->OnRequestFinished.Remove(MoveFinishedHandle);
+	}
+	MoveFinishedHandle.Reset();
 	CancelOwnedMove();
+	CachedPath.Reset();
 	
 	CachedAI.Reset();
 	CachedPatternComp.Reset();
