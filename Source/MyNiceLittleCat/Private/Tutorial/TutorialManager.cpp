@@ -677,6 +677,14 @@ void ATutorialManager::BuildCombatActions(TArray<FTutorialAction>& OutActions)
 	OutActions.Add(Do([this] { PetFacePlayer(); }));
 	OutActions.Add(WaitSeconds(0.3f));
 	OutActions.Add(Do([this] { EndCinematic(CameraReturnBlendTime); PetSay(INVTEXT("저기로 가자!")); }));
+
+	// 7) 튜토리얼 끝: 괴냥이가 다시 플레이어를 따라다님 (관문 앞에 서 있지 않음)
+	// -> 관문 들어가기 전 이스터에그 상자 등에서 괴냥이 말풍선이 플레이어 근처에 보이게
+	OutActions.Add(Do([this]
+		{
+			if (APetCharacter* PetPtr = Pet.Get())
+				PetPtr->RequestBehavior(EPetBehavior::Follow);
+		}));
 }
 
 void ATutorialManager::RunNextAction()
