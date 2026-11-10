@@ -12,6 +12,8 @@
 #include "GameFramework/PlayerController.h"
 #include "Widgets/MainHUD.h"
 
+#include "Kismet/GameplayStatics.h"
+
 ABossEncounterManager::ABossEncounterManager()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -44,6 +46,7 @@ bool ABossEncounterManager::SpawnBoss()
 	CurrentBoss = Boss;
 	Boss->GetPhaseComponent()->SetStageCinematics(StageCinematics);
 	Boss->OnDefeated.AddUniqueDynamic(this, &ABossEncounterManager::HandleBossDefeated);
+	Boss->OnDeathFinished.AddUniqueDynamic(this, &ABossEncounterManager::TryOpenLevelAfterDefeat);
 	Boss->OnEncounterFailed.AddUniqueDynamic(this, &ABossEncounterManager::HandleBossFailed);
 	// 보스에 페이즈에서 사용하는 기믹 관련 요소 설정
 	Boss->SetLevelGimmickReferences(PhaseGimmickActors, GimmickAreaCenter);
@@ -73,6 +76,7 @@ void ABossEncounterManager::RemoveCurrentBoss()
 		return;
 	}
 	CurrentBoss->OnDefeated.RemoveDynamic(this, &ABossEncounterManager::HandleBossDefeated);
+	CurrentBoss->OnDeathFinished.RemoveDynamic(this, &ABossEncounterManager::TryOpenLevelAfterDefeat);
 	CurrentBoss->OnEncounterFailed.RemoveDynamic(this, &ABossEncounterManager::HandleBossFailed);
 	CurrentBoss->StopEncounter();
 	CurrentBoss->Destroy();
@@ -257,6 +261,18 @@ void ABossEncounterManager::HandleBossDefeated(ABossCharacter* Boss)
 
 	// 보스 체력 바 숨김
 	HideEncounterHealthBar();
+}
+
+void ABossEncounterManager::TryOpenLevelAfterDefeat(ABossCharacter* Boss)
+{
+	if (!HasAuthority() || !IsValid(Boss) || Boss != CurrentBoss
+		|| EncounterState != EBossEncounterState::Cleared
+		|| !Boss->HasFinishedDeath() || LevelAfterDefeat.IsNull())
+	{
+		return;
+	}
+
+	UGameplayStatics::OpenLevelBySoftObjectPtr(this, LevelAfterDefeat);
 }
 
 void ABossEncounterManager::HandleBossFailed(ABossCharacter* Boss)
