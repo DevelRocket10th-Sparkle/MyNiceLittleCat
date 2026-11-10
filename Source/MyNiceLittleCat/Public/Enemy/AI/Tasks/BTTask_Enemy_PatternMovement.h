@@ -10,6 +10,8 @@ class AAIController;
 class UEnemyPatternComponent;
 class ABossCharacter;
 class UEnemyPhaseComponent;
+class UPathFollowingComponent;
+struct FPathFollowingResult;
 
 // 보스는 활성 페이즈 동안 기본 이동과 패턴 이동 처리
 // 일반 Enemy는 공격과 후딜 동안 패턴 이동 처리
@@ -33,6 +35,7 @@ protected:
 private:
 
 	void RefreshMovement();
+	void OnMoveFinished(FAIRequestID RequestId, const FPathFollowingResult& Result);
 	void CancelOwnedMove();
 	void Cleanup();
 
@@ -42,8 +45,10 @@ private:
 private :
 
 	FDelegateHandle RecoveryStartedHandle;
+	FDelegateHandle MoveFinishedHandle;
 
 	TWeakObjectPtr<AAIController> CachedAI;
+	TWeakObjectPtr<UPathFollowingComponent> CachedPath;
 	TWeakObjectPtr<UEnemyPatternComponent> CachedPatternComp;
 	TWeakObjectPtr<AActor> CachedTarget;
 
