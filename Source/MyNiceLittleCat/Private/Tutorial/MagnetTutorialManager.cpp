@@ -5,6 +5,7 @@
 #include "Gimmicks/Stage/GimmickPressurePlate.h"
 #include "Items/InventorySubsystem.h"
 #include "Items/ItemAbilityTags.h"
+#include "Interfaces/ActivatableInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/Pawn.h"
 #include "Engine/GameInstance.h"
@@ -77,6 +78,53 @@ void AMagnetTutorialManager::UnbindStartTriggers()
 	StartTriggers.Reset();
 }
 
+void AMagnetTutorialManager::SetFenceGatesClosed(bool _bClosed)
+{
+	TArray<AActor*> Gates;
+	UGameplayStatics::GetAllActorsWithTag(this, FenceGateTag, Gates);
+
+	if (true == Gates.IsEmpty())
+		UE_LOG(LogTemp, Warning, TEXT("MagnetTutorial: '%s' 태그가 붙은 울타리 입구가 없어요."), *FenceGateTag.ToString());
+
+	// 입구 쪽 클래스를 몰라도 되게 IActivatableInterface 로 호출 (Activate = 막기, Deactivate = 열기)
+	for (AActor* Gate : Gates)
+	{
+		if (false == IsValid(Gate) || false == Gate->Implements<UActivatableInterface>()) continue;
+
+		if (true == _bClosed)
+			IActivatableInterface::Execute_Activate(Gate, this);
+		else
+			IActivatableInterface::Execute_Deactivate(Gate, this);
+	}
+}
+
+void AMagnetTutorialManager::BringPetInsideFence()
+{
+	APetCharacter* P = Pet.Get();
+	const APawn* Player = UGameplayStatics::GetPlayerPawn(this, 0);
+	if (nullptr == P || nullptr == Player) return;
+
+	TArray<AActor*> Gates;
+	UGameplayStatics::GetAllActorsWithTag(this, FenceGateTag, Gates);
+	if (true == Gates.IsEmpty()) return;
+
+	// 가림막의 오른쪽(로컬 Y) = 울타리 줄의 앞뒤 방향 (가림막이 울타리 줄을 따라 놓여 있으므로)
+	const AActor* Gate = Gates[0];
+	const FVector Normal = Gate->GetActorRightVector();
+	const FVector GateLocation = Gate->GetActorLocation();
+
+	const float PlayerSide = FVector::DotProduct(Player->GetActorLocation() - GateLocation, Normal);
+	const float PetSide = FVector::DotProduct(P->GetActorLocation() - GateLocation, Normal);
+
+	// 같은 쪽이고 울타리에서 충분히 떨어져 있으면 그대로 둠
+	const bool bSameSide = (PlayerSide * PetSide) > 0.f;
+	if (true == bSameSide && FMath::Abs(PetSide) > PetFenceMargin) return;
+
+	// 울타리 밖이면 날아서 플레이어 옆으로 넘어오게 함 (펫의 날아서 복귀 행동 재사용)
+	// 의도: 순간이동보다 자연스럽고, 나는 동안 충돌이 꺼져 있어 울타리 위로 넘어옴
+	P->RequestBehavior(EPetBehavior::RecoverFollow);
+}
+
 void AMagnetTutorialManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearAllTimersForObject(this);
@@ -113,9 +161,19 @@ void AMagnetTutorialManager::TryStart()
 	{
 		CurrentStep = EMagnetTutorialStep::Completed;
 		FoundPet->UnlockMagnetPolarity();
+		SetFenceGatesClosed(false); // 자성을 이미 가졌으면 입구는 절대 막지 않음 (혹시 닫혀 있어도 엶)
 		return;
 	}
 
+	// 자성 없이 울타리 안(시작 트리거)에 들어옴 → 튜토리얼이 끝날 때까지 입구를 막아 구역 밖으로 못 나가게
+	// 먼저 막고 펫을 날려 보냄
+	// 의도: 날아오기는 펫 쪽 방향부터 착지점을 찾으므로, 입구를 먼저 막아 "플레이어가 보이는 자리" 검사에서 울타리 바깥이 걸러지게
+	SetFenceGatesClosed(true);
+	BringPetInsideFence();     // 펫이 밖에 남아 있으면 날아서 안으로 넘어오게
+
+	// 3단계(Q 안내) 전까지 N극 고정을 쭉 유지 (자성 모드가 아닐 때 걸어도 유지됨)
+	// 의도: 구슬을 먹은 직후나 2단계 도중에 Q로 S가 됐다가 강제로 N으로 되돌아가는 부자연스러운 순간을 없앰
+	FoundPet->LockMagnetPolarity(EPetMagnetPolarity::N);
 	EnterStep(EMagnetTutorialStep::Acquire);
 	GetWorldTimerManager().SetTimer(CheckTimerHandle, this, &AMagnetTutorialManager::CheckStep, CheckInterval, true);
 }
@@ -137,7 +195,7 @@ void AMagnetTutorialManager::EnterStep(EMagnetTutorialStep _step)
 	case EMagnetTutorialStep::HoldField:
 		HoldFieldTime = 0.f;
 		P->RequestMode(EPetMode::Magnet); // 획득 단계를 건너뛰고 들어온 경우 대비
-		// 극 고정(Q로 미리 바꿔 단계를 건너뛰지 못하게)은 CheckStep에서 상자와의 거리에 따라 걸고 풂
+		// 극은 TryStart 에서 건 N 고정이 그대로 유지됨 (Q로 미리 바꿔 단계를 건너뛰지 못하게)
 		PetSay(LOCTEXT("Hold", "나 이제 자석이야! 상자 가까이 가서 마우스 우클릭을 꾹 누르고 있어봐!"));
 		break;
 
@@ -155,6 +213,7 @@ void AMagnetTutorialManager::EnterStep(EMagnetTutorialStep _step)
 		GetWorldTimerManager().ClearTimer(CheckTimerHandle);
 		// 의도: 2단계에서 발판이 먼저 켜져 3단계(잠금 해제)를 건너뛰어도 N 고정이 남지 않게
 		P->UnlockMagnetPolarity();
+		SetFenceGatesClosed(false); // 자성 튜토리얼을 다 배웠으니 입구를 열어 다시 자유롭게 드나들게
 		//PetSay(LOCTEXT("Done", "문이 열렸다! 이제 같이 가자!"), 3.f);
 		break;
 
@@ -192,16 +251,12 @@ void AMagnetTutorialManager::CheckStep()
 
 	case EMagnetTutorialStep::HoldField:
 	{
-		// 튜토리얼 구역(상자 근처)에 있을 때만 N 고정, 벗어나면 해제
-		// 의도: 구역 안에서는 Q로 단계를 건너뛰지 못하게 하고, 뒤로 빠지면 다른 기믹을 자유롭게 풀 수 있게
-		//       (밖에서 S로 바꿨어도 다시 고정되면 펫 능력이 고정 극 N으로 되돌림)
-		if (GetPlayerDistanceTo(MagnetBox) <= PolarityLockDistance)
+		// 상자에서 멀리 떨어져 있으면 진행/힌트를 쉼 (예전과 같은 흐름)
+		// 극 고정은 여기서 풀지 않음
+		// 의도: 울타리가 튜토리얼이 끝날 때까지 구역을 막고 있어 밖의 다른 자성 기믹을 풀 일이 없으므로,
+		//       거리에 따라 고정을 풀었다 다시 걸면서 S → N 으로 강제로 되돌아가던 문제만 없앰
+		if (GetPlayerDistanceTo(MagnetBox) > PolarityLockDistance)
 		{
-			P->LockMagnetPolarity(EPetMagnetPolarity::N);
-		}
-		else
-		{
-			P->UnlockMagnetPolarity();
 			HoldFieldTime = 0.f;
 			return; // 구역 밖에서는 힌트 말풍선도 쉼
 		}
