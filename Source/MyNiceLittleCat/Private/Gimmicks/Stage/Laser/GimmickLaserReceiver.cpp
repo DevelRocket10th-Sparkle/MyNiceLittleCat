@@ -225,6 +225,7 @@ void AGimmickLaserReceiver::HandleColorRejected(ULaserBeamComponent* Laser)
 
 	const ELaserBeamColor BeamColor = Laser->GetBeamColorType();
 	OnBeamRejected.Broadcast(this, BeamColor);
+	PlayGimmickSound(RejectSound);
 	K2_OnBeamRejected(BeamColor);
 }
 

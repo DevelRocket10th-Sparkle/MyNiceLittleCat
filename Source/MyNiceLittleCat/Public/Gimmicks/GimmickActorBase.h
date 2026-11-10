@@ -21,6 +21,7 @@ class AGimmickActorBase;
 class UGameProgressSaveGame;
 class UGimmickLinkVisualizerComponent;
 class UNiagaraSystem;
+class USoundBase;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnGimmickActivationChanged, AGimmickActorBase*, Gimmick, bool, bActivated, AActor*, ChangeInstigator);
 
@@ -115,6 +116,9 @@ protected:
 	// 보낸 기믹 → 이 기믹으로 연결 이펙트 재생
 	void PlaySignalLinkEffect(AActor* Source);
 
+	// 기믹 효과음 재생 (비어 있으면 무시). bPlaySoundAs2D면 일시정지 중에도 들리는 2D UI 소리, 아니면 액터 위치
+	void PlayGimmickSound(USoundBase* Sound) const;
+
 	// 연결 이펙트가 나가고 도착하는 지점 (SignalLinkPointTag 컴포넌트 위치, 없으면 보이는 메시들 윗면 가운데)
 	static FVector GetSignalLinkPoint(const AActor* Actor);
 
@@ -195,6 +199,22 @@ protected:
 
 	// 이 태그를 단 컴포넌트가 있으면 그 위치에서 이펙트가 나가고 도착함
 	static const FName SignalLinkPointTag;
+
+	// 켜질 때 효과음 (문 열림, 가로등 점등, 수신기 켜짐, 상자 열림 등). 세이브 복원·시작 상태 적용 때는 재생 안 함
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|Sound")
+	TObjectPtr<USoundBase> ActivateSound;
+
+	// 꺼질 때 효과음 (문 닫힘 등)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|Sound")
+	TObjectPtr<USoundBase> DeactivateSound;
+
+	// 이 기믹 효과음 전체 볼륨 배율
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|Sound", meta = (ClampMin = "0.0"))
+	float SoundVolumeMultiplier = 1.f;
+
+	// 효과음을 위치 없는 2D UI 소리로 재생 (게임 일시정지 중에도 들림. 예: 열면 일시정지되는 보물 상자)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|Sound")
+	bool bPlaySoundAs2D = false;
 
 	// 세이브 시 상태 저장 (한 번 열면 계속 열려 있어야 하는 레버·발판 등)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|Save")
