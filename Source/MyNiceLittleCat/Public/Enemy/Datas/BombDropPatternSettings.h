@@ -47,6 +47,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BombDrop|Aim", meta = (ClampMin = "0", Units = "cm"))
 	float ScatterRadius = 150.f;
 
+	// 조준점을 내비메시 위로 옮김 (경기장 가장자리·벽 위에 떨어져 폭탄이 못 움직이는 것 방지)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BombDrop|Aim")
+	bool bKeepOnNavMesh = true;
+
+	// 조준점 근처 내비메시를 찾는 수평 반경
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BombDrop|Aim", meta = (EditCondition = "bKeepOnNavMesh", ClampMin = "0", Units = "cm"))
+	float NavSearchRadius = 600.f;
+
+	// 내비메시 가장자리에서 최소 이만큼 안쪽에 떨어뜨림
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BombDrop|Aim", meta = (EditCondition = "bKeepOnNavMesh", ClampMin = "0", Units = "cm"))
+	float EdgePadding = 200.f;
+
+	// 착지점 높이가 플레이어 발밑과 이보다 차이 나면 (계단·구덩이·낮은 턱) 플레이어 근처로 다시 조준 (0 = 검사 안 함)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BombDrop|Aim", meta = (ClampMin = "0", Units = "cm"))
+	float MaxGroundHeightDifference = 120.f;
+
 	/* 낙하 */
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BombDrop|Fall", meta = (ClampMin = "100", Units = "cm"))

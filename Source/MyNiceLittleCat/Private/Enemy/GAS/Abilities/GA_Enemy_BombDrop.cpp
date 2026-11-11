@@ -9,11 +9,55 @@
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "NavigationSystem.h"
+#include "NavMesh/RecastNavMesh.h"
 
 #include "Gimmicks/Magnetic/MagneticComponent.h"
 
 namespace
 {
+	// 조준점을 내비메시 위, 가장자리에서 EdgePadding 이상 안쪽으로 옮김. 못 찾으면 false (플레이어 쪽으로 대체)
+	bool ProjectBombAimToNavMesh(UWorld* World, const UBombDropPatternSettings* Settings, const FVector& FallbackCenter, FVector& InOutAim)
+	{
+		UNavigationSystemV1* NavSys = World ? FNavigationSystem::GetCurrent<UNavigationSystemV1>(World) : nullptr;
+		if (!NavSys || !Settings) return false;
+
+		const FVector Extent(Settings->NavSearchRadius, Settings->NavSearchRadius, 500.f);
+		FNavLocation NavLoc;
+		if (!NavSys->ProjectPointToNavigation(InOutAim, NavLoc, Extent)
+			&& !NavSys->ProjectPointToNavigation(FallbackCenter, NavLoc, Extent))
+		{
+			return false;
+		}
+		FVector Point = NavLoc.Location;
+
+#if WITH_RECAST
+		if (Settings->EdgePadding > 0.f)
+		{
+			if (const ARecastNavMesh* NavMesh = Cast<ARecastNavMesh>(NavSys->GetDefaultNavDataInstance(FNavigationSystem::DontCreate)))
+			{
+				// 벽(가장자리)에서 밀어내기, 두 번까지 반복해서 모서리도 처리
+				for (int32 Step = 0; Step < 2; ++Step)
+				{
+					FVector Wall;
+					const float Dist = NavMesh->FindDistanceToWall(Point, nullptr, Settings->EdgePadding, &Wall);
+					if (Dist >= Settings->EdgePadding) break;
+
+					FVector Away = (Point - Wall).GetSafeNormal2D();
+					if (Away.IsNearlyZero()) Away = (FallbackCenter - Point).GetSafeNormal2D();
+					const FVector Pushed = Point + Away * (Settings->EdgePadding - Dist + 10.f);
+
+					FNavLocation PushedNav;
+					if (!NavSys->ProjectPointToNavigation(Pushed, PushedNav, FVector(100.f, 100.f, 500.f))) break;
+					Point = PushedNav.Location;
+				}
+			}
+		}
+#endif
+		InOutAim = Point;
+		return true;
+	}
+
 	// 보스가 죽거나 사라지거나 플레이어가 죽으면 스폰된 액터를 제거하는 감시 타이머 (어빌리티 인스턴스 수명과 무관)
 	// 보스 사망 시 패턴 컴포넌트가 GA를 회수해서 GA 쪽 바인딩만으로는 정리가 안 됨
 	template <typename TSpawned, typename TKillFunc>
@@ -172,7 +216,28 @@ void UGA_Enemy_BombDrop::DropNext()
 	FVector Ground;
 	const bool bRoomForBomb = Settings->MaxAliveBombs <= 0 || CountAliveBombs() < Settings->MaxAliveBombs;
 
-	if (bRoomForBomb && FindGround(ComputeAimPoint(Dropped > 0), Ground))
+	FVector Aim = ComputeAimPoint(Dropped > 0);
+	if (Settings->bKeepOnNavMesh)
+	{
+		ProjectBombAimToNavMesh(GetWorld(), Settings, Target->GetActorLocation(), Aim);
+	}
+
+	bool bHasGround = bRoomForBomb && FindGround(Aim, Ground);
+
+	// 플레이어와 다른 높이(계단·구덩이 등)에 떨어지면 폭탄이 갇히므로 플레이어 근처로 다시 조준
+	FVector PlayerGround;
+	if (bHasGround && Settings->MaxGroundHeightDifference > 0.f && FindGround(Target->GetActorLocation(), PlayerGround)
+		&& FMath::Abs(Ground.Z - PlayerGround.Z) > Settings->MaxGroundHeightDifference)
+	{
+		Aim = PlayerGround;
+		if (Settings->bKeepOnNavMesh)
+		{
+			ProjectBombAimToNavMesh(GetWorld(), Settings, PlayerGround, Aim);
+		}
+		bHasGround = FindGround(Aim, Ground) && FMath::Abs(Ground.Z - PlayerGround.Z) <= Settings->MaxGroundHeightDifference;
+	}
+
+	if (bHasGround)
 	{
 		const float FallSeconds = Settings->GetFallSeconds(GetWorld()->GetGravityZ());
 
