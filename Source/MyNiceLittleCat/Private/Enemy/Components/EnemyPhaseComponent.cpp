@@ -276,9 +276,11 @@ bool UEnemyPhaseComponent::BeginPendingTransition(int64& OutTransitionId)
 	Settings.bDisableMovementInput = Staging != nullptr;
 	Settings.bDisableLookAtInput = Staging != nullptr;
 	Settings.bHideHud = Staging != nullptr;
-	Settings.FinishCompletionStateOverride = EMovieSceneCompletionModeOverride::ForceRestoreState;
+	// Stage3 연출은 섹션별 완료 모드 사용: 플레이어 위치는 연출 최종 위치 유지(KeepState), 나머지는 복원
+	Settings.FinishCompletionStateOverride = Staging
+		? EMovieSceneCompletionModeOverride::None : EMovieSceneCompletionModeOverride::ForceRestoreState;
 	ALevelSequenceActor* SequenceActor = nullptr;
-	TransitionSequencePlayer = ULevelSequencePlayer::CreateLevelSequencePlayer(this, Sequence, Settings, SequenceActor);
+	TransitionSequencePlayer =ULevelSequencePlayer::CreateLevelSequencePlayer(this, Sequence, Settings, SequenceActor);
 	TransitionSequenceActor = SequenceActor;
 	if (!IsValid(TransitionSequencePlayer) || !IsValid(TransitionSequenceActor))
 	{
@@ -364,9 +366,16 @@ bool UEnemyPhaseComponent::CancelTransitionSequence(int64 TransitionId)
 
 bool UEnemyPhaseComponent::SkipActiveTransitionSequence()
 {
-	return StageCinematics.IsValid() && IsValid(TransitionSequencePlayer)
-		&& (TransitionSequencePlayer->IsPlaying() || TransitionSequencePlayer->IsPaused())
-		&& CancelTransitionSequence(SequenceTransitionId);
+	if (!StageCinematics.IsValid() || !IsValid(TransitionSequencePlayer)
+		|| (!TransitionSequencePlayer->IsPlaying() && !TransitionSequencePlayer->IsPaused())
+		|| GetTransitionResult(SequenceTransitionId) != EEnemyPatternResult::Running)
+		return false;
+
+	// 마지막 프레임을 평가한 뒤 정지해야 KeepState 트랙(플레이어 위치)이 연출 최종 위치로 남음; 완료는 OnStop에서 처리
+	TransitionSequencePlayer->GoToEndAndStop();
+	if (TransitionResult == EEnemyPatternResult::Running)
+		CancelTransitionSequence(SequenceTransitionId);
+	return true;
 }
 
 // 재생 상태를 먼저 완료로 바꾼 뒤 정리하여 Stop 콜백의 중복 완료 방지
