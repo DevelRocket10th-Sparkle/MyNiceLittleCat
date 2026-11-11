@@ -750,6 +750,14 @@ void AStage3BossCinematics::FinishPhaseCut(FName Phase, ABossCharacter* Boss)
 					false, nullptr, ETeleportType::TeleportPhysics);
 			SetEyeGlow(Boss, Setup->EyeGlow);
 		}
+		if (Phase == PhaseThree && IsValid(RoofDoor))
+		{
+			// 스킵으로 시퀀스 이벤트(OpenRoofDoor)를 건너뛰어도 옥상 문은 열려 있어야 함
+			if (UFunction* OpenFunc = RoofDoor->FindFunction(TEXT("OpenRoofDoor")))
+				RoofDoor->ProcessEvent(OpenFunc, nullptr);
+			else
+				UE_LOG(LogTemp, Warning, TEXT("[Stage3] RoofDoor에 OpenRoofDoor 이벤트 없음"));
+		}
 	}
 }
 

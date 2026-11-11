@@ -154,6 +154,9 @@ private:
 	UPROPERTY(EditInstanceOnly, Category = "Stage 3")
 	TObjectPtr<UNiagaraSystem> RoofEscapeEffect;
 
+	UPROPERTY(EditInstanceOnly, Category = "Stage 3")
+	TObjectPtr<AActor> RoofDoor;
+
 	struct FDoorMotion
 	{
 		TWeakObjectPtr<UStaticMeshComponent> Leaf;
