@@ -57,7 +57,7 @@ public:
 	FLinearColor GetPolarityColor(EMagneticPolarity InPolarity) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Magnetic")
-	void SetMagnetEnabled(bool bEnabled) { bMagnetEnabled = bEnabled; }
+	void SetMagnetEnabled(bool bEnabled) { bMagnetEnabled = bEnabled; RefreshTickEnabled(); }
 
 	UFUNCTION(BlueprintPure, Category = "Magnetic")
 	bool IsMagnetEnabled() const { return bMagnetEnabled; }
@@ -87,6 +87,11 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	// 틱은 힘을 받을 수 있을 때(자력원 있음·자력 켜짐·극성 있음) 또는 이펙트가 서서히 꺼지는 중일 때만 켬
+	void RefreshTickEnabled();
+	void HandleSourcesChanged();
 
 	// 범위 판정 (Delta: 자력원 → 대상, Aim: 정규화된 조준 방향)
 	static bool IsInsideField(const FMagneticSourceInfo& Info, const FVector& Delta, const FVector& Aim);
@@ -216,4 +221,6 @@ private:
 	float CurrentActivity = 0.f;
 
 	float ActivityHoldRemaining = 0.f;
+
+	FDelegateHandle SourcesChangedHandle;
 };

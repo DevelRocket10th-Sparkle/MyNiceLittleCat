@@ -4,14 +4,39 @@
 /// 자력원 목록 관리 월드 서브시스템 구현
 
 #include "Gimmicks/Magnetic/MagneticSubsystem.h"
+#include "Gimmicks/Magnetic/MagneticSettings.h"
 #include "DrawDebugHelpers.h"
 #include "HAL/IConsoleManager.h"
+#include "Materials/MaterialInterface.h"
+#include "NiagaraSystem.h"
 
 static TAutoConsoleVariable<int32> CVarMagneticDrawDebug(
 	TEXT("Magnetic.DrawDebug"),
 	0,
 	TEXT("1이면 등록된 자력원의 자기장 범위를 그립니다."),
 	ECVF_Cheat);
+
+void UMagneticSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+
+	// 맵 로딩 중에 불러 두면 게임 중 첫 자성 액터 스폰 때 동기 로딩이 일어나지 않음
+	const UMagneticSettings* Settings = GetDefault<UMagneticSettings>();
+	PreloadedPolarityEffect = Settings->DefaultPolarityEffect.LoadSynchronous();
+	PreloadedPolarityOverlay = Settings->DefaultPolarityOverlay.LoadSynchronous();
+}
+
+bool UMagneticSubsystem::HasAnySource() const
+{
+	for (const TPair<TWeakObjectPtr<AActor>, FMagneticSourceInfo>& Pair : Sources)
+	{
+		if (Pair.Key.IsValid())
+		{
+			return true;
+		}
+	}
+	return false;
+}
 
 void UMagneticSubsystem::RegisterSource(AActor* SourceActor, const FMagneticSourceInfo& Info)
 {
@@ -20,7 +45,13 @@ void UMagneticSubsystem::RegisterSource(AActor* SourceActor, const FMagneticSour
 		return;
 	}
 
+	const bool bNewSource = !Sources.Contains(SourceActor);
 	Sources.Add(SourceActor, Info);
+
+	if (bNewSource)
+	{
+		OnSourcesChanged.Broadcast();
+	}
 
 	if (CVarMagneticDrawDebug.GetValueOnGameThread() != 0)
 	{
@@ -46,7 +77,7 @@ void UMagneticSubsystem::UpdateSource(AActor* SourceActor, const FMagneticSource
 
 void UMagneticSubsystem::UnregisterSource(AActor* SourceActor)
 {
-	Sources.Remove(SourceActor);
+	int32 RemovedCount = Sources.Remove(SourceActor);
 
 	// 파괴된 자력원 정리
 	for (auto It = Sources.CreateIterator(); It; ++It)
@@ -54,7 +85,13 @@ void UMagneticSubsystem::UnregisterSource(AActor* SourceActor)
 		if (!It->Key.IsValid())
 		{
 			It.RemoveCurrent();
+			++RemovedCount;
 		}
+	}
+
+	if (RemovedCount > 0)
+	{
+		OnSourcesChanged.Broadcast();
 	}
 }
 

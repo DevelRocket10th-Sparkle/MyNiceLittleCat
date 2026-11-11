@@ -72,6 +72,13 @@ protected:
 	UFUNCTION()
 	void HandleStartTriggerOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp,
 		int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
+	// 입구 문 잠금/해제 (튜토리얼 시작 시 닫고, 끝나면 염)
+	void SetEntranceDoorLocked(bool _bLock);
+
+	// 튜토리얼 도중 입구 문이 다른 신호(골목 수신기 등)로 다시 열리면 바로 닫음
+	UFUNCTION()
+	void HandleEntranceDoorChanged(class AGimmickActorBase* _gimmick, bool _bActivated, AActor* _changeInstigator);
 	// =============================================================================
 protected:
 	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Tutorial")
@@ -89,6 +96,11 @@ protected:
 	// 마지막 단계에서 켜야 하는 레이저 수신기 (문과 연결돼 있어야 함, 예: S2_Shrine_Receiver)
 	UPROPERTY(EditInstanceOnly, Category = "Tutorial|Level")
 	TObjectPtr<class AGimmickActorBase> Receiver;
+
+	// 튜토리얼이 시작되면 닫고, 끝나면 다시 여는 입구 문 (예: S2_Alley_Door)
+	// 의도: 튜토리얼 도중 골목으로 되돌아가지 않고 신전 안에서 끝까지 배우게
+	UPROPERTY(EditInstanceOnly, Category = "Tutorial|Level")
+	TObjectPtr<class AGimmickActorBase> EntranceDoor;
 
 	UPROPERTY(EditAnywhere, Category = "Tutorial|Timing", meta = (ClampMin = "0.05", Units = "s"))
 	float CheckInterval = 0.2f;      // 조건 확인 주기
@@ -121,6 +133,7 @@ private:
 	FTimerHandle NextStepTimerHandle;
 
 	bool bPlayerEntered = false;   // 플레이어가 시작 트리거에 들어왔나
+	bool bEntranceDoorLocked = false; // 튜토리얼 때문에 입구 문을 닫아 둔 상태인가
 	bool bAcquireFinished = false; // 구슬 획득 연출이 끝났나
 	bool bStepDone = false;        // 완료 처리 중복 방지 (StepDelay 동안)
 	bool bRemovedByPlayer = false; // 4단계: Q로 철거한 반사판이 있나
