@@ -188,6 +188,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Visual", meta = (ClampMin = "0.0", Units = "s"))
 	float RejectFlashDuration = 0.3f;
 
+	// 색이 맞지 않는 빛을 거부할 때 효과음 (레이저당 한 번)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|Sound")
+	TObjectPtr<USoundBase> RejectSound;
+
 	// 색 표시에 받는 색을 넣을 벡터 파라미터 이름 (엔진 기본 도형 머티리얼은 Color)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserReceiver|Visual")
 	FName ColorParameterName = TEXT("Color");
