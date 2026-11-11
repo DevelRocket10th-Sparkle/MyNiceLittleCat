@@ -5,6 +5,7 @@
 #include "Characters/PlayerComponents/LockOnComponent.h"
 #include "Characters/Camera/RoomMaskVolume.h"
 #include "Components/MeshComponent.h"
+#include "Components/LocalLightComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -25,6 +26,21 @@ namespace
 			AttachRoot = AttachRoot->GetAttachParentActor();
 		}
 		return !AttachRoot->IsA<APawn>() && !AttachRoot->IsA<ARoomMaskVolume>() && !Room->IsCutawayIgnored(AttachRoot);
+	}
+
+	// 그림자 컬링 후보 조명: 보이는 상태로 그림자를 그리는 점 / 스포트 조명만. 캐릭터 / 펫 등 Pawn에 붙은 조명과 방에서 제외 지정한 액터는 제외
+	bool IsLightShadowCullCandidate(const ULocalLightComponent* Light, const AActor* Owner, const ARoomMaskVolume* Room)
+	{
+		if (!Light->IsRegistered() || !Light->IsVisible() || !Light->CastShadows || Light->AttenuationRadius <= 0.f)
+		{
+			return false;
+		}
+		const AActor* AttachRoot = Owner;
+		while (AttachRoot->GetAttachParentActor())
+		{
+			AttachRoot = AttachRoot->GetAttachParentActor();
+		}
+		return !AttachRoot->IsA<APawn>() && !Room->IsCutawayIgnored(AttachRoot);
 	}
 
 	bool IsInsideAnyOtherBox(const FVector& Point, const TArray<FBox>& Boxes, int32 SkipIndex)
@@ -53,9 +69,11 @@ void UCameraOcclusionComponent::SetOcclusionSuspended(bool bSuspended)
 	bOcclusionSuspended = bSuspended;
 
 	// 컷신 시작 전에 숨긴 메시 복원
+	// 컷신 카메라는 다른 방도 비추므로 꺼 둔 조명 그림자도 복원
 	if (bOcclusionSuspended)
 	{
 		RestoreAllPieces();
+		RestoreCulledLightShadows();
 	}
 }
 
@@ -85,6 +103,7 @@ void UCameraOcclusionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
 		World->GetTimerManager().ClearTimer(UpdateTimerHandle);
 	}
 	RestoreAllPieces();
+	RestoreCulledLightShadows();
 	RoomCaches.Reset();
 	Super::EndPlay(EndPlayReason);
 }
@@ -236,15 +255,21 @@ void UCameraOcclusionComponent::CollectRoomCutaway(const FVector& CameraLocation
 	bInCutawayRoom = false;
 	if (!RoomCutaway.bEnabled)
 	{
+		RestoreCulledLightShadows();
 		return;
 	}
 	ARoomMaskVolume* Room = ARoomMaskVolume::GetCurrentRoom();
 	if (!Room || Room->GetWorld() != GetWorld() || !Room->IsCutawayEnabled())
 	{
+		// 방 밖 (마당, 옥상)에서는 창 너머 실내가 보일 수 있으므로 조명 그림자를 모두 원래대로 유지
+		RestoreCulledLightShadows();
 		return;
 	}
 	bInCutawayRoom = true;
 	const FRoomCutawayCache& Cache = GetOrBuildRoomCache(Room);
+
+	// 방에 닿지 않는 조명의 그림자 끄기 (방이 바뀔 때만 실제 변경)
+	ApplyLightShadowCulling(Room, Cache);
 
 	// 천장 / 윗층, 방 밖 (옆방, 건물 밖)은 카메라 각도와 관계없이 항상 숨김
 	for (const TWeakObjectPtr<UPrimitiveComponent>& Piece : Cache.TopPieces)
@@ -313,6 +338,33 @@ const FRoomCutawayCache& UCameraOcclusionComponent::GetOrBuildRoomCache(ARoomMas
 	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 	{
 		const AActor* Actor = *It;
+
+		// 조명: 빛이 닿는 범위 (감쇠 반경 구)가 방 박스 (+여유)와 하나도 겹치지 않으면 그림자 컬링 대상
+		TInlineComponentArray<ULocalLightComponent*> Lights;
+		Actor->GetComponents(Lights);
+		for (ULocalLightComponent* Light : Lights)
+		{
+			if (!IsLightShadowCullCandidate(Light, Actor, Room))
+			{
+				continue;
+			}
+			const FVector LightCenter = Light->GetComponentLocation();
+			const FVector::FReal RadiusSquared = FMath::Square(static_cast<FVector::FReal>(Light->AttenuationRadius));
+			bool bReachesRoom = false;
+			for (const FBox& Box : Boxes)
+			{
+				if (FMath::SphereAABBIntersection(LightCenter, RadiusSquared, Box.ExpandBy(S.LightShadowMargin)))
+				{
+					bReachesRoom = true;
+					break;
+				}
+			}
+			if (!bReachesRoom)
+			{
+				Cache.OutsideShadowLights.Add(Light);
+			}
+		}
+
 		TInlineComponentArray<UPrimitiveComponent*> Pieces;
 		Actor->GetComponents(Pieces);
 		for (UPrimitiveComponent* Piece : Pieces)
@@ -417,9 +469,51 @@ const FRoomCutawayCache& UCameraOcclusionComponent::GetOrBuildRoomCache(ARoomMas
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[RoomCutaway] %s: top %d, outside %d, -X %d, +X %d, -Y %d, +Y %d"), *Room->GetActorNameOrLabel(),
-		Cache.TopPieces.Num(), Cache.OutsidePieces.Num(), Cache.SidePieces[0].Num(), Cache.SidePieces[1].Num(), Cache.SidePieces[2].Num(), Cache.SidePieces[3].Num());
+	UE_LOG(LogTemp, Log, TEXT("[RoomCutaway] %s: top %d, outside %d, -X %d, +X %d, -Y %d, +Y %d, shadow-culled lights %d"), *Room->GetActorNameOrLabel(),
+		Cache.TopPieces.Num(), Cache.OutsidePieces.Num(), Cache.SidePieces[0].Num(), Cache.SidePieces[1].Num(), Cache.SidePieces[2].Num(), Cache.SidePieces[3].Num(),
+		Cache.OutsideShadowLights.Num());
 	return Cache;
+}
+
+void UCameraOcclusionComponent::ApplyLightShadowCulling(ARoomMaskVolume* Room, const FRoomCutawayCache& Cache)
+{
+	if (!RoomCutaway.bCullOutsideLightShadows)
+	{
+		RestoreCulledLightShadows();
+		return;
+	}
+	// 같은 방이면 이미 적용된 상태: 매 판정마다 렌더 상태를 다시 만들지 않음
+	if (LightCullRoom.Get() == Room)
+	{
+		return;
+	}
+	// 이전 방 기준으로 끈 조명 복구 후 새 방 기준으로 다시 끔
+	RestoreCulledLightShadows();
+	LightCullRoom = Room;
+	for (const TWeakObjectPtr<ULocalLightComponent>& WeakLight : Cache.OutsideShadowLights)
+	{
+		ULocalLightComponent* Light = WeakLight.Get();
+		// 다른 기능이 이미 그림자를 끈 조명은 건드리지 않음: 복구 때 켜 버리지 않도록 목록에 넣지 않음
+		if (!Light || !Light->CastShadows)
+		{
+			continue;
+		}
+		Light->SetCastShadows(false);
+		CulledShadowLights.Add(Light);
+	}
+}
+
+void UCameraOcclusionComponent::RestoreCulledLightShadows()
+{
+	for (const TWeakObjectPtr<ULocalLightComponent>& WeakLight : CulledShadowLights)
+	{
+		if (ULocalLightComponent* Light = WeakLight.Get())
+		{
+			Light->SetCastShadows(true);
+		}
+	}
+	CulledShadowLights.Reset();
+	LightCullRoom.Reset();
 }
 
 bool UCameraOcclusionComponent::IsAboveTargetFloor(const UPrimitiveComponent* Piece, float TargetFootZ) const
