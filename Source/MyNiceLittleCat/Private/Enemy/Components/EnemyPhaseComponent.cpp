@@ -15,6 +15,10 @@
 
 #include "Engine/TargetPoint.h"
 
+#include "GameFramework/Character.h"
+#include "Kismet/GameplayStatics.h"
+#include "Systems/CameraOcclusionComponent.h"
+
 // 컴포넌트의 기본 실행 상태를 설정한다.
 UEnemyPhaseComponent::UEnemyPhaseComponent()
 {
@@ -272,9 +276,11 @@ bool UEnemyPhaseComponent::BeginPendingTransition(int64& OutTransitionId)
 	Settings.bDisableMovementInput = Staging != nullptr;
 	Settings.bDisableLookAtInput = Staging != nullptr;
 	Settings.bHideHud = Staging != nullptr;
-	Settings.FinishCompletionStateOverride = EMovieSceneCompletionModeOverride::ForceRestoreState;
+	// Stage3 연출은 섹션별 완료 모드 사용: 플레이어 위치는 연출 최종 위치 유지(KeepState), 나머지는 복원
+	Settings.FinishCompletionStateOverride = Staging
+		? EMovieSceneCompletionModeOverride::None : EMovieSceneCompletionModeOverride::ForceRestoreState;
 	ALevelSequenceActor* SequenceActor = nullptr;
-	TransitionSequencePlayer = ULevelSequencePlayer::CreateLevelSequencePlayer(this, Sequence, Settings, SequenceActor);
+	TransitionSequencePlayer =ULevelSequencePlayer::CreateLevelSequencePlayer(this, Sequence, Settings, SequenceActor);
 	TransitionSequenceActor = SequenceActor;
 	if (!IsValid(TransitionSequencePlayer) || !IsValid(TransitionSequenceActor))
 	{
@@ -290,8 +296,22 @@ bool UEnemyPhaseComponent::BeginPendingTransition(int64& OutTransitionId)
 	TransitionSequencePlayer->OnStop.AddDynamic(this, &UEnemyPhaseComponent::HandleTransitionSequenceStopped);
 	GetWorld()->GetTimerManager().SetTimer(TransitionTimeoutHandle, this,
 		&UEnemyPhaseComponent::HandleTransitionTimeout, Phase.TransitionTimeout, false);
+
 	SetComponentTickEnabled(true);
+
+	if (Staging)
+	{
+		if (ACharacter* Player = UGameplayStatics::GetPlayerCharacter(this, 0))
+		{
+			if (UCameraOcclusionComponent* Occlusion = Player->FindComponentByClass<UCameraOcclusionComponent>())
+			{
+				TransitionOcclusion = Occlusion;
+				Occlusion->SetOcclusionSuspended(true);
+			}
+		}
+	}
 	TransitionSequencePlayer->Play();
+
 	// Play 중 즉시 종료된 경우에는 이미 완료된 요청을 다시 처리하지 않음
 	if (TransitionResult == EEnemyPatternResult::Running && IsValid(TransitionSequencePlayer)
 		&& !TransitionSequencePlayer->IsPlaying() && !TransitionSequencePlayer->IsPaused())
@@ -346,9 +366,16 @@ bool UEnemyPhaseComponent::CancelTransitionSequence(int64 TransitionId)
 
 bool UEnemyPhaseComponent::SkipActiveTransitionSequence()
 {
-	return StageCinematics.IsValid() && IsValid(TransitionSequencePlayer)
-		&& (TransitionSequencePlayer->IsPlaying() || TransitionSequencePlayer->IsPaused())
-		&& CancelTransitionSequence(SequenceTransitionId);
+	if (!StageCinematics.IsValid() || !IsValid(TransitionSequencePlayer)
+		|| (!TransitionSequencePlayer->IsPlaying() && !TransitionSequencePlayer->IsPaused())
+		|| GetTransitionResult(SequenceTransitionId) != EEnemyPatternResult::Running)
+		return false;
+
+	// 마지막 프레임을 평가한 뒤 정지해야 KeepState 트랙(플레이어 위치)이 연출 최종 위치로 남음; 완료는 OnStop에서 처리
+	TransitionSequencePlayer->GoToEndAndStop();
+	if (TransitionResult == EEnemyPatternResult::Running)
+		CancelTransitionSequence(SequenceTransitionId);
+	return true;
 }
 
 // 재생 상태를 먼저 완료로 바꾼 뒤 정리하여 Stop 콜백의 중복 완료 방지
@@ -393,6 +420,13 @@ void UEnemyPhaseComponent::CleanupTransitionSequence()
 				WeakActor->Destroy();
 		});
 	}
+
+	// 정상 종료, 스킵, 리셋 시 시퀀스 때 지연시킨 Occlusion 설정 복구
+	if (UCameraOcclusionComponent* Occlusion = TransitionOcclusion.Get())
+	{
+		Occlusion->SetOcclusionSuspended(false);
+	}
+	TransitionOcclusion.Reset();
 }
 
 bool UEnemyPhaseComponent::ValidateMovementRoutes(FString& OutError) const

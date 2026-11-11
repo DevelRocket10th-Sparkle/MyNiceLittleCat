@@ -20,6 +20,7 @@ class UAbilitySystemComponent;
 class ULevelSequencePlayer;
 class ALevelSequenceActor;
 class AStage3BossCinematics;
+class UCameraOcclusionComponent;
 
 // 현재 페이즈와 별개로 관리하는 전환 진행 상태
 UENUM(BlueprintType)
@@ -159,6 +160,9 @@ private :
 	// 현재 전환만 소유하는 시퀀스 플레이어
 	UPROPERTY(Transient)
 	TObjectPtr<ULevelSequencePlayer> TransitionSequencePlayer;
+
+	TWeakObjectPtr<UCameraOcclusionComponent> TransitionOcclusion;
+
 	// 생성한 임시 시퀀스 액터; 초기화와 종료 시 제거
 	UPROPERTY(Transient)
 	TObjectPtr<ALevelSequenceActor> TransitionSequenceActor;

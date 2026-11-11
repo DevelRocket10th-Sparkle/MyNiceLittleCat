@@ -1,11 +1,59 @@
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Characters/PlayerCharacter.h"
+#include "Algo/AllOf.h"
 #include "Components/MeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
+
+namespace
+{
+	const FName WeaponSourceName(TEXT("Weapon"));
+
+	UMeshComponent* FindAttachedWeapon(USkeletalMeshComponent* BodyMesh,
+		const TArray<TObjectPtr<UEnemyMeleeTraceSettings>>& Definitions)
+	{
+		if (!IsValid(BodyMesh))
+		{
+			return nullptr;
+		}
+
+		TSet<FName> RequiredSockets;
+		for (const UEnemyMeleeTraceSettings* Definition : Definitions)
+		{
+			if (IsValid(Definition) && Definition->SourceName == WeaponSourceName)
+			{
+				for (FName Socket : Definition->SocketNames)
+				{
+					RequiredSockets.Add(Socket);
+				}
+			}
+		}
+
+		TArray<USceneComponent*> Attachments;
+		BodyMesh->GetChildrenComponents(true, Attachments);
+		UMeshComponent* Weapon = nullptr;
+		for (USceneComponent* Attachment : Attachments)
+		{
+			UMeshComponent* Mesh = Cast<UMeshComponent>(Attachment);
+			if (!IsValid(Mesh) || !Mesh->IsRegistered()
+				|| !Algo::AllOf(RequiredSockets, [Mesh](FName Socket) { return !Socket.IsNone() && Mesh->DoesSocketExist(Socket); }))
+			{
+				continue;
+			}
+			if (Weapon)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[%s] Ambiguous melee source Weapon: %s and %s both match. Register the weapon explicitly."),
+					*GetNameSafe(BodyMesh->GetOwner()), *GetNameSafe(Weapon), *GetNameSafe(Mesh));
+				return nullptr;
+			}
+			Weapon = Mesh;
+		}
+		return Weapon;
+	}
+}
 
 UEnemyMeleeTraceComponent::UEnemyMeleeTraceComponent()
 {
@@ -18,7 +66,9 @@ void UEnemyMeleeTraceComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner()))
+	{
 		RegisterHitSource(TEXT("Body"), Enemy->GetMesh());
+	}
 }
 
 void UEnemyMeleeTraceComponent::RegisterHitSource(FName SourceName, UMeshComponent* Mesh)
@@ -53,10 +103,12 @@ UMeshComponent* UEnemyMeleeTraceComponent::GetHitSource(FName SourceName) const
 bool UEnemyMeleeTraceComponent::PrepareAttack(const TArray<TObjectPtr<UEnemyMeleeTraceSettings>>& Definitions, int64 RequestId)
 {
 	StopAttack();
-	if (!GetOwner() || !GetOwner()->HasAuthority() || RequestId == 0 || Definitions.IsEmpty())
+	AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner());
+	if (!Enemy || !Enemy->HasAuthority() || RequestId == 0 || Definitions.IsEmpty())
 	{
 		return false;
 	}
+	UMeshComponent* AutoWeapon = nullptr;
 	for (const UEnemyMeleeTraceSettings* Definition : Definitions)
 	{
 		if (!IsValid(Definition))
@@ -64,11 +116,25 @@ bool UEnemyMeleeTraceComponent::PrepareAttack(const TArray<TObjectPtr<UEnemyMele
 			StopAttack();
 			return false;
 		}
-		UMeshComponent* Mesh = GetHitSource(Definition->SourceName);
-		if (!IsValid(Mesh) || Definition->SocketNames.IsEmpty()
-			|| !FMath::IsFinite(Definition->Radius) || Definition->Radius <= 0.f)
+		if (Definition->SocketNames.IsEmpty() || !FMath::IsFinite(Definition->Radius) || Definition->Radius <= 0.f)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[%s] Invalid melee source/settings: %s"), *GetNameSafe(GetOwner()), *Definition->SourceName.ToString());
+			StopAttack();
+			return false;
+		}
+		UMeshComponent* Mesh = GetHitSource(Definition->SourceName);
+		if (!IsValid(Mesh) && Definition->SourceName == WeaponSourceName)
+		{
+			// 공격마다 현재 장착 상태를 확인한다. 무기 교체 후 이전 메시를 재사용하지 않는다.
+			if (!AutoWeapon)
+			{
+				AutoWeapon = FindAttachedWeapon(Enemy->GetMesh(), Definitions);
+			}
+			Mesh = AutoWeapon;
+		}
+		if (!IsValid(Mesh))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[%s] No melee mesh for source %s"), *GetNameSafe(Enemy), *Definition->SourceName.ToString());
 			StopAttack();
 			return false;
 		}
@@ -85,14 +151,16 @@ bool UEnemyMeleeTraceComponent::PrepareAttack(const TArray<TObjectPtr<UEnemyMele
 			Point.SourceName = Definition->SourceName;
 			Point.Socket = Socket;
 			Point.Radius = Definition->Radius;
+			Point.bRequireBodyAttachment = Mesh == AutoWeapon;
 		}
 		AddTickPrerequisiteComponent(Mesh);
-		if (USkeletalMeshComponent* SkeletalMesh = Cast<USkeletalMeshComponent>(Mesh))
+		for (USceneComponent* Component = Mesh; Component; Component = Component->GetAttachParent())
 		{
-			if (!PoseSettings.ContainsByPredicate([SkeletalMesh](const FPoseSetting& Setting) { return Setting.Mesh == SkeletalMesh; }))
+			if (USkeletalMeshComponent* SkeletalMesh = Cast<USkeletalMeshComponent>(Component);
+				SkeletalMesh && !PoseSettings.ContainsByPredicate([SkeletalMesh](const FPoseSetting& Setting) { return Setting.Mesh == SkeletalMesh; }))
 			{
 				PoseSettings.Add({SkeletalMesh, static_cast<uint8>(SkeletalMesh->VisibilityBasedAnimTickOption)});
-				// 공격 중에는 화면 밖/서버에서도 소켓의 최신 뼈 위치가 필요
+				// 스태틱 메시 무기도 부착된 스켈레탈 메시의 최신 포즈가 필요하다.
 				SkeletalMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
 			}
 		}
@@ -191,7 +259,8 @@ void UEnemyMeleeTraceComponent::SampleSockets()
 	TArray<FHitResult> Candidates;
 	for (FTracePoint& Point : Points)
 	{
-		if (!Point.Mesh.IsValid() || !Point.Mesh->IsRegistered())
+		if (!Point.Mesh.IsValid() || !Point.Mesh->IsRegistered()
+			|| (Point.bRequireBodyAttachment && !Point.Mesh->IsAttachedTo(Enemy->GetMesh())))
 		{
 			StopAttack();
 			return;
