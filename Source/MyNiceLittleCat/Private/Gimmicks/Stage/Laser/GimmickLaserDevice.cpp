@@ -108,6 +108,7 @@ void AGimmickLaserDevice::RotateOnce()
 	RotateTargetYaw = RotateStartYaw + RotateStep;
 	RotateElapsed = 0.f;
 
+	PlayGimmickSound(RotateSound);
 	K2_OnRotateStarted();
 
 	if (RotateDuration <= 0.f)
