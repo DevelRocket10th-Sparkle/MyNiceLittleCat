@@ -179,6 +179,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "LaserBeam|Visual")
 	const FLaserBeamVisualSettings& GetVisualSettings() const { return VisualSettings; }
 
+	// 빔 이펙트 하나를 Start→End 직선으로 놓고 굵기·색 파라미터를 넣음 (예전/새 파라미터 이름 보정 포함)
+	// 레이저 없이 빔 모양만 그릴 때(격자 패턴 예고 프리뷰 등)도 같은 규칙으로 쓰려고 공개
+	static void ApplyBeamEffectParameters(UNiagaraComponent* Effect, const FLaserBeamVisualSettings& Settings,
+		const FVector& Start, const FVector& End, float Width, const FLinearColor& Color);
+
 	UFUNCTION(BlueprintCallable, Category = "LaserBeam|Debug")
 	void SetDrawDebugBeam(bool bDraw) { bDrawDebugBeam = bDraw; }
 
