@@ -34,6 +34,7 @@ namespace MagneticOverlayParams
 UMagneticComponent::UMagneticComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
 
 	LineOfSightObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_WorldStatic));
 
@@ -49,6 +50,42 @@ void UMagneticComponent::BeginPlay()
 	UpdatePolarityColor();
 	ApplyPolarityOverlay();
 	SpawnPolarityEffect();
+
+	if (UMagneticSubsystem* MagneticSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UMagneticSubsystem>() : nullptr)
+	{
+		SourcesChangedHandle = MagneticSubsystem->OnSourcesChanged.AddUObject(this, &UMagneticComponent::HandleSourcesChanged);
+	}
+	RefreshTickEnabled();
+}
+
+void UMagneticComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UMagneticSubsystem* MagneticSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UMagneticSubsystem>() : nullptr)
+	{
+		MagneticSubsystem->OnSourcesChanged.Remove(SourcesChangedHandle);
+	}
+	SourcesChangedHandle.Reset();
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void UMagneticComponent::HandleSourcesChanged()
+{
+	RefreshTickEnabled();
+}
+
+void UMagneticComponent::RefreshTickEnabled()
+{
+	if (!HasBegunPlay())
+	{
+		return;
+	}
+
+	const UMagneticSubsystem* MagneticSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UMagneticSubsystem>() : nullptr;
+	const bool bCanReceiveForce = bMagnetEnabled && Polarity != EMagneticPolarity::None && MagneticSubsystem && MagneticSubsystem->HasAnySource();
+	const bool bEffectFading = CurrentActivity > 0.f && (PolarityEffectComponent || OverlayMaterialInstance);
+
+	SetComponentTickEnabled(bCanReceiveForce || bEffectFading);
 }
 
 void UMagneticComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -57,16 +94,16 @@ void UMagneticComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 
 	UpdateEffectActivity(DeltaTime);
 
-	if (!bMagnetEnabled || Polarity == EMagneticPolarity::None)
-	{
-		return;
-	}
-
 	AActor* Owner = GetOwner();
 	UWorld* World = GetWorld();
 	UMagneticSubsystem* MagneticSubsystem = World ? World->GetSubsystem<UMagneticSubsystem>() : nullptr;
-	if (!Owner || !MagneticSubsystem)
+	if (!bMagnetEnabled || Polarity == EMagneticPolarity::None || !Owner || !MagneticSubsystem || !MagneticSubsystem->HasAnySource())
 	{
+		// 이펙트도 다 꺼졌으면 다음 변화(자력원 등록·극성·자력 켜짐·상호작용 알림)까지 틱 끔
+		if (CurrentActivity <= 0.f)
+		{
+			RefreshTickEnabled();
+		}
 		return;
 	}
 
@@ -225,6 +262,12 @@ void UMagneticComponent::NotifyMagnetInteraction()
 		PolarityEffectComponent->SetVariableFloat(MagneticEffectParams::Activity, CurrentActivity);
 	}
 	UpdateOverlayActivity();
+
+	// 펫 자석처럼 외부에서 알리면 서서히 꺼지는 연출을 위해 틱 필요
+	if (!IsComponentTickEnabled())
+	{
+		RefreshTickEnabled();
+	}
 }
 
 void UMagneticComponent::SetPolarity(EMagneticPolarity NewPolarity)
@@ -240,6 +283,7 @@ void UMagneticComponent::SetPolarity(EMagneticPolarity NewPolarity)
 	UpdatePolarityColor();
 	UpdatePolarityOverlay();
 	UpdatePolarityEffect();
+	RefreshTickEnabled();
 	OnPolarityChanged.Broadcast(this, NewPolarity, OldPolarity);
 }
 

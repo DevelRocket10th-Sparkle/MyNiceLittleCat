@@ -178,10 +178,26 @@ bool APlayerMainController::TryGetPetAimDirection(FVector& _outDirection) const
 	APawn* PlayerPawn = GetPawn();
 	if (false == IsValid(PlayerPawn)) return false;
 
-	FHitResult Hit;
-	if (false == TryGetPetCursorHit(Hit)) return false;
+	FVector RayOrigin;
+	FVector RayDirection;
 
-	FVector Direction = Hit.ImpactPoint - PlayerPawn->GetActorLocation();
+	// 화면의 마우스 커서 위치를 월드 공간의 Ray로 변환
+	if (false == DeprojectMousePositionToWorld(RayOrigin, RayDirection)) return false;
+
+	// Ray가 수평이거나 위를 향하면 플레이어 높이 평면과 만나지 않음
+	if (RayDirection.Z >= -KINDA_SMALL_NUMBER) return false;
+
+	// 의도: 월드에 LineTrace를 쏘지 않고 "플레이어 높이의 수평면"과의 교점만 계산
+	//      -> 카메라 컬링으로 화면에서만 숨긴 천장(콜리전은 남아 있음)에 Ray가 막히지 않음
+	//      -> 조준 방향은 수평 방향만 필요하므로 실제 바닥에 맞을 필요가 없음
+	const double PlaneZ = PlayerPawn->GetActorLocation().Z;
+	const double Distance = (PlaneZ - RayOrigin.Z) / RayDirection.Z;
+	if (Distance < 0.0) return false;
+
+	const FVector CursorPoint = RayOrigin + RayDirection * Distance;
+
+	// 플레이어에서 커서 교점으로 향하는 수평 방향
+	FVector Direction = CursorPoint - PlayerPawn->GetActorLocation();
 	Direction.Z = 0.f;
 
 	if (false == Direction.Normalize()) return false;
@@ -215,9 +231,22 @@ bool APlayerMainController::TryGetPetCursorHit(FHitResult& _outHit) const
 		QueryParams.AddIgnoredActor(Pet);
 
 	constexpr float TraceDistance = 100000.f;
+	constexpr int32 MaxSkipCount = 8; // 숨김 조각이 겹쳐 있어도 무한 반복하지 않도록 상한
 
-	return World->LineTraceSingleByChannel(
-		_outHit, RayOrigin, RayOrigin + RayDirection * TraceDistance, ECC_Visibility, QueryParams);
+	for (int32 i = 0; i < MaxSkipCount; ++i)
+	{
+		if (false == World->LineTraceSingleByChannel(
+			_outHit, RayOrigin, RayOrigin + RayDirection * TraceDistance, ECC_Visibility, QueryParams))
+			return false;
+
+		// 의도: 카메라 컬링으로 메인 패스에서 숨겨진(=화면에 안 보이는) 조각은 커서 대상에서 제외
+		UPrimitiveComponent* HitComp = _outHit.GetComponent();
+		if (false == IsValid(HitComp) || true == HitComp->bRenderInMainPass)
+			return true;
+
+		QueryParams.AddIgnoredComponent(HitComp);
+	}
+	return false;
 }
 
 void APlayerMainController::SetPetInputEnabled(bool _bEnable)

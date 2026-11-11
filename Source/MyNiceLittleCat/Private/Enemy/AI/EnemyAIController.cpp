@@ -167,18 +167,6 @@ void AEnemyAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulu
 	if (Stimulus.WasSuccessfullySensed())
 	{
 		SetCombatTarget(DetectedPawn);
-		
-		// Debug
-		DrawDebugLine(
-			GetWorld(),
-			Enemy->GetPawnViewLocation(),	// Enemy 시점
-			DetectedPawn->GetActorLocation(),
-			FColor::Red,
-			false,	// 영구 표시 여부
-			2.f,	// 표시 시간: 2초
-			0,
-			3.f		// 선 두께
-		);
 	}
 	else
 	{

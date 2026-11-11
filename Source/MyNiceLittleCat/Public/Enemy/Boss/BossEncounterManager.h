@@ -9,8 +9,11 @@
 class ABossCharacter;
 class APlayerCharacter;
 class USceneComponent;
+class AStage3BossCinematics;
 
 class AMainHUD;
+
+class UWorld;
 
 // 보스방의 준비, 전투, 초기화, 클리어 및 재도전 대기 상태
 UENUM(BlueprintType)
@@ -33,10 +36,16 @@ public :
 	// 연출 종료 후 전달받은 플레이어를 타깃으로 첫 페이즈 시작
 	UFUNCTION(BlueprintCallable, Category = "Boss")
 	bool StartEncounter(APlayerCharacter* Player);
+	// 레벨 트리거의 시작 요청: 연출이 연결되어 있으면 연출을 거쳐, 없으면 바로 전투 시작
+	UFUNCTION(BlueprintCallable, Category = "Boss")
+	bool RequestEncounterStart(APlayerCharacter* Player);
 	// 기존 보스 및 기믹 정리 후 새 보스로 체력과 페이즈 초기화
 	// 보스와 기믹 정리 후 새 보스를 생성하여 체력 및 페이즈 초기화
 	UFUNCTION(BlueprintCallable, Category = "Boss")
 	void ResetEncounter();
+
+	ABossCharacter* GetCurrentBoss() const { return CurrentBoss; }
+	bool IsWaitingForRetry() const { return EncounterState == EBossEncounterState::Waiting; }
 
 protected :
 	// 컴포넌트 초기화 후 실행 준비
@@ -47,6 +56,13 @@ protected :
 	// 현재 보스 사망 시 클리어 처리: 새 보스를 생성하지 않음
 	UFUNCTION()
 	void HandleBossDefeated(ABossCharacter* Boss);
+
+	UPROPERTY(EditInstanceOnly, Category = "Boss|Clear")
+	TSoftObjectPtr<UWorld> LevelAfterDefeat;
+
+	UFUNCTION()
+	void TryOpenLevelAfterDefeat(ABossCharacter* Boss);
+
 	// 전환 실패 등의 이벤트를 받아 다음 Tick에 초기화
 	UFUNCTION()
 	void HandleBossFailed(ABossCharacter* Boss);
@@ -77,6 +93,9 @@ protected :
 	// 몽타주, 코인 및 페이즈 설정을 지정한 보스 Blueprint 클래스
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss")
 	TSubclassOf<ABossCharacter> BossClass;
+
+	UPROPERTY(EditInstanceOnly, Category = "Boss|Cinematics")
+	TObjectPtr<AStage3BossCinematics> StageCinematics;
 	// 이번 보스방 실행에서 생성한 보스
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss")
 	TObjectPtr<ABossCharacter> CurrentBoss;

@@ -334,9 +334,35 @@ bool UGA_BossLaserBeam::FindTargetFloorPoint(FVector& OutPoint) const
 	QueryParams.AddIgnoredActor(ExecutionTarget);
 	QueryParams.AddIgnoredActor(Enemy.Get());
 
-	FHitResult Hit;
-	if (GetWorld()->LineTraceSingleByObjectType(Hit, TargetLocation, TargetLocation - FVector(0.f, 0.f, FloorTraceDistance), ObjectParams, QueryParams))
+	// 트리거·카메라 마스킹 볼륨처럼 막힘 응답이 하나도 없는 감지 전용 박스는 바닥으로 치지 않음
+	auto IsDetectionOnly = [](const UPrimitiveComponent* Component)
 	{
+		if (!Component)
+		{
+			return false;
+		}
+		for (int32 Channel = 0; Channel < ECC_MAX; ++Channel)
+		{
+			if (Component->GetCollisionResponseToChannel(static_cast<ECollisionChannel>(Channel)) == ECR_Block)
+			{
+				return false;
+			}
+		}
+		return true;
+	};
+
+	for (int32 Attempt = 0; Attempt < 16; ++Attempt)
+	{
+		FHitResult Hit;
+		if (!GetWorld()->LineTraceSingleByObjectType(Hit, TargetLocation, TargetLocation - FVector(0.f, 0.f, FloorTraceDistance), ObjectParams, QueryParams))
+		{
+			break;
+		}
+		if (IsDetectionOnly(Hit.GetComponent()))
+		{
+			QueryParams.AddIgnoredComponent(Hit.GetComponent());
+			continue;
+		}
 		OutPoint = Hit.ImpactPoint;
 		return true;
 	}

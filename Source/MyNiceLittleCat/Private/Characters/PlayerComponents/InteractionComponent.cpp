@@ -8,6 +8,8 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
 #include "Components/InputComponent.h"
+#include "Enemy/Boss/Stage3BossCinematics.h"
+#include "EngineUtils.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "Gimmicks/InteractionVolumeComponent.h"
 #include "WIdgets/Interaction/InteractionPromptWidget.h"
@@ -105,6 +107,12 @@ void UInteractionComponent::HandleInteractKey()
 
 bool UInteractionComponent::TryInteract()
 {
+	for (TActorIterator<AStage3BossCinematics> It(GetWorld()); It; ++It)
+	{
+		if (It->TrySkipActiveCut(GetOwner()))
+			return true;
+	}
+
 	if (IsAligning())
 	{
 		return false;

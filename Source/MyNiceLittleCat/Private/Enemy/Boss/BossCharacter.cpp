@@ -335,6 +335,17 @@ void ABossCharacter::BeginDeath()
 	OnDefeated.Broadcast(this);
 }
 
+void ABossCharacter::FinishDeath()
+{
+	if (LifeState != EEnemyLifeState::Dying)
+	{
+		return;
+	}
+
+	Super::FinishDeath();
+	OnDeathFinished.Broadcast(this);
+}
+
 // 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출
 void ABossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
