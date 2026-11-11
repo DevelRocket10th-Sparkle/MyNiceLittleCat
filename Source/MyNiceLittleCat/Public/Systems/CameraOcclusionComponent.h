@@ -8,6 +8,7 @@
 class UCameraComponent;
 class ULockOnComponent;
 class UPrimitiveComponent;
+class ULocalLightComponent;
 class ARoomMaskVolume;
 
 // 방 단위 컷어웨이 판정 기준
@@ -55,6 +56,14 @@ struct FRoomCutawaySettings
 	// 벽에 박힌 메시로 인정하는 방 안쪽 최대 깊이: 모서리에서 옆벽 조각까지 같이 숨는 것 방지 (cm)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cutaway", meta = (ClampMin = "0.0"))
 	float MaxEmbeddedReach = 250.f;
+	// 방 안에 있을 때, 빛이 닿는 범위 (감쇠 반경 구)가 현재 방 박스와 전혀 겹치지 않는 조명의 그림자를 끔
+	// 이런 조명은 현재 방을 비추지 못하고, 비추는 옆방 / 건물 밖 메시는 컷어웨이로 이미 화면에서 숨겨져 있으므로 화면은 그대로이고
+	// 조명마다 매 프레임 다시 그리던 그림자 깊이 패스 (드로우콜, 렌더 스레드 비용)만 줄어듦
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cutaway|Performance")
+	bool bCullOutsideLightShadows = true;
+	// 조명 범위와 방 박스 겹침 판정 시 방 박스를 넓히는 여유 거리: 경계에 걸친 조명은 그림자 유지 (cm)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cutaway|Performance", meta = (ClampMin = "0.0"))
+	float LightShadowMargin = 50.f;
 };
 
 // 방 하나의 컷어웨이 후보: 처음 들어갈 때 한 번만 계산
@@ -68,6 +77,8 @@ struct FRoomCutawayCache
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> TopPieces;
 	// 방 박스 밖 조각 (옆방, 건물 밖): 방 안이면 항상 숨김
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> OutsidePieces;
+	// 빛이 닿는 범위가 방 박스와 겹치지 않는 그림자 조명: 방 안이면 그림자만 끔
+	TArray<TWeakObjectPtr<ULocalLightComponent>> OutsideShadowLights;
 };
 
 // 카메라와 플레이어 (및 락온 대상) 사이를 가리는 벽 / 천장을 면 단위로 숨기는 컴포넌트
@@ -75,6 +86,7 @@ struct FRoomCutawayCache
 //    가까이 간 가구 / 계단이 사라지지 않도록 방 안에서는 Sweep을 쓰지 않음
 // 2) 방 밖: Sphere Sweep + 같은 평면에 이어진 조각 자동 그룹 (태그 불필요)
 // 숨김은 메인 / 깊이 패스 렌더링만 끄는 방식이라 그림자와 콜리전은 유지
+// 3) 성능: 방 안에서는 현재 방에 빛이 닿지 않는 조명의 그림자를 끔 (RoomCutaway.bCullOutsideLightShadows)
 UCLASS(ClassGroup = (Camera), meta = (BlueprintSpawnableComponent))
 class MYNICELITTLECAT_API UCameraOcclusionComponent : public UActorComponent
 {
@@ -155,6 +167,10 @@ private:
 	void RestoreExpiredPieces(float CurrentTime);
 	// 숨긴 조각 전부 즉시 복구
 	void RestoreAllPieces();
+	// 현재 방 기준으로 방에 닿지 않는 조명의 그림자를 끔 (방이 바뀔 때만 실제 변경)
+	void ApplyLightShadowCulling(ARoomMaskVolume* Room, const FRoomCutawayCache& Cache);
+	// 그림자를 끈 조명 전부 원래대로 복구
+	void RestoreCulledLightShadows();
 
 private:
 
@@ -174,4 +190,7 @@ private:
 	bool bOcclusionSuspended = false;
 	// 이번 판정에서 방 컷어웨이가 적용 중인지: 적용 중이면 Sweep 생략
 	bool bInCutawayRoom = false;
+	// 현재 그림자를 꺼 둔 조명과, 그 기준이 된 방
+	TArray<TWeakObjectPtr<ULocalLightComponent>> CulledShadowLights;
+	TWeakObjectPtr<ARoomMaskVolume> LightCullRoom;
 };
