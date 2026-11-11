@@ -88,6 +88,9 @@ public:
 	FOnInventoryAbilityUnlocked OnAbilityAcquireFinished;
 
 private:
+	// 획득 UI가 뜰 때 효과음 (아이템 AcquireSound → 프로젝트 설정 기본값)
+	void PlayAcquireSound(const UObject* WorldContextObject, const TArray<FItemStack>& InItems) const;
+
 	void LoadFromSave();
 	void WriteToSave(UGameProgressSaveGame* SaveGame);
 	void SetCount(UItemData* Item, int32 NewCount);

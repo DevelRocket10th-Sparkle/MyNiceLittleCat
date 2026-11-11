@@ -158,6 +158,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|LaserDevice|Rotate", meta = (ClampMin = "0.0", Units = "s", EditCondition = "RotateMode != EGimmickMirrorRotateMode::Fixed"))
 	float RotateDuration = 0.3f;
 
+	// 돌기 시작할 때 효과음 (볼륨·2D 여부는 Gimmick|Sound 설정을 따름)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|Sound")
+	TObjectPtr<USoundBase> RotateSound;
+
 private:
 	bool bRotating = false;
 

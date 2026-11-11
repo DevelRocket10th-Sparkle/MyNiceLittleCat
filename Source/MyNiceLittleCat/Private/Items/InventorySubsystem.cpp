@@ -12,6 +12,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/GameInstance.h"
+#include "Sound/SoundBase.h"
 
 void UInventorySubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -252,5 +253,39 @@ UItemAcquireWidget* UInventorySubsystem::ShowAcquireUI(const UObject* WorldConte
 	}
 	// 닫기를 기다리면 자동으로 숨기지 않음
 	AcquireWidget->ShowItems(Visible, bWaitForClose ? 0.f : Settings->AcquireDisplayTime, bWaitForClose);
+	PlayAcquireSound(WorldContextObject, Visible);
 	return AcquireWidget;
+}
+
+void UInventorySubsystem::PlayAcquireSound(const UObject* WorldContextObject, const TArray<FItemStack>& InItems) const
+{
+	// 능력 아이템 소리 우선, 그다음 목록 순서
+	USoundBase* Sound = nullptr;
+	for (int32 Pass = 0; Pass < 2 && !Sound; ++Pass)
+	{
+		for (const FItemStack& Stack : InItems)
+		{
+			const bool bAbility = Stack.Item && Stack.Item->ItemType == EItemType::Ability;
+			if (Stack.Item && (Pass == 1 || bAbility) && !Stack.Item->AcquireSound.IsNull())
+			{
+				Sound = Stack.Item->AcquireSound.LoadSynchronous();
+				if (Sound)
+				{
+					break;
+				}
+			}
+		}
+	}
+
+	const UItemSettings* Settings = GetDefault<UItemSettings>();
+	if (!Sound)
+	{
+		Sound = Cast<USoundBase>(Settings->DefaultAcquireSound.TryLoad());
+	}
+
+	// 상자는 열면 게임이 일시정지되므로 UI 소리(2D)로 재생
+	if (Sound)
+	{
+		UGameplayStatics::PlaySound2D(WorldContextObject, Sound, Settings->AcquireSoundVolume);
+	}
 }
