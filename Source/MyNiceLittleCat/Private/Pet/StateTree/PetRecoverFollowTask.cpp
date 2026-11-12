@@ -1,5 +1,6 @@
 #include "Pet/StateTree/PetRecoverFollowTask.h"
 #include "Pet/PetCharacter.h"
+#include "Pet/Data/PetSoundData.h"
 #include "AIController.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -55,6 +56,12 @@ EStateTreeRunStatus FPetRecoverFollowTask::EnterState(FStateTreeExecutionContext
     Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
     Pet->SetAnimationMovementStyle(EPetMovementStyle::FollowRecovery);
+
+    // 날기 시작 소리 (출발 지점에서 한 번)
+    // 의도: 비행이 짧아서(최소 0.2초) 루프보다 원샷이 자연스러워요
+    //       착지점을 다시 잡아 이어서 날 때는 다시 울리지 않아요
+    if (const UPetSoundData* Sounds = Pet->GetSoundData())
+        Pet->PlayPetSound3D(Sounds->FlySound);
 
     Data.StartLocation = Pet->GetActorLocation();
     const float Distance = FVector::Distance(Data.StartLocation, Data.LandingLocation);
@@ -126,6 +133,11 @@ EStateTreeRunStatus FPetRecoverFollowTask::Tick(FStateTreeExecutionContext& Cont
 
     if (false == Pet->SetActorLocation(Data.LandingLocation, false, nullptr, ETeleportType::TeleportPhysics))
         return FailRecovery(Data.Pet.Get());
+
+    // 착지 소리 (착지점에 실제로 내려앉은 뒤)
+    // 의도: 비행이 실패하거나 취소되면 착지한 게 아니니까 울리지 않아요
+    if (const UPetSoundData* Sounds = Pet->GetSoundData())
+        Pet->PlayPetSound3D(Sounds->LandSound);
 
     Pet->RequestBehavior(EPetBehavior::Follow);
     return EStateTreeRunStatus::Succeeded;

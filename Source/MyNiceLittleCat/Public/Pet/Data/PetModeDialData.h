@@ -120,4 +120,18 @@ public:
     // 아직 해금 안 된 모드 칸의 "???" 글자 색
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Colors")
     FLinearColor LockedLabelColor = FLinearColor(FColor(150, 140, 130));
+
+    // ===== 효과음 (전부 2D: 플레이어 조작 피드백) =====
+// 비어 있으면 재생하지 않아요
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sound")
+    TObjectPtr<class USoundBase> OpenSound = nullptr;   // 다이얼 열 때
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sound")
+    TObjectPtr<class USoundBase> CloseSound = nullptr;  // 다이얼 닫을 때 (= 선택 확정)
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sound")
+    TObjectPtr<class USoundBase> HoverSound = nullptr;  // 칸이 바뀌어 호버될 때
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sound")
+    TObjectPtr<class USoundBase> LockedSound = nullptr; // 잠긴 모드에 호버하거나 선택할 때 (실패)
 };

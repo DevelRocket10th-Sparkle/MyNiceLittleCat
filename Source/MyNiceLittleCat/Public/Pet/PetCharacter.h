@@ -171,6 +171,19 @@ public:
 
 	// 자성 모드의 자기장 영역 표시용 메시 (모양 갱신은 GameplayAbility_PetMagnet이 담당)
 	class UProceduralMeshComponent* GetMagnetFieldMesh() const { return MagnetFieldMesh; }
+
+	// ==== 효과음 ====
+	// 능력(GA)들이 펫을 통해 사운드 데이터를 꺼내 쓰게
+	class UPetSoundData* GetSoundData() const { return SoundData; }
+
+	// 2D 재생: 플레이어 조작 피드백용 (거리와 상관없이 같은 크기)
+	void PlayPetSound2D(class USoundBase* _sound) const;
+
+	// 3D 재생: 월드 사건용, 공통 감쇠를 적용해서 펫 위치에서 재생
+	void PlayPetSound3D(class USoundBase* _sound) const;
+
+	// 3D 재생: 펫이 아닌 곳에서 나는 소리 (반사판 설치/철거 위치 등)
+	void PlayPetSoundAtLocation(class USoundBase* _sound, const FVector& _location) const;
 private:
 	void GrantModeAbilities();         // 해금된 모드만 능력 부여
 	bool GrantModeAbility(EPetMode _mode); // 모드 하나만 능력 부여 (이미 있으면 false)
@@ -265,6 +278,10 @@ protected:
 	// 지금 펫 위치에서 자기장을 써도 되는지 (PetMagnetPositionTask가 갱신)
 	UPROPERTY(Transient, VisibleInstanceOnly, Category = "Pet|Magnet")
 	bool bMagnetPlacementValid = true;
+
+	// 펫 효과음 데이터 (BP에서 DA_PetSound 지정)
+	UPROPERTY(EditDefaultsOnly, Category = "Pet|Sound")
+	TObjectPtr<class UPetSoundData> SoundData;
 private:
 	// 초기화 됨?
 	UPROPERTY(Transient)

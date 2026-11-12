@@ -39,16 +39,25 @@ bool UPetModeDialComponent::OpenDial(const FVector2D& _centerInViewport, EPetMod
 
 	DialWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
 
+	DialWidget->PlayOpenSound();
+
 	bDialOpen = true;
 	return true;
 }
 
 void UPetModeDialComponent::CloseDial()
 {
+	// 열려 있던 경우에만 닫힘 소리
+	// 의도: EndPlay 등에서 이미 닫힌 다이얼을 또 닫을 때 소리가 나지 않게
+	const bool bWasOpen = bDialOpen;
 	bDialOpen = false;
 
 	if (true == IsValid(DialWidget.Get()))
 	{
+		// ResetSelection 전에 불러야 마지막 호버 칸(잠김 여부)을 알 수 있어요
+		if (true == bWasOpen)
+			DialWidget->PlayCloseSound();
+
 		DialWidget->ResetSelection();
 		DialWidget->SetVisibility(ESlateVisibility::Collapsed);
 	}

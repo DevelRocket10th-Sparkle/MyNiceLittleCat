@@ -888,12 +888,7 @@ void ATutorialManager::PetSay(const FText& _Message)
 	if (nullptr == PetPtr) return;
 
 	if (USpeechBubbleComponent* Bubble = PetPtr->GetSpeechBubble())
-		Bubble->Say(_Message, 4.f);
-
-	// 말풍선이 뜰 때 짧은 소리 -> 화면 어디를 보고 있어도 펫이 말한 걸 알아챔
-// (2D 로 재생: 아레나 카메라처럼 펫과 멀리 떨어져 있어도 같은 크기로 들림)
-	if (nullptr != PetSaySound)
-		UGameplayStatics::PlaySound2D(this, PetSaySound);
+		Bubble->Say(_Message, 4.f); // 말풍선 소리는 SpeechBubbleComponent::Say 안에서 재생 (DA_PetSound)
 }
 
 void ATutorialManager::PetFlyTo(AActor* _Point, float _Duration)

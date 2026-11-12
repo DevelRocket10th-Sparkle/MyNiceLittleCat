@@ -1,5 +1,6 @@
 #include "Pet/GAS/Ability/GameplayAbility_PetReflect.h"
 #include "Pet/PetCharacter.h"
+#include "Pet/Data/PetSoundData.h"
 #include "Pet/GAS/Task/AbilityTask_PetTick.h"
 #include "Pet/GAS/AbilityObject/PetReflector.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -257,6 +258,7 @@ void UGameplayAbility_PetReflect::HandleModeUseInput(EPetModeUseInputPhase Phase
             return;
 
         PlacementRotation = FRotator(0.f, Pet->GetAimDirection().Rotation().Yaw, 0.f);
+        LastRotateTickYaw = PlacementRotation.Yaw; // 드래그 시작 방향 기준으로 틱 계산
         bDraggingPlacement = true;
         CachePreviewLasers();
         HandleReflectTick(0.f);
@@ -272,7 +274,17 @@ void UGameplayAbility_PetReflect::HandleModeUseInput(EPetModeUseInputPhase Phase
         HideLaserPreviewFrom(0); // 레이저 경로 미리보기도 같은 이유로 여기서 숨김
         CachedPreviewLasers.Reset();
 
-        if (false == bCanPlaceReflector) return;
+        if (false == bCanPlaceReflector)
+        {
+            // 설치가 안 된 이유에 따라 다른 실패음
+            // 의도: 개수 초과인지 위치 문제인지 플레이어가 소리로 구분할 수 있게
+            if (const UPetSoundData* Sounds = Pet->GetSoundData())
+            {
+                const bool bMaxReached = GetActiveReflectorCount() >= MaxReflectorCount;
+                Pet->PlayPetSound2D(bMaxReached ? Sounds->MaxCountReachedSound : Sounds->PlacementBlockedSound);
+            }
+            return;
+        }
 
         const FVector HalfExtents = ReflectorClass.GetDefaultObject()->GetPlacementHalfExtents();
         const FVector ReflectorCenter = DragStartHit.ImpactPoint + FVector::UpVector * (HalfExtents.Z + PlacementGroundClearance);
@@ -282,10 +294,18 @@ void UGameplayAbility_PetReflect::HandleModeUseInput(EPetModeUseInputPhase Phase
         {
             PendingPlacementTransform = FTransform::Identity;
             UE_LOG(LogTemp, Warning, TEXT("Reflect: approach point unavailable or move request rejected."));
+
+            // 펫이 설 자리를 못 찾음 = 설치 불가
+            if (const UPetSoundData* Sounds = Pet->GetSoundData())
+                Pet->PlayPetSound2D(Sounds->PlacementBlockedSound);
             return;
         }
 
         bHasPendingPlacement = true;
+
+        // 클릭 확정: 펫이 걸어가는 동안에도 입력이 먹었다는 걸 바로 알려줘요
+        if (const UPetSoundData* Sounds = Pet->GetSoundData())
+            Pet->PlayPetSound2D(Sounds->PlacementConfirmSound);
 
         // 펫이 도착할 때까지 설치될 자리에 고스트를 고정 (설치가 확정됐으니 설치 가능 색)
         ShowPlacementGhost(PendingPlacementTransform, true);
@@ -326,6 +346,18 @@ bool UGameplayAbility_PetReflect::UpdateDragRotation()
         return true;
 
     PlacementRotation = FRotator(0.f, Direction.Rotation().Yaw, 0.f);
+
+    // 일정 각도 이상 돌아갈 때마다 틱
+    // 의도: 회전량이 손에 느껴지게 (매 프레임 울리면 시끄러우니 각도 간격으로)
+    APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
+    const UPetSoundData* Sounds = IsValid(Pet) ? Pet->GetSoundData() : nullptr;
+    if (nullptr != Sounds
+        && FMath::Abs(FMath::FindDeltaAngleDegrees(LastRotateTickYaw, PlacementRotation.Yaw)) >= Sounds->RotateTickAngle)
+    {
+        LastRotateTickYaw = PlacementRotation.Yaw;
+        Pet->PlayPetSound2D(Sounds->RotateTickSound);
+    }
+
     return true;
 }
 
@@ -458,15 +490,30 @@ void UGameplayAbility_PetReflect::HandlePlacementMoveFinished(FGuid RequestId, b
     // (성공이면 바로 아래에서 진짜 반사판이 생겨요)
     HidePlacementGhost();
 
+    APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
+    const UPetSoundData* Sounds = IsValid(Pet) ? Pet->GetSoundData() : nullptr;
+
     if (true == bSucceeded)
     {
         const bool bPlaced = TryPlaceReflector();
+
+        // 도착은 했는데 그 사이 자리가 막혔으면 설치 불가음
+        // (설치 완료음은 TryPlaceReflector 안에서 반사판 위치로 재생)
+        if (false == bPlaced && nullptr != Sounds)
+            Pet->PlayPetSound2D(Sounds->PlacementBlockedSound);
+
         UE_LOG(LogTemp, Log, TEXT("Reflect: placement %s."), bPlaced ? TEXT("succeeded") : TEXT("canceled"));
     }
     else
     {
-        if (APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo()))
+        if (true == IsValid(Pet))
+        {
             Pet->SetAnimationMovementStyle(EPetMovementStyle::Normal);
+
+            // 이동 실패로 설치 취소 = 설치 불가음 재사용
+            if (nullptr != Sounds)
+                Pet->PlayPetSound2D(Sounds->PlacementBlockedSound);
+        }
 
         UE_LOG(LogTemp, Log, TEXT("Reflect: placement move failed or canceled."));
     }
@@ -565,6 +612,11 @@ bool UGameplayAbility_PetReflect::TryPlaceReflector()
         return false;
 
     PlacedReflectors.Add(Reflector);
+
+    // 설치 완료: 펫이 아니라 반사판이 생긴 자리에서 들리게
+    if (const UPetSoundData* Sounds = Pet->GetSoundData())
+        Pet->PlayPetSoundAtLocation(Sounds->PlacementCompleteSound, Reflector->GetActorLocation());
+
     return true;
 }
 
@@ -886,7 +938,14 @@ void UGameplayAbility_PetReflect::SetHoveredReflector(APetReflector* NewReflecto
             OldReflector->SetRemoveHighlighted(false);
 
         if (true == IsValid(NewReflector))
+        {
             NewReflector->SetRemoveHighlighted(true);
+
+            // 새 반사판에 올라간 순간에만 (철거 후 nullptr로 바뀔 때는 안 울림)
+            if (APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo()))
+                if (const UPetSoundData* Sounds = Pet->GetSoundData())
+                    Pet->PlayPetSound2D(Sounds->RemoveHoverSound);
+        }
 
         HoveredReflector = NewReflector;
     }
@@ -920,5 +979,11 @@ void UGameplayAbility_PetReflect::HandleSpecialAction(FGameplayEventData Payload
     // 펫은 하던 일 계속, 반사판만 즉시 제거
     SetHoveredReflector(nullptr);
     PlacedReflectors.Remove(Reflector);
+
+    // 철거음: 사라지는 반사판 자리에서 (Destroy 전에 위치를 읽어야 해요)
+    if (APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo()))
+        if (const UPetSoundData* Sounds = Pet->GetSoundData())
+            Pet->PlayPetSoundAtLocation(Sounds->RemoveSound, Reflector->GetActorLocation());
+
     Reflector->Destroy();
 }

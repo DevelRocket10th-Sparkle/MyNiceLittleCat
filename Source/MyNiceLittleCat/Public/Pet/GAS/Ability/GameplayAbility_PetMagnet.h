@@ -70,6 +70,14 @@ protected:
     void UpdateMagnetFieldMesh();
     void HideMagnetFieldMesh();
 
+    // 자기장 루프 사운드 (우클릭 동안 재생)
+    // 의도: 어빌리티 수명 = 우클릭 누르는 동안이라, 시작/종료를 어빌리티 시작/종료에 맞춰요
+    void StartMagnetFieldLoop();
+    void StopMagnetFieldLoop();
+
+    // 들고 있는지에 따라 루프 피치/볼륨을 바꿔요 (상태가 바뀔 때만)
+    void UpdateMagnetFieldLoop();
+
     // 부채꼴 테두리를 따라 위로 솟은 반투명 커튼(섹션 1)을 만듦
     // 의도: 바닥 평면만으로는 납작해 보이므로, 같은 광선 결과로 "벽"을 세워 입체감 + 차폐 지점 표현
     void UpdateMagnetCurtainSection(class UProceduralMeshComponent* FieldMesh, const FVector& WorldOrigin,
@@ -170,4 +178,12 @@ protected:
     // 캐릭터를 잡았을 때 원래 이동 모드 (놓을 때 복원)
     TEnumAsByte<EMovementMode> SavedTargetMovementMode = MOVE_Walking;
     bool bSavedTargetMovement = false;
+
+    // 재생 중인 자기장 루프 (GC가 지우지 않도록 UPROPERTY)
+    UPROPERTY(Transient)
+    TObjectPtr<class UAudioComponent> FieldLoopAudio;
+
+    // 마지막으로 적용한 "들고 있음" 상태
+    // 의도: 매 틱 Set 함수를 부르지 않고 바뀔 때만 부르기 위함
+    bool bFieldLoopHolding = false;
 };

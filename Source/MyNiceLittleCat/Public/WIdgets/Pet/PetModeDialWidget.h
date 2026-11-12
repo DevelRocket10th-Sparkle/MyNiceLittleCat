@@ -35,6 +35,13 @@ public:
     // 위젯 크기 반환 함수
     float GetDialDiameter() const;
 
+    // 다이얼 열림 효과음 (컴포넌트가 열 때 불러요)
+    void PlayOpenSound() const;
+
+    // 다이얼 닫힘 효과음
+    // 잠긴 칸 위에서 닫히면(= 잠긴 모드 선택 시도) 잠김음, 아니면 닫힘음
+    void PlayCloseSound() const;
+
 protected:
     // 아이콘 텍스처로 브러시를 미리 만들어 둬요 (Paint 중에는 만들 수 없어서)
     virtual void NativeConstruct() override;
@@ -47,6 +54,9 @@ protected:
 
 private:
     void RebuildIconBrushes();
+
+    // 비어 있으면 무시하고 2D로 재생
+    void PlayDialSound(class USoundBase* _sound) const;
 
 protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pet|Dial")
@@ -64,4 +74,8 @@ private:
 
     // 잠긴 모드 목록
     TSet<EPetMode> LockedModes;
+
+    // 마우스가 올라가 있는 칸 (잠긴 칸 포함, 가운데 영역이면 INDEX_NONE)
+    // 의도: SelectedIndex는 잠긴 칸을 INDEX_NONE으로 지워버려서 "잠긴 칸 호버"를 알 수 없어서 따로 둬요
+    int32 HoveredIndex = INDEX_NONE;
 };

@@ -21,7 +21,9 @@
 #include "Engine/GameInstance.h"
 #include "Items/InventorySubsystem.h"
 #include "Items/ItemAbilityTags.h"
-
+#include "Pet/Data/PetSoundData.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 APetCharacter::APetCharacter()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -623,6 +625,31 @@ void APetCharacter::DebugLockPolarityN() { LockMagnetPolarity(EPetMagnetPolarity
 void APetCharacter::DebugLockPolarityS() { LockMagnetPolarity(EPetMagnetPolarity::S); }
 void APetCharacter::DebugUnlockPolarity() { UnlockMagnetPolarity(); }
 
+void APetCharacter::PlayPetSound2D(USoundBase* _sound) const
+{
+	// 슬롯이 비어 있으면 조용히 무시 (에셋 채우기 전에도 게임은 정상 동작)
+	if (false == IsValid(_sound)) return;
+
+	UGameplayStatics::PlaySound2D(this, _sound);
+}
+
+void APetCharacter::PlayPetSound3D(USoundBase* _sound) const
+{
+	PlayPetSoundAtLocation(_sound, GetActorLocation());
+}
+
+void APetCharacter::PlayPetSoundAtLocation(USoundBase* _sound, const FVector& _location) const
+{
+	if (false == IsValid(_sound)) return;
+
+	// 데이터에 감쇠가 있으면 그걸 쓰고, 없으면 nullptr → 사운드 에셋 자체 설정을 따라요
+	// 의도: 펫 3D 소리의 들리는 거리를 한 곳(DA)에서 통일해서 조절
+	USoundAttenuation* Attenuation = IsValid(SoundData) ? SoundData->Attenuation.Get() : nullptr;
+
+	UGameplayStatics::PlaySoundAtLocation(this, _sound, _location, FRotator::ZeroRotator,
+		1.f, 1.f, 0.f, Attenuation);
+}
+
 void APetCharacter::GrantModeAbilities()
 {
 	// 해금된 모드만 능력 부여 (잠긴 모드는 해금되는 순간 HandleAbilityUnlocked에서 부여)
@@ -698,6 +725,12 @@ void APetCharacter::TryCompleteNavigationRecovery()
 		// 목적지의 충돌·지면·경로는 위 함수에서 검사한 상태.
 		const bool bMoved = SetActorLocation(RecoveryLocation, false, nullptr, ETeleportType::TeleportPhysics);
 		if (false == bMoved) return;
+
+		// 순간이동 복귀 소리 (도착 지점에서 뿅)
+		// 의도: 실제로 자리를 옮겼을 때만 재생
+		//       → 제자리에서 이동만 복원하거나, 0.5초 재시도가 실패할 때는 조용히
+		if (true == IsValid(SoundData))
+			PlayPetSound3D(SoundData->RecoveryTeleportSound);
 	}
 
 	// 현재 위치 또는 복귀 위치가 유효하면 이동 복원

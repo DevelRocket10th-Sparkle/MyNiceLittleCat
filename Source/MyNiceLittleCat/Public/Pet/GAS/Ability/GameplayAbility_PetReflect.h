@@ -193,6 +193,9 @@ protected:
     UPROPERTY(Transient)
     FRotator PlacementRotation = FRotator::ZeroRotator;
 
+    // 마지막으로 회전 틱 소리가 난 방향 (드래그 시작 때 초기화)
+    float LastRotateTickYaw = 0.f;
+
     UPROPERTY(EditDefaultsOnly, Category = "Reflect|Placement", meta = (ClampMin = "1.0", Units = "cm"))
     float MinDragDistance = 15.f;
 
