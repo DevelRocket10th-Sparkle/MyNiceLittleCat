@@ -37,10 +37,7 @@ class MYNICELITTLECAT_API UOcclusionGroupSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
-	// 그룹 묶기에서 제외할 조각의 컴포넌트 태그: 붙어 있어도 자기 자신만 숨김
-	static const FName NoGroupTag;
-
-	// 맞은 조각이 속한 면 전체를 OutMembers에 추가. 판이 아니거나 제외 태그가 있으면 자기 자신만 추가
+	// 맞은 조각이 속한 면 전체를 OutMembers에 추가. 판이 아니면 자기 자신만 추가
 	void CollectGroupMembers(UPrimitiveComponent* HitPiece, const FOcclusionGroupSettings& Settings, TSet<UPrimitiveComponent*>& OutMembers);
 	// 바닥 / 천장처럼 위아래를 향한 판 조각인지 판정: 층 높이 조건 적용 대상 구분용
 	bool IsHorizontalPiece(const UPrimitiveComponent* Piece, const FOcclusionGroupSettings& Settings) const;

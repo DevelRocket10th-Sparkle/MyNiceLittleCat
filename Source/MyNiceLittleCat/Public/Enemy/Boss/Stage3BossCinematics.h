@@ -20,6 +20,7 @@ class UNiagaraSystem;
 class UStaticMesh;
 class UStaticMeshComponent;
 class USoundBase;
+class UCameraOcclusionComponent;
 
 USTRUCT()
 struct FStage3CinematicDoor
@@ -153,6 +154,9 @@ private:
 	UPROPERTY(EditInstanceOnly, Category = "Stage 3")
 	TObjectPtr<UNiagaraSystem> RoofEscapeEffect;
 
+	UPROPERTY(EditInstanceOnly, Category = "Stage 3")
+	TObjectPtr<AActor> RoofDoor;
+
 	struct FDoorMotion
 	{
 		TWeakObjectPtr<UStaticMeshComponent> Leaf;
@@ -172,6 +176,8 @@ private:
 	TObjectPtr<ALevelSequenceActor> OpeningActor;
 	UPROPERTY(Transient)
 	TObjectPtr<ULevelSequencePlayer> OpeningPlayer;
+
+	TWeakObjectPtr<UCameraOcclusionComponent> OpeningOcclusion;
 
 	enum class EOpening : uint8 { Initial, Locked, Unlocking, Courtyard, PhaseOne, Combat };
 	EOpening Opening = EOpening::Initial;

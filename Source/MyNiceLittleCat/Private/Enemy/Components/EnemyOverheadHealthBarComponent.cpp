@@ -8,6 +8,8 @@
 #include "Kismet/GameplayStatics.h"
 
 #include "Enemy/EnemyCharacter.h"
+#include "Enemy/GAS/EnemyAttributeSet.h"
+#include "TimerManager.h"
 #include "Widgets/Enemy/EnemyOverheadHealthBarWidget.h"
 
 UEnemyOverheadHealthBarComponent::UEnemyOverheadHealthBarComponent()
@@ -33,6 +35,14 @@ void UEnemyOverheadHealthBarComponent::SetShowHealthText(bool bShow)
 	{
 		HealthBarWidget->SetShowHealthText(bShowHealthText);
 	}
+
+	// 텍스트 표시가 바뀌면 다시 그리기 요청 (자동 다시 그리기 모드에서는 무시됨)
+	RequestRedraw();
+}
+
+void UEnemyOverheadHealthBarComponent::HandleHealthChanged(float NewHealth, float MaxHealth)
+{
+	RequestRedraw();
 }
 
 void UEnemyOverheadHealthBarComponent::BeginPlay()
@@ -62,6 +72,23 @@ void UEnemyOverheadHealthBarComponent::BeginPlay()
 	HealthBarWidget->InitializeOverheadHealthBar(Enemy);
 	SetShowHealthText(bShowHealthText);
 
+	// 내용이 바뀔 때만 렌더 타깃에 다시 그림: 매 프레임 다시 그리던 월드 스페이스 위젯 비용 제거
+	if (bRedrawOnlyOnChange)
+	{
+		SetManuallyRedraw(true);
+		RequestRedraw();
+
+		// 체력 변경 시 다시 그리기 요청 (위젯의 ResourceBar도 같은 델리게이트로 값을 갱신하며, 실제 그리기는 다음 Tick에서 실행)
+		if (UEnemyAttributeSet* Stat = Enemy->GetAttributeSet())
+		{
+			HealthChangedHandle = Stat->OnHealthChange.AddUObject(this, &UEnemyOverheadHealthBarComponent::HandleHealthChanged);
+		}
+
+		// 첫 그리기 시점에는 위젯 레이아웃 / 폰트가 준비되지 않았을 수 있어 잠시 후 한 번 더 그림
+		GetWorld()->GetTimerManager().SetTimer(InitialRedrawTimerHandle,
+			FTimerDelegate::CreateWeakLambda(this, [this]() { RequestRedraw(); }), 0.3f, false);
+	}
+
 	// 이미 사망한 액터에 나중에 추가된 경우도 처리
 	if (!Enemy->IsAlive())
 	{
@@ -82,9 +109,20 @@ void UEnemyOverheadHealthBarComponent::EndPlay(const EEndPlayReason::Type EndPla
 	if (AEnemyCharacter* Enemy = OwnerEnemy.Get())
 	{
 		Enemy->OnDeathStarted.Remove(DeathStartedHandle);
+
+		if (UEnemyAttributeSet* Stat = Enemy->GetAttributeSet())
+		{
+			Stat->OnHealthChange.Remove(HealthChangedHandle);
+		}
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(InitialRedrawTimerHandle);
 	}
 
 	DeathStartedHandle.Reset();
+	HealthChangedHandle.Reset();
 	OwnerEnemy.Reset();
 	
 	if (IsValid(HealthBarWidget))
