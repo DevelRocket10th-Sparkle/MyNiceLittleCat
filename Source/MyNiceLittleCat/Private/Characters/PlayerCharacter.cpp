@@ -177,6 +177,11 @@ void APlayerCharacter::BeginPlay()
         PotionMesh->SetHiddenInGame(true);
     }
 
+    if (UGameProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UGameProgressSubsystem>())
+    {
+        Progress->OnPlayerRested.AddUniqueDynamic(this, &APlayerCharacter::RefillPotions);
+    }
+
     APlayerController* PC = Cast<APlayerController>(GetController());
 
     if (!PC || !IMC) return;
@@ -189,15 +194,6 @@ void APlayerCharacter::BeginPlay()
     {
         Subsystem->AddMappingContext(IMC, 0);
     }
-
-
-    if (UGameProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UGameProgressSubsystem>())
-    {
-        Progress->OnPlayerRested.AddUniqueDynamic(this, &APlayerCharacter::RefillPotions);
-    }
-
-    
-
 }
 
 // Called every frame

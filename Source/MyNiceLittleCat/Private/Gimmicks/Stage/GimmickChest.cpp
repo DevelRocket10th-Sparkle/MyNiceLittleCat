@@ -24,6 +24,9 @@ AGimmickChest::AGimmickChest()
 	bSaveState = true;
 	bReceiveSignals = false;
 
+	// 열면 게임이 일시정지되므로 여는 소리는 일시정지 중에도 들리는 2D 소리로
+	bPlaySoundAs2D = true;
+
 	// 몸통(100cm 큐브 기준) 뒤쪽 윗모서리 = 경첩, 뚜껑이 위로 젖혀짐
 	LidMover = CreateDefaultSubobject<UGimmickMoverComponent>(TEXT("LidMover"));
 	LidMover->SetupAttachment(Mesh);

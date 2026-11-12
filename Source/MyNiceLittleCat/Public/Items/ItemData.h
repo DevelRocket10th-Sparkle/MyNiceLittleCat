@@ -14,6 +14,7 @@
 #include "ItemData.generated.h"
 
 class UTexture2D;
+class USoundBase;
 
 UCLASS(BlueprintType)
 class MYNICELITTLECAT_API UItemData : public UPrimaryDataAsset
@@ -44,6 +45,11 @@ public:
 	// 획득 UI에 표시
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
 	bool bShowInAcquireUI = true;
+
+	// 획득 UI가 뜰 때 효과음 (비면 프로젝트 설정 Item > Default Acquire Sound).
+	// 여러 아이템을 함께 얻으면 능력 아이템 → 목록 순서로 처음 지정된 소리 하나만 재생
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item")
+	TSoftObjectPtr<USoundBase> AcquireSound;
 
 	// 표시 이름 (비면 에셋 이름)
 	UFUNCTION(BlueprintPure, Category = "Item")

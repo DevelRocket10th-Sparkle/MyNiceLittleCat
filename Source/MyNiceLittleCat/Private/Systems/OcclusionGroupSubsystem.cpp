@@ -1,9 +1,9 @@
 #include "Systems/OcclusionGroupSubsystem.h"
 #include "Components/PrimitiveComponent.h"
+#include "Engine/Level.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
-
-const FName UOcclusionGroupSubsystem::NoGroupTag(TEXT("NoOcclusionGroup"));
+#include "GameFramework/Actor.h"
 
 namespace OcclusionGroup
 {
@@ -22,18 +22,13 @@ void UOcclusionGroupSubsystem::CollectGroupMembers(UPrimitiveComponent* HitPiece
 	{
 		return;
 	}
-	// 제외 태그가 있는 조각은 묶지 않고 자기 자신만 숨김
-	if (HitPiece->ComponentHasTag(NoGroupTag))
-	{
-		OutMembers.Add(HitPiece);
-		return;
-	}
 	// 이미 계산한 면이면 캐시 사용
 	if (const int32* CachedIndex = GroupIndexByPiece.Find(HitPiece))
 	{
 		AppendGroupMembers(*CachedIndex, OutMembers);
 		return;
 	}
+
 	const FPieceShape HitShape = CalculatePieceShape(HitPiece, Settings);
 	// 기둥, 모서리 등 덩어리 조각은 면을 정의할 수 없으므로 자기 자신만 숨김
 	if (!HitShape.bIsPlanar)
@@ -160,11 +155,6 @@ int32 UOcclusionGroupSubsystem::BuildGroup(UPrimitiveComponent* SeedPiece, const
 			}
 			Visited.Add(Candidate);
 
-			// 제외 태그가 있는 조각은 그룹에 포함하지 않음
-			if (Candidate->ComponentHasTag(NoGroupTag))
-			{
-				continue;
-			}
 			const FPieceShape CandidateShape = CalculatePieceShape(Candidate, Settings);
 			// 모서리, 기둥 등 덩어리 조각: 이 면과 같이 숨기되 이웃 탐색은 이어가지 않음 (다른 면으로 번지는 것 방지)
 			if (!CandidateShape.bIsPlanar)

@@ -4,7 +4,6 @@
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
 #include "Characters/PlayerCharacter.h"
-#include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/CapsuleComponent.h"
@@ -98,7 +97,8 @@ void UGA_Enemy_RushAttack::UpdateRush()
 
 		bRushStarted = bRushing = true;
 		MontageJumpToSection(RushSection);
-		GetAbilitySystemComponentFromActorInfo()->CurrentMontageSetPlayRate(0.f);
+		// 재생 속도만 0으로 두면 몽타주에 평가 시간이 누적된다.
+		Anim->Montage_Pause(Montage);
 		// 돌진 진입 프레임에는 이동하지 않아 준비 시간만큼 이동 거리가 늘어나지 않게 한다.
 		if (DistanceRemaining <= KINDA_SMALL_NUMBER)
 		{
@@ -169,8 +169,12 @@ void UGA_Enemy_RushAttack::FinishRush()
 	bRushing = false;
 	GetWorld()->GetTimerManager().ClearTimer(RushTimer);
 	Enemy->GetCharacterMovement()->StopMovementImmediately();
-	// 돌진의 첫 프레임부터 재생을 재개하고, 설정된 섹션 연결에 따라 공격으로 이어간다.
-	GetAbilitySystemComponentFromActorInfo()->CurrentMontageSetPlayRate(1.f);
+
+	// 일시정지한 위치에서 재생을 재개하고, 섹션 연결을 따라 공격으로 이어간다.
+	if (UAnimInstance* Anim = Enemy->GetMesh()->GetAnimInstance(); Anim && MeleeSettings && MeleeSettings->Montage)
+	{
+		Anim->Montage_Resume(MeleeSettings->Montage);
+	}
 }
 
 void UGA_Enemy_RushAttack::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -184,9 +188,9 @@ void UGA_Enemy_RushAttack::EndAbility(const FGameplayAbilitySpecHandle Handle, c
 	{
 		if (bRushing)
 		{
-			if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+			if (UAnimInstance* Anim = Enemy->GetMesh()->GetAnimInstance(); Anim && MeleeSettings && MeleeSettings->Montage)
 			{
-				ASC->CurrentMontageSetPlayRate(1.f);
+				Anim->Montage_Resume(MeleeSettings->Montage);
 			}
 			Enemy->GetCharacterMovement()->StopMovementImmediately();
 		}

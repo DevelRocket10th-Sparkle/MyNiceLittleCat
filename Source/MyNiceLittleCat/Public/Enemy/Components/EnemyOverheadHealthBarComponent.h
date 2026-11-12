@@ -44,6 +44,9 @@ private :
 
 	void UpdateWidgetRotation();
 
+	// 체력 변경 시 위젯을 한 번 다시 그리도록 요청 (수동 다시 그리기 모드)
+	void HandleHealthChanged(float NewHealth, float MaxHealth);
+
 protected :
 
 	// 위젯 BP의 기본값보다 컴포넌트 설정을 우선 적용
@@ -62,11 +65,23 @@ protected :
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Health Bar")
 	bool bLockWidgetRoll = true;
 
+	/** 내용이 바뀔 때 (체력 변경, 텍스트 표시 변경)만 위젯을 렌더 타깃에 다시 그림
+	 *  월드 스페이스 위젯은 기본적으로 매 프레임 다시 그려 Enemy 수만큼 렌더 스레드 비용이 늘어남
+	 *  체력바는 애니메이션이 없어 값이 바뀔 때만 그려도 화면이 같음. 회전 (빌보드)은 다시 그리기와 무관 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Health Bar|Performance")
+	bool bRedrawOnlyOnChange = true;
+
 private:
 
 	TWeakObjectPtr<AEnemyCharacter> OwnerEnemy;
 
 	FDelegateHandle DeathStartedHandle;
+
+	// 체력 변경 구독 핸들 (수동 다시 그리기 요청용)
+	FDelegateHandle HealthChangedHandle;
+
+	// 첫 레이아웃 / 폰트 로드 이후 한 번 더 그리기 위한 타이머
+	FTimerHandle InitialRedrawTimerHandle;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UEnemyOverheadHealthBarWidget> HealthBarWidget;

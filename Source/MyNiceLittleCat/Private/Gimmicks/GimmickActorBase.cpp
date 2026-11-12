@@ -14,6 +14,8 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Components/PrimitiveComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 
 const FName AGimmickActorBase::SignalLinkPointTag(TEXT("SignalLinkPoint"));
 
@@ -104,12 +106,36 @@ void AGimmickActorBase::SetActivated(bool bNewActivated, AActor* ChangeInstigato
 
 	bActivated = bNewActivated;
 
+	// 시작 상태(세이브 복원·시작 신호)는 소리 없이
+	if (!bApplyingInitialState)
+	{
+		PlayGimmickSound(bActivated ? ActivateSound : DeactivateSound);
+	}
+
 	UpdateMovers(bApplyingInitialState);
 	HandleActivationChanged(bActivated, ChangeInstigator);
 	K2_OnActivationChanged(bActivated, ChangeInstigator);
 	OnActivationChanged.Broadcast(this, bActivated, ChangeInstigator);
 
 	NotifyLinkedActors();
+}
+
+void AGimmickActorBase::PlayGimmickSound(USoundBase* Sound) const
+{
+	UWorld* World = GetWorld();
+	if (!Sound || !World || !World->IsGameWorld())
+	{
+		return;
+	}
+
+	if (bPlaySoundAs2D)
+	{
+		UGameplayStatics::PlaySound2D(this, Sound, SoundVolumeMultiplier);
+	}
+	else
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, Sound, GetActorLocation(), SoundVolumeMultiplier);
+	}
 }
 
 void AGimmickActorBase::UpdateMovers(bool bInstant)

@@ -145,6 +145,7 @@ void ABossCharacter::HandleTransitionRequested()
 
 
 	GetPatternComponent()->SetRequestsBlocked(true);
+
 	GetPatternComponent()->CancelActiveRequest();
 	
 	// 이전 페이즈의 대기를 새 페이즈 첫 공격에 넘기지 않는다.

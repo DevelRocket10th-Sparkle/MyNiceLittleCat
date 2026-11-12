@@ -31,6 +31,13 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "AcquireUI")
 	int32 AcquireWidgetZOrder = 50;
 
+	// 획득 UI가 뜰 때 기본 효과음 (아이템 AcquireSound가 비었을 때). 일시정지 중에도 들리는 2D UI 소리로 재생
+	UPROPERTY(Config, EditAnywhere, Category = "AcquireUI", meta = (AllowedClasses = "/Script/Engine.SoundBase"))
+	FSoftObjectPath DefaultAcquireSound;
+
+	UPROPERTY(Config, EditAnywhere, Category = "AcquireUI", meta = (ClampMin = "0.0"))
+	float AcquireSoundVolume = 1.f;
+
 	// 테스트용: 능력 아이템 없이도 모든 능력이 열린 것으로 (UInventorySubsystem::HasAbility가 항상 true). 실제 게임에서는 끔
 	UPROPERTY(Config, EditAnywhere, Category = "Test")
 	bool bTestUnlockAllAbilities = false;
