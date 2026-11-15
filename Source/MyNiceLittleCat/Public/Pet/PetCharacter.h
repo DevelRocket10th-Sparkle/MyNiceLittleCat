@@ -184,6 +184,16 @@ public:
 
 	// 3D 재생: 펫이 아닌 곳에서 나는 소리 (반사판 설치/철거 위치 등)
 	void PlayPetSoundAtLocation(class USoundBase* _sound, const FVector& _location) const;
+
+	// ==== 플레이어 사망 반응 ====
+	// 플레이어 OnPlayerDied 수신 -> 모드 끄고 옆으로 달려가서 반응
+	UFUNCTION()
+	void HandlePartnerDied();
+
+	// 파트너 플레이어 옆으로 즉시 이동 (리스폰 등장용)
+	// 의도: 체크포인트에서 부활하면 죽은 자리에서 날아오지 않고 플레이어 옆에서 "뿅" 하고 나타나게
+	bool TeleportToPartner();
+
 private:
 	void GrantModeAbilities();         // 해금된 모드만 능력 부여
 	bool GrantModeAbility(EPetMode _mode); // 모드 하나만 능력 부여 (이미 있으면 false)
@@ -193,6 +203,10 @@ private:
 	// 인벤토리에서 능력 아이템을 처음 얻은 순간 → 해당 모드 능력 바로 부여
 	UFUNCTION()
 	void HandleAbilityUnlocked(FGameplayTag _abilityTag, class UItemData* _item);
+
+	// 플레이어 옆에 설 자리 계산 (네비메시 위)
+	// 의도: 펫이 있던 쪽에 서게 해서 플레이어를 가로질러 돌아가지 않게
+	FVector CalculateMournLocation(const APawn* _player) const;
 	// =============================================================================
 public:
 	UPROPERTY(BlueprintAssignable, Category = "Pet|Mode")
@@ -282,6 +296,10 @@ protected:
 	// 펫 효과음 데이터 (BP에서 DA_PetSound 지정)
 	UPROPERTY(EditDefaultsOnly, Category = "Pet|Sound")
 	TObjectPtr<class UPetSoundData> SoundData;
+
+	// 사망 반응 때 플레이어에서 얼마나 떨어져 설지
+	UPROPERTY(EditDefaultsOnly, Category = "Pet|Mourn", meta = (ClampMin = "0.0", Units = "cm"))
+	float MournStandDistance = 120.f;
 private:
 	// 초기화 됨?
 	UPROPERTY(Transient)
@@ -302,4 +320,8 @@ private:
 	TEnumAsByte<EMovementMode> RecoveryMovementMode = MOVE_Walking;
 
 	uint8 RecoveryCustomMovementMode = 0;
+
+	// 사망 알림을 구독 중인 플레이어 (리스폰 때 새 플레이어로 갈아끼우려고 기억)
+	UPROPERTY(Transient)
+	TWeakObjectPtr<class APlayerCharacter> BoundDeathPlayer;
 };
