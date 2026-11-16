@@ -6,6 +6,7 @@
 #include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
 #include "Enemy/AI/EnemyAIController.h"
+#include "Enemy/AI/EnemyBlackboardKeys.h"
 #include "AbilitySystemComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BrainComponent.h"
@@ -257,9 +258,9 @@ void ABossCharacter::RefreshBossBlackboard()
 	{
 		return;
 	}
-	Blackboard->SetValueAsBool(TEXT("CanAct"), IsEncounterActive() && IsAlive() && PhaseComponent->IsActive() && !PhaseComponent->IsCurrentPhaseLogOnly());
-	if (Blackboard->GetKeyID(TEXT("PhaseTransitionRequested")) != FBlackboard::InvalidKey)
-		Blackboard->SetValueAsBool(TEXT("PhaseTransitionRequested"), IsEncounterActive()
+	Blackboard->SetValueAsBool(EnemyBlackboardKeys::CanAct, IsEncounterActive() && IsAlive() && PhaseComponent->IsActive() && !PhaseComponent->IsCurrentPhaseLogOnly());
+	if (Blackboard->GetKeyID(EnemyBlackboardKeys::PhaseTransitionRequested) != FBlackboard::InvalidKey)
+		Blackboard->SetValueAsBool(EnemyBlackboardKeys::PhaseTransitionRequested, IsEncounterActive()
 			&& (PhaseComponent->HasPendingTransition() || PhaseComponent->IsTransitioning()));
 }
 

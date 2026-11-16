@@ -19,13 +19,7 @@
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/Datas/EnemyConfigData.h"
 #include "Enemy/Boss/BossCharacter.h"
-
-namespace EnemyBlackboardKeys
-{
-	const FName TargetActor(TEXT("TargetActor"));
-	const FName HomeLocation(TEXT("HomeLocation"));
-	const FName CanAct(TEXT("CanAct"));
-}
+#include "Enemy/AI/EnemyBlackboardKeys.h"
 
 AEnemyAIController::AEnemyAIController()
 {
@@ -176,7 +170,7 @@ void AEnemyAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulu
 
 		// 타겟 잃었으면 집 가기
 		if (IsValid(BlackboardComp)
-			&& BlackboardComp->GetValueAsObject(TEXT("TargetActor")) == DetectedPawn)
+			&& BlackboardComp->GetValueAsObject(EnemyBlackboardKeys::TargetActor) == DetectedPawn)
 		{
 			ClearCombatTarget();
 		}
@@ -231,7 +225,7 @@ void AEnemyAIController::TryStartEnemyAI()
 	BlackboardComp->SetValueAsBool(EnemyBlackboardKeys::CanAct, true);
 
 	// 보스 전환 브랜치에서 사용하는 필수 키가 없으면 시작하지 않음
-	if (Cast<ABossCharacter>(Enemy) && BlackboardComp->GetKeyID(TEXT("PhaseTransitionRequested")) == FBlackboard::InvalidKey)
+	if (Cast<ABossCharacter>(Enemy) && BlackboardComp->GetKeyID(EnemyBlackboardKeys::PhaseTransitionRequested) == FBlackboard::InvalidKey)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Boss blackboard requires PhaseTransitionRequested."));
 		return;

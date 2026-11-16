@@ -5,6 +5,7 @@
 #include "AIController.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
 
@@ -52,8 +53,8 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeCompon
 		return EBTNodeResult::Failed;
 	}
 
-	// 타깃 설정
-	AActor* Target = Cast<AActor>(BlackboardComp->GetValueAsObject(BlackboardKey.SelectedKeyName));
+	// 타깃 설정: BTTask_BlackboardBase가 InitializeFromAsset에서 키 ID를 이미 해석해 두므로 이름 검색 없이 ID로 읽음
+	AActor* Target = Cast<AActor>(BlackboardComp->GetValue<UBlackboardKeyType_Object>(BlackboardKey.GetSelectedKeyID()));
 	CachedTarget = Target;
 
 	// PatternId는 BT 설정값으로 유지
