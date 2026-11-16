@@ -10,7 +10,7 @@
 ///       → 레이저가 꺼지면(OnLaserStopped) ShotInterval 뒤 1단계부터 다시, ShotCount번 쏘면 정상 종료
 /// 보스를 지점으로 옮기지 않고 서 있는 자리에서 쏩니다 (이동은 보스 쪽 이동 패턴 담당).
 /// 레이저 교대 페이즈에서는 단일 레이저 차례일 때만 실행되고(CanActivateAbility), 정상 종료 시 순번을 격자로 넘깁니다.
-/// 취소(페이즈 전환·사망·리셋)와 정상 종료 모두 EndAbility에서 레이저·경고·잠금을 정리합니다.
+/// 취소(페이즈 전환·사망·리셋)와 정상 종료 모두 StopPattern에서 레이저·경고를 정리하고, 잠금은 부모(UEnemyPatternAbility)가 해제합니다.
 /// 피해는 레이저 컴포넌트가 처리합니다 (플레이어는 ApplyPlayerHit → 플레이어 피해 GE). 레이저 컴포넌트는 bPlanarAim을 꺼야 합니다.
 /// bUseBossAttackPower면 패턴 동안 레이저 피해량 = 보스 AttackPower × DamageMultiplier (근접 패턴과 같은 공식), 종료 시 원래 값으로 복구합니다.
 /// MaxExecutionSeconds는 ShotCount번 전체 시간보다 길게 잡아야 합니다.
@@ -18,12 +18,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Abilities/GameplayAbility.h"
-#include "Enemy/Datas/EnemyPatternSetData.h"
+#include "Enemy/GAS/Abilities/EnemyPatternAbility.h"
 #include "GA_BossLaserBeam.generated.h"
 
-class AEnemyCharacter;
-class UEnemyPatternComponent;
 class ULaserBeamComponent;
 class UBossLaserPatternSettings;
 class AAttackWarningDecal;
@@ -38,25 +35,26 @@ enum class EBossLaserBeamStage : uint8
 };
 
 UCLASS()
-class MYNICELITTLECAT_API UGA_BossLaserBeam : public UGameplayAbility
+class MYNICELITTLECAT_API UGA_BossLaserBeam : public UEnemyPatternAbility
 {
 	GENERATED_BODY()
 
 public:
-	UGA_BossLaserBeam();
-
 	// 레이저 교대 페이즈에서는 단일 레이저 차례일 때만 실행
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr,
 		FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 
-	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
-
-	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
-
 protected:
+	// 설정·레이저 컴포넌트·타깃 바닥 지점 검사 (CommitAbility 전, 실패하면 부모가 취소 종료)
+	virtual bool CanStartPattern() const override;
+
+	// 피해량·이동·회전 설정 후 첫 발사 시작 (기존 ActivateAbility의 CommitAbility 이후 부분)
+	virtual bool StartPattern() override;
+
+	// 레이저·경고·이동 속도·피해량 복구 (잠금 해제와 요청 정리는 부모가 처리)
+	virtual void StopPattern(bool bWasCancelled) override;
+
 	// 한 발사의 1단계(추적) 시작
 	UFUNCTION()
 	void StartShot();
@@ -102,14 +100,7 @@ private :
 	void RestoreMoveSpeed();
 
 protected:
-	// 현재 실행용으로 복사한 패턴 설정
-	UPROPERTY(BlueprintReadOnly, Category = "Pattern")
-	FEnemyPatternDefinition ExecutionPattern;
-
-	// 실행 시작 시 타깃 (Blackboard 변경과 무관하게 유지)
-	UPROPERTY(BlueprintReadOnly, Category = "Pattern")
-	TObjectPtr<AActor> ExecutionTarget;
-
+	// ExecutionPattern, ExecutionTarget, Enemy, PatternComponent, RequestId는 부모 멤버 사용
 	UPROPERTY(Transient)
 	TObjectPtr<UBossLaserPatternSettings> LaserSettings;
 
@@ -119,19 +110,12 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<AAttackWarningDecal> Warning;
 
-	TWeakObjectPtr<AEnemyCharacter> Enemy;
-
-	TWeakObjectPtr<UEnemyPatternComponent> PatternComponent;
-
 	EBossLaserBeamStage Stage = EBossLaserBeamStage::None;
 
 	// 현재 공격 지점 (바닥, 월드)
 	FVector AimPoint = FVector::ZeroVector;
 
 	FTimerHandle UpdateTimerHandle;
-
-	// 이번 GA가 실행하는 요청 번호
-	int64 RequestId = 0;
 
 	// 이번 실행에서 끝난 발사 수
 	int32 ShotsFired = 0;
@@ -140,10 +124,6 @@ protected:
 	float OriginalDamagePerHit = 0.f;
 
 	bool bOverrodeDamage = false;
-
-	bool bOwnsMovementLock = false;
-
-	bool bOwnsRotationLock = false;
 
 private :
 	

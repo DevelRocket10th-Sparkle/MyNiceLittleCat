@@ -6,7 +6,6 @@
 #include "Gimmicks/Warning/AttackWarningDecal.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/Boss/BossCharacter.h"
-#include "Enemy/Components/EnemyPatternComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "AIController.h"
@@ -32,45 +31,29 @@ namespace
 	}
 }
 
-UGA_BossLaserBeam::UGA_BossLaserBeam()
+// 요청 수신, Enemy 생존 확인, CommitAbility는 부모 ActivateAbility가 처리 → 여기서는 실행 조건만 검사
+bool UGA_BossLaserBeam::CanStartPattern() const
 {
-	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
-}
-
-void UGA_BossLaserBeam::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
-	const FGameplayEventData* TriggerEventData)
-{
-	Enemy = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo());
-	PatternComponent = Enemy.IsValid() ? Enemy->GetPatternComponent() : nullptr;
-
-	AActor* Target = nullptr;
-	if (!Enemy.IsValid() || !Enemy->IsAlive() || !PatternComponent.IsValid()
-		|| !PatternComponent->GetActiveExecution(ExecutionPattern, Target, RequestId))
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
-
-	LaserSettings = Cast<UBossLaserPatternSettings>(ExecutionPattern.ExecutionSettings);
-	Laser = FindLaserComponent();
-	ExecutionTarget = Target;
-
-	if (!LaserSettings || !Laser)
+	if (!GetPatternSettings<UBossLaserPatternSettings>() || !FindLaserComponent())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BossLaser] %s: 패턴 %s에 BossLaserPatternSettings 또는 보스의 LaserBeamComponent가 없습니다."),
 			*Enemy->GetName(), *ExecutionPattern.PatternId.ToString());
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
+		return false;
 	}
 
 	// 바닥을 겨누는 패턴이라 타깃이 꼭 필요
-	if (!IsValid(Target) || !FindTargetFloorPoint(AimPoint) || !CommitAbility(Handle, ActorInfo, ActivationInfo))
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
+	// const 검사라 AimPoint 대신 지역 변수에 받음 (실제 지점은 StartPattern에서 다시 구함)
+	FVector FloorPoint;
+	return IsValid(ExecutionTarget) && FindTargetFloorPoint(FloorPoint);
+}
+
+bool UGA_BossLaserBeam::StartPattern()
+{
+	LaserSettings = GetPatternSettings<UBossLaserPatternSettings>();
+	Laser = FindLaserComponent();
+
+	// 기존 검사 단계에서 채우던 공격 지점: 아래 FaceAimPoint(bFaceTargetOnStart)가 사용
+	FindTargetFloorPoint(AimPoint);
 
 	ShotsFired = 0;
 
@@ -95,8 +78,8 @@ void UGA_BossLaserBeam::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		}
 		Enemy->GetCharacterMovement()->StopMovementImmediately();
 
-		Enemy->AcquireAttackMovementLock();
-		bOwnsMovementLock = true;
+		// 이동/회전 잠금 해제는 부모(UEnemyPatternAbility)가 EndAbility에서 처리
+		LockMovement();
 	}
 
 	// 페이즈 내에서 패턴 이동 속도 오버라이드가 있는 경우, 레이저 활성 기간 동안 적용
@@ -114,8 +97,7 @@ void UGA_BossLaserBeam::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	// 회전 잠금은 이동 정책과 별개로 패턴 설정을 따름
 	if (ExecutionPattern.bLockRotation)
 	{
-		Enemy->AcquireRotationLock();
-		bOwnsRotationLock = true;
+		LockRotation();
 	}
 
 	if (ExecutionPattern.bFaceTargetOnStart)
@@ -127,6 +109,7 @@ void UGA_BossLaserBeam::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		FTimerDelegate::CreateUObject(this, &UGA_BossLaserBeam::UpdateAim), AimUpdateInterval, true);
 
 	StartShot();
+	return true;
 }
 
 void UGA_BossLaserBeam::StartShot()
@@ -381,12 +364,15 @@ ULaserBeamComponent* UGA_BossLaserBeam::FindLaserComponent() const
 		return nullptr;
 	}
 
+	// StartPattern 전(LaserSettings가 비어 있을 때)에도 LaserComponentName 지정이 적용되도록 부모가 받은 설정 사용
+	const UBossLaserPatternSettings* Settings = GetPatternSettings<UBossLaserPatternSettings>();
+
 	TArray<ULaserBeamComponent*> Lasers;
 	Enemy->GetComponents(Lasers);
 
 	for (ULaserBeamComponent* Candidate : Lasers)
 	{
-		if (!LaserSettings || LaserSettings->LaserComponentName.IsNone() || Candidate->GetFName() == LaserSettings->LaserComponentName)
+		if (!Settings || Settings->LaserComponentName.IsNone() || Candidate->GetFName() == Settings->LaserComponentName)
 		{
 			return Candidate;
 		}
@@ -444,8 +430,8 @@ void UGA_BossLaserBeam::HideAimWarning()
 
 bool UGA_BossLaserBeam::IsExecutionValid() const
 {
-	return IsActive() && Enemy.IsValid() && Enemy->IsAlive() && PatternComponent.IsValid()
-		&& PatternComponent->IsRequestRunning(RequestId) && IsValid(Laser) && LaserSettings;
+	// 활성·생존·요청 진행 확인은 부모 도우미, 레이저 고유 조건만 추가
+	return IsPatternExecutionValid() && IsValid(Laser) && LaserSettings;
 }
 
 void UGA_BossLaserBeam::EndWithResult(bool bWasCancelled)
@@ -465,9 +451,8 @@ void UGA_BossLaserBeam::RestoreMoveSpeed()
 	bOverrodeMoveSpeed = false;
 }
 
-void UGA_BossLaserBeam::EndAbility(const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
-	bool bReplicateEndAbility, bool bWasCancelled)
+// 부모 EndAbility가 먼저 호출 → 이 정리 뒤에 부모가 이동/회전 잠금 해제, ExecutionTarget/RequestId 등 초기화, Super::EndAbility 진행
+void UGA_BossLaserBeam::StopPattern(bool bWasCancelled)
 {
 	Stage = EBossLaserBeamStage::None;
 
@@ -493,14 +478,6 @@ void UGA_BossLaserBeam::EndAbility(const FGameplayAbilitySpecHandle Handle,
 
 	HideAimWarning();
 
-	if (Enemy.IsValid())
-	{
-		if (bOwnsRotationLock) Enemy->ReleaseRotationLock();
-		if (bOwnsMovementLock) Enemy->ReleaseAttackMovementLock();
-	}
-	bOwnsRotationLock = false;
-	bOwnsMovementLock = false;
-
 	if (bWasCancelled && IsActive() && Enemy.IsValid())
 	{
 		UE_LOG(LogTemp, Log, TEXT("[BossLaser] %s: 취소"), *Enemy->GetName());
@@ -509,9 +486,5 @@ void UGA_BossLaserBeam::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	Laser = nullptr;
 	LaserSettings = nullptr;
 	LaserMoveSpeedMultiplier = 1.f;
-	ExecutionTarget = nullptr;
-	RequestId = 0;
 	ShotsFired = 0;
-
-	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
