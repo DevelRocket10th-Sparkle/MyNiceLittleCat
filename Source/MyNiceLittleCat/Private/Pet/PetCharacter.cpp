@@ -25,6 +25,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "Characters/PlayerCharacter.h"
+#include "Pet/PetFacialComponent.h"
 
 APetCharacter::APetCharacter()
 {
@@ -77,6 +78,9 @@ APetCharacter::APetCharacter()
 	GetCapsuleComponent()->SetCollisionProfileName(TEXT("Pet"));
 	// 외형 메시는 충돌 판정에서 제외
 	GetMesh()->SetCollisionProfileName(TEXT("NoCollision"));
+
+	// 표정 컴포넌트
+	FacialComponent = CreateDefaultSubobject<UPetFacialComponent>(TEXT("FacialComponent"));
 }
 
 void APetCharacter::BeginPlay()

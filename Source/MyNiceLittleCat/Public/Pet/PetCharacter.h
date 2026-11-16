@@ -194,6 +194,9 @@ public:
 	// 의도: 체크포인트에서 부활하면 죽은 자리에서 날아오지 않고 플레이어 옆에서 "뿅" 하고 나타나게
 	bool TeleportToPartner();
 
+	// GA나 다른 시스템에서 펫 표정을 바꿀 수 있게 열어둠
+	class UPetFacialComponent* GetFacial() const { return FacialComponent; }
+
 private:
 	void GrantModeAbilities();         // 해금된 모드만 능력 부여
 	bool GrantModeAbility(EPetMode _mode); // 모드 하나만 능력 부여 (이미 있으면 false)
@@ -300,6 +303,11 @@ protected:
 	// 사망 반응 때 플레이어에서 얼마나 떨어져 설지
 	UPROPERTY(EditDefaultsOnly, Category = "Pet|Mourn", meta = (ClampMin = "0.0", Units = "cm"))
 	float MournStandDistance = 120.f;
+
+	// 표정(눈 모프 타겟) 담당 - 깜빡임은 자동, 감정은 SetEmotion으로 변경
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pet|Facial")
+	TObjectPtr<class UPetFacialComponent> FacialComponent;
+
 private:
 	// 초기화 됨?
 	UPROPERTY(Transient)
