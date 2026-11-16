@@ -24,7 +24,7 @@ void UEnemyAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 	}
 	else if (Attribute == GetMaxHealthAttribute())
 	{
-		NewValue = FMath::Max(0, NewValue);
+		NewValue = FMath::Max(0.f, NewValue);
 	}
 }
 
@@ -34,14 +34,10 @@ void UEnemyAttributeSet::PostAttributeChange(const FGameplayAttribute & Attribut
 
 	if (Attribute == GetHealthAttribute())
 	{
-		//UE_LOG(LogTemp, Log, TEXT("[UEnemyAttributeSet] Health Changed: (%.1f) -> (%.1f)"), OldValue, NewValue);
-
 		OnHealthChange.Broadcast(NewValue, GetMaxHealth());
 	}
 	else if (Attribute == GetMaxHealthAttribute())
 	{
-		//UE_LOG(LogTemp, Log, TEXT("[UEnemyAttributeSet] Max Health Changed: (%.1f) -> (%.1f)"), OldValue, NewValue);
-
 		AdjustAttributeForMaxChange(OldValue, NewValue, GetHealthAttribute());	// 변경된 MaxHealth값 기준으로 Health값 보정
 		OnHealthChange.Broadcast(GetHealth(), NewValue);
 	}
@@ -57,9 +53,7 @@ void UEnemyAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 		const float LocalDamage = GetDamage();
 		SetDamage(0.f);	// Damage 즉시 비우기
 
-		//UE_LOG(LogTemp, Log, TEXT("[UEnemyAttributeSet] Damage Effected: %.1f"), LocalDamage);
-
-		if (LocalDamage > 0)
+		if (LocalDamage > 0.f)
 		{
 			float FinalDamage = LocalDamage;	// 방어력이 없으므로 Damage 그대로 받음 (필요 시 수식 추가)
 			FinalDamage = FMath::Max(1.f, FinalDamage);	// 맞으면 최소 1
@@ -84,7 +78,9 @@ void UEnemyAttributeSet::AdjustAttributeForMaxChange(float InOldValue, float InN
 {
 	UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
 	if (!ASC)
+	{
 		return;
+	}
 
 	float Delta = InNewValue - InOldValue;
 
