@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Enemy/Datas/EnemyPatternExecutionSettings.h"
+#include "Enemy/Data/EnemyPatternExecutionSettings.h"
 #include "TurretRainPatternSettings.generated.h"
 
 class ATurret;

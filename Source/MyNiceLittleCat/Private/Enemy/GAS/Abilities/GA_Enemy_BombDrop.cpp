@@ -1,5 +1,5 @@
 #include "Enemy/GAS/Abilities/GA_Enemy_BombDrop.h"
-#include "Enemy/Datas/BombDropPatternSettings.h"
+#include "Enemy/Data/BombDropPatternSettings.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/Bomb/BombEnemy.h"
 #include "Characters/PlayerCharacter.h"

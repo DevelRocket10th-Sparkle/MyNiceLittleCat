@@ -13,7 +13,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 
-#include "Enemy/Datas/BossMovementTypes.h"
+#include "Enemy/Data/BossMovementTypes.h"
 
 #include "BossPhaseConfigData.generated.h"
 

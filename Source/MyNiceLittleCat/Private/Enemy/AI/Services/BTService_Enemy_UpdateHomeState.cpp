@@ -11,7 +11,7 @@
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Vector.h"
 
 #include "Enemy/AI/EnemyBlackboardKeys.h"
-#include "Enemy/Datas/EnemyConfigData.h"
+#include "Enemy/Data/EnemyConfigData.h"
 #include "Enemy/EnemyCharacter.h"
 
 UBTService_Enemy_UpdateHomeState::UBTService_Enemy_UpdateHomeState()

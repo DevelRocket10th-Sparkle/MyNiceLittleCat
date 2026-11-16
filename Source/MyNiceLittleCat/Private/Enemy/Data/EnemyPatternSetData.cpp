@@ -1,4 +1,4 @@
-#include "Enemy/Datas/EnemyPatternSetData.h"
+#include "Enemy/Data/EnemyPatternSetData.h"
 
 #include "Abilities/GameplayAbility.h"
 

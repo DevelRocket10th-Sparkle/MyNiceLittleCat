@@ -6,7 +6,7 @@
 
 #include "Enemy/Boss/Objects/MoneyGun.h"
 #include "Enemy/Combat/EnemyTargetUtils.h"
-#include "Enemy/Datas/MoneyGunPatternSettings.h"
+#include "Enemy/Data/MoneyGunPatternSettings.h"
 #include "Enemy/EnemyCharacter.h"
 
 namespace

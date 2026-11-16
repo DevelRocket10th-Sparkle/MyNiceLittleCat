@@ -21,8 +21,8 @@
 
 #include "Cinematics/CinematicTypes.h"
 #include "Enemy/AI/EnemyLocomotionProvider.h"
-#include "Enemy/Datas/BossMovementTypes.h"
-#include "Enemy/Datas/BossPhaseConfigData.h"
+#include "Enemy/Data/BossMovementTypes.h"
+#include "Enemy/Data/BossPhaseConfigData.h"
 
 #include "BossPhaseComponent.generated.h"
 

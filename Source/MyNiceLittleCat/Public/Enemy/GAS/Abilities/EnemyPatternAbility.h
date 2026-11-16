@@ -16,7 +16,7 @@
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbility.h"
 
-#include "Enemy/Datas/EnemyPatternSetData.h"
+#include "Enemy/Data/EnemyPatternSetData.h"
 
 #include "EnemyPatternAbility.generated.h"
 

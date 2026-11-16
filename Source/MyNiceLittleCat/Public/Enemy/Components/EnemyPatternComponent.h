@@ -18,7 +18,7 @@
 #include "Components/ActorComponent.h"
 
 #include "GameplayAbilitySpec.h"
-#include "Enemy/Datas/EnemyPatternSetData.h"
+#include "Enemy/Data/EnemyPatternSetData.h"
 
 #include "EnemyPatternComponent.generated.h"
 

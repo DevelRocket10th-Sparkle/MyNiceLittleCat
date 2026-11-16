@@ -1,4 +1,4 @@
-#include "Enemy/Datas/EnemyMeleePatternSettings.h"
+#include "Enemy/Data/EnemyMeleePatternSettings.h"
 
 #if WITH_EDITOR
 #include "Engine/SkeletalMesh.h"

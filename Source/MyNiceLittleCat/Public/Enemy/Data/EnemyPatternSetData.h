@@ -12,7 +12,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "Enemy/Datas/EnemyPatternExecutionSettings.h"
+#include "Enemy/Data/EnemyPatternExecutionSettings.h"
 #include "EnemyPatternSetData.generated.h"
 
 class UGameplayAbility;

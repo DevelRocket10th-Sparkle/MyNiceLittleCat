@@ -13,7 +13,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 
-#include "Enemy/Datas/BossMovementTypes.h"
+#include "Enemy/Data/BossMovementTypes.h"
 
 #include "BossEncounterManager.generated.h"
 

@@ -11,7 +11,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Enemy/Datas/EnemyPatternExecutionSettings.h"
+#include "Enemy/Data/EnemyPatternExecutionSettings.h"
 #include "BossLaserGridPatternSettings.generated.h"
 
 class UAnimMontage;

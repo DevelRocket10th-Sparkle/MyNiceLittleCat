@@ -11,7 +11,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
-#include "Enemy/Datas/EnemyConfigData.h"
+#include "Enemy/Data/EnemyConfigData.h"
 
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"

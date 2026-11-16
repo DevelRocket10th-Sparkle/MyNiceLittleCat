@@ -11,7 +11,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Enemy/Datas/EnemyMeleePatternSettings.h"
+#include "Enemy/Data/EnemyMeleePatternSettings.h"
 #include "EnemyMeleeTraceComponent.generated.h"
 
 class UMeshComponent;

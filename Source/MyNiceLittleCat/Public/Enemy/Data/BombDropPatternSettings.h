@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Enemy/Datas/EnemyPatternExecutionSettings.h"
+#include "Enemy/Data/EnemyPatternExecutionSettings.h"
 #include "BombDropPatternSettings.generated.h"
 
 class ABombEnemy;

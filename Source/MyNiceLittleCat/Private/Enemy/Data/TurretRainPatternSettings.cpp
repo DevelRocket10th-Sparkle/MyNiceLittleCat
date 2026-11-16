@@ -1,4 +1,4 @@
-#include "Enemy/Datas/TurretRainPatternSettings.h"
+#include "Enemy/Data/TurretRainPatternSettings.h"
 #include "Gimmicks/Turret/Turret.h"
 
 bool UTurretRainPatternSettings::IsValidConfiguration() const

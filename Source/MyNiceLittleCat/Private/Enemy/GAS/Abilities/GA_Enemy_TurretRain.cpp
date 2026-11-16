@@ -1,5 +1,5 @@
 #include "Enemy/GAS/Abilities/GA_Enemy_TurretRain.h"
-#include "Enemy/Datas/TurretRainPatternSettings.h"
+#include "Enemy/Data/TurretRainPatternSettings.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Gimmicks/Turret/Turret.h"
 #include "Characters/PlayerCharacter.h"

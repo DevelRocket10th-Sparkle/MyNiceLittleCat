@@ -9,7 +9,7 @@
 
 #include "Enemy/Combat/EnemyTargetUtils.h"
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
-#include "Enemy/Datas/EnemyMeleePatternSettings.h"
+#include "Enemy/Data/EnemyMeleePatternSettings.h"
 #include "Enemy/EnemyCharacter.h"
 
 /* UEnemyPatternAbility / UGA_Enemy_MeleeAttack */

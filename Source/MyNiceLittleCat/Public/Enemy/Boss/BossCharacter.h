@@ -14,8 +14,8 @@
 #include "CoreMinimal.h"
 #include "Enemy/EnemyCharacter.h"
 
-#include "Enemy/Datas/BossMovementTypes.h"
-#include "Enemy/Datas/BossPhaseConfigData.h"
+#include "Enemy/Data/BossMovementTypes.h"
+#include "Enemy/Data/BossPhaseConfigData.h"
 
 #include "BossCharacter.generated.h"
 

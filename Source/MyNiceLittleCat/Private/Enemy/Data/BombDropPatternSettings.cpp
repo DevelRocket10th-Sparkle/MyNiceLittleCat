@@ -1,4 +1,4 @@
-#include "Enemy/Datas/BombDropPatternSettings.h"
+#include "Enemy/Data/BombDropPatternSettings.h"
 #include "Enemy/Bomb/BombEnemy.h"
 
 bool UBombDropPatternSettings::IsValidConfiguration() const

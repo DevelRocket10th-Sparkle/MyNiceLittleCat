@@ -18,7 +18,7 @@
 #include "Perception/AISense_Sight.h"
 
 #include "Enemy/AI/EnemyBlackboardKeys.h"
-#include "Enemy/Datas/EnemyConfigData.h"
+#include "Enemy/Data/EnemyConfigData.h"
 #include "Enemy/EnemyCharacter.h"
 
 AEnemyAIController::AEnemyAIController()
