@@ -8,8 +8,7 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
 #include "Components/InputComponent.h"
-#include "Enemy/Boss/Stage3BossCinematics.h"
-#include "EngineUtils.h"
+#include "Cinematics/CinematicSubsystem.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "Gimmicks/InteractionVolumeComponent.h"
 #include "WIdgets/Interaction/InteractionPromptWidget.h"
@@ -107,10 +106,11 @@ void UInteractionComponent::HandleInteractKey()
 
 bool UInteractionComponent::TryInteract()
 {
-	for (TActorIterator<AStage3BossCinematics> It(GetWorld()); It; ++It)
+	// 스킵 가능한 컷신 중에는 상호작용 키를 스킵으로 사용 (어느 시스템이 재생한 컷신이든 동일)
+	if (UCinematicSubsystem* Cinematics = GetWorld()->GetSubsystem<UCinematicSubsystem>();
+		Cinematics && Cinematics->TrySkipActiveCutscene())
 	{
-		if (It->TrySkipActiveCut(GetOwner()))
-			return true;
+		return true;
 	}
 
 	if (IsAligning())

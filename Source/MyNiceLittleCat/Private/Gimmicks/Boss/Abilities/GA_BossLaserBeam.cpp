@@ -7,7 +7,6 @@
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/Boss/BossCharacter.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
-#include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "AIController.h"
@@ -85,7 +84,7 @@ void UGA_BossLaserBeam::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 			Enemy->GetAttributeSet()->GetAttackPower(), ExecutionPattern.DamageMultiplier);
 	}
 
-	// UsePhaseDefault면 이동은 BT(페이즈 정책)에 맡기고, 그 외 (Stop 등)일 때만 제자리 고정
+	// FollowLocomotion이면 이동은 BT(페이즈 기본 이동)에 맡기고, 그 외 (Stop 등)일 때만 제자리 고정
 	const bool bFollowPhaseMovement = ExecutionPattern.Movement.Policy == EEnemyPatternMovementPolicy::FollowLocomotion;
 	if (!bFollowPhaseMovement)
 	{
@@ -105,8 +104,7 @@ void UGA_BossLaserBeam::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	if (bFollowPhaseMovement)
 	{
 		const ABossCharacter* Boss = Cast<ABossCharacter>(Enemy.Get());
-		const UEnemyPhaseComponent* PhaseComp = Boss ? Boss->GetPhaseComponent() : nullptr;
-		const FBossPhaseDefinition* CurrentPhase = PhaseComp ? PhaseComp->GetCurrentPhase() : nullptr;
+		const FBossPhaseDefinition* CurrentPhase = Boss ? Boss->GetCurrentPhaseDefinition() : nullptr;
 		if (CurrentPhase)
 		{
 			LaserMoveSpeedMultiplier = CurrentPhase->ResolveActiveMoveSpeedMultiplier(ExecutionPattern.PatternId);

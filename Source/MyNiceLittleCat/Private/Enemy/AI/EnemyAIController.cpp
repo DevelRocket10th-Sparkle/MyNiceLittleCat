@@ -3,44 +3,41 @@
 
 #include "Enemy/AI/EnemyAIController.h"
 
-#include "DrawDebugHelpers.h"
-
-#include "Navigation/PathFollowingComponent.h"
-#include "Perception/AIPerceptionComponent.h"
-#include "Perception/AISenseConfig_Sight.h"
-#include "Perception/AISense_Sight.h"
-#include "Perception/AIPerceptionTypes.h"
-#include "GameFramework/Pawn.h"
-
-#include "BrainComponent.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
+#include "BehaviorTree/BlackboardData.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Bool.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Vector.h"
+#include "BrainComponent.h"
+#include "GameFramework/Pawn.h"
+#include "Navigation/PathFollowingComponent.h"
+#include "Perception/AIPerceptionComponent.h"
+#include "Perception/AIPerceptionTypes.h"
+#include "Perception/AISenseConfig_Sight.h"
+#include "Perception/AISense_Sight.h"
 
-#include "Enemy/EnemyCharacter.h"
-#include "Enemy/Datas/EnemyConfigData.h"
-#include "Enemy/Boss/BossCharacter.h"
 #include "Enemy/AI/EnemyBlackboardKeys.h"
+#include "Enemy/Datas/EnemyConfigData.h"
+#include "Enemy/EnemyCharacter.h"
 
 AEnemyAIController::AEnemyAIController()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// AI 로직 자동 실행 방지
-	// -> Enemy의 초기화 완료를 확인한 뒤 직접 시작
+	// AI 로직 자동 실행 방지: Enemy 초기화 완료를 확인한 뒤 TryStartEnemyAI에서 직접 시작
 	bStartAILogicOnPossess = false;
+
+	/* 시야 인지 */
 
 	EnemyPerception = CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("EnemyPerception"));
 	SetPerceptionComponent(*EnemyPerception);
-	
+
 	SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
 
-	// 감지 시작 거리
+	// 기본값: 실제 값은 TryStartEnemyAI에서 EnemyConfigData로 덮어씀
 	SightConfig->SightRadius = 1000.f;
-
-	// 이미 발견한 대상을 시야에서 놓치는 거리
 	SightConfig->LoseSightRadius = 1200.f;
-
-	// 정면 기준 좌우 각각 60도
 	SightConfig->PeripheralVisionAngleDegrees = 60.f;
 
 	// 현재 팀 구분이 없기 때문에 전부 감지하고, 이벤트에서 플레이어만 선택
@@ -54,57 +51,195 @@ AEnemyAIController::AEnemyAIController()
 	EnemyPerception->OnTargetPerceptionUpdated.AddDynamic(this, &AEnemyAIController::HandleTargetPerceptionUpdated);
 }
 
+/* AI 시작 */
+
+// 캐릭터 준비 확인 → 인지 범위 적용 → Blackboard 준비/검증 → BT 시작
+void AEnemyAIController::TryStartEnemyAI()
+{
+	// 현재 제어 중인 Enemy
+	AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetPawn());
+	if (!IsValid(Enemy) || !Enemy->CanRunEnemyAI())
+	{
+		return;
+	}
+
+	// 이미 실행 중이면 중복 시작 방지
+	if (const UBrainComponent* Brain = GetBrainComponent(); Brain && Brain->IsRunning())
+	{
+		return;
+	}
+
+	// Enemy 설정과 BT 확인
+	const UEnemyConfigData* Config = Enemy->GetEnemyConfig();
+	UBehaviorTree* Tree = IsValid(Config) ? Config->BehaviorTree.Get() : nullptr;
+	if (!IsValid(Tree) || !IsValid(Tree->BlackboardAsset))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[%s] BehaviorTree or Blackboard asset is missing"), *GetNameSafe(Enemy));
+		return;
+	}
+
+	/* 캐릭터별 인지 범위 적용 */
+
+	SightConfig->SightRadius = Config->SightRadius;
+	SightConfig->LoseSightRadius = FMath::Max(Config->SightRadius, Config->LoseSightRadius);
+	SightConfig->PeripheralVisionAngleDegrees = Config->PeripheralVisionHalfAngle;
+	EnemyPerception->ConfigureSense(*SightConfig);
+	EnemyPerception->RequestStimuliListenerUpdate();
+
+	/* Blackboard 준비 및 검증 */
+
+	UBlackboardComponent* BlackboardComp = nullptr;
+	if (!UseBlackboard(Tree->BlackboardAsset, BlackboardComp) || !BlackboardComp)
+	{
+		return;
+	}
+
+	// 필수 키가 없으면 BT를 시작하지 않음: "실행 중 조용히 실패"하지 않고 시작할 때 크게 실패
+	if (!CacheBlackboardKeys(*BlackboardComp))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[%s] Blackboard '%s' is missing required keys. AI not started."),
+			*GetNameSafe(Enemy), *GetNameSafe(Tree->BlackboardAsset));
+		return;
+	}
+
+	/* 초기 값 */
+
+	if (HomeLocationKey != FBlackboard::InvalidKey)
+	{
+		BlackboardComp->SetValue<UBlackboardKeyType_Vector>(HomeLocationKey, Enemy->GetActorLocation());
+	}
+	SetBlackboardBool(CanActKey, true);
+
+	/* BT 실행 */
+
+	if (!RunBehaviorTree(Tree))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[%s] Failed to run BehaviorTree"), *GetName());
+		return;
+	}
+
+	OnBehaviorTreeStarted();
+}
+
+bool AEnemyAIController::CacheBlackboardKeys(const UBlackboardComponent& BlackboardComponent)
+{
+	TargetActorKey = FindKey(BlackboardComponent, EnemyBlackboardKeys::TargetActor, UBlackboardKeyType_Object::StaticClass(), true);
+	HomeLocationKey = FindKey(BlackboardComponent, EnemyBlackboardKeys::HomeLocation, UBlackboardKeyType_Vector::StaticClass(), false);
+	CanActKey = FindKey(BlackboardComponent, EnemyBlackboardKeys::CanAct, UBlackboardKeyType_Bool::StaticClass(), false);
+
+	return TargetActorKey != FBlackboard::InvalidKey;
+}
+
+/* 타깃 */
+
+// 유효한 전투 타깃을 Blackboard와 Focus에 반영
+void AEnemyAIController::SetCombatTarget(AActor* NewTarget)
+{
+	if (!IsValid(NewTarget))
+	{
+		ClearCombatTarget();
+		return;
+	}
+
+	// 자기 자신을 타깃으로 지정하지 않음
+	if (NewTarget == GetPawn())
+	{
+		return;
+	}
+
+	UBlackboardComponent* BlackboardComp = GetBlackboardComponent();
+	if (!IsValid(BlackboardComp))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[%s] SetCombatTarget: Blackboard is missing"), *GetName());
+		return;
+	}
+
+	// BT 시작 전(튜토리얼처럼 빙의 직후 지정)에도 동작하도록 캐시가 없으면 이름으로 찾음
+	const FBlackboard::FKey Key = TargetActorKey != FBlackboard::InvalidKey
+		? TargetActorKey
+		: BlackboardComp->GetKeyID(EnemyBlackboardKeys::TargetActor);
+	if (Key == FBlackboard::InvalidKey)
+	{
+		return;
+	}
+
+	BlackboardComp->SetValue<UBlackboardKeyType_Object>(Key, NewTarget);
+
+	// 컨트롤러가 타깃 방향을 계산하고, 캐릭터는 설정된 회전 속도로 천천히 따라감
+	SetFocus(NewTarget, EAIFocusPriority::Gameplay);
+}
+
 // Blackboard 타깃과 전투 Focus 해제
 void AEnemyAIController::ClearCombatTarget()
 {
 	if (UBlackboardComponent* BlackboardComp = GetBlackboardComponent())
 	{
-		BlackboardComp->ClearValue(EnemyBlackboardKeys::TargetActor);
+		const FBlackboard::FKey Key = TargetActorKey != FBlackboard::InvalidKey
+			? TargetActorKey
+			: BlackboardComp->GetKeyID(EnemyBlackboardKeys::TargetActor);
+		if (Key != FBlackboard::InvalidKey)
+		{
+			BlackboardComp->ClearValue(Key);
+		}
 	}
 
 	ClearFocus(EAIFocusPriority::Gameplay);
 }
 
-void AEnemyAIController::SetPhaseHoldYaw(float Yaw)
+// 잡몹의 발견 및 시야 상실을 타깃 변경에 반영
+void AEnemyAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 {
-	PhaseHoldDirection = FRotator(0.f, Yaw, 0.f).Vector();
-	bPhaseHoldActive = true;
-
-	// 다음 Tick을 기다리지 않고 즉시 Focus 설정
-	if (APawn* ControlledPawn = GetPawn())
+	// 보스처럼 외부에서 타깃을 정하는 컨트롤러는 인지 결과를 무시
+	if (!ShouldTrackPerceivedTargets())
 	{
-		SetFocalPoint(ControlledPawn->GetPawnViewLocation() + PhaseHoldDirection * 1000.f, EnemyFocusPriority::PhaseHold);
+		return;
+	}
+
+	const AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetPawn());
+	if (!IsValid(Enemy) || !Enemy->IsEnemyInitialized() || !Enemy->IsAlive())
+	{
+		return;
+	}
+
+	// 플레이어가 조종하는 Pawn만 공격 대상으로 선택
+	APawn* DetectedPawn = Cast<APawn>(Actor);
+	if (!IsValid(DetectedPawn) || !DetectedPawn->IsPlayerControlled())
+	{
+		return;
+	}
+
+	if (Stimulus.WasSuccessfullySensed())
+	{
+		SetCombatTarget(DetectedPawn);
+		return;
+	}
+
+	// 현재 타깃을 놓친 경우에만 해제 → BT가 복귀 분기 선택
+	const UBlackboardComponent* BlackboardComp = GetBlackboardComponent();
+	if (IsValid(BlackboardComp) && TargetActorKey != FBlackboard::InvalidKey
+		&& BlackboardComp->GetValue<UBlackboardKeyType_Object>(TargetActorKey) == DetectedPawn)
+	{
+		ClearCombatTarget();
 	}
 }
 
-void AEnemyAIController::ClearPhaseHold()
-{
-	bPhaseHoldActive = false;
-	ClearFocus(EnemyFocusPriority::PhaseHold);
-}
+/* 프레임 갱신 및 빙의 */
 
-// 활성 상태의 매 프레임 처리
 void AEnemyAIController::Tick(float DeltaSeconds)
 {
-	AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetPawn());
+	Super::Tick(DeltaSeconds);
 
-	// 부모 Tick에서 회전을 계산하기 전에 Focus 위치 갱신
-	// 보스가 이동해도 같은 월드 방향을 바라보도록 설정
-	if (IsValid(Enemy) && bPhaseHoldActive)
+	AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetPawn());
+	if (!IsValid(Enemy))
 	{
-		// 고정된 장소가 아니라 방향을 유지하기 위해 현재 시선 위치 앞에 가상 목표점을 만듦
-		// 1000.f는 시선 목표점까지의 거리이며, 이동 거리나 도착 반경이 아님
-		SetFocalPoint(Enemy->GetPawnViewLocation() + PhaseHoldDirection * 1000.f, EnemyFocusPriority::PhaseHold);
+		return;
 	}
 
-	Super::Tick(DeltaSeconds);
-	
-	if (!IsValid(Enemy))
-		return;
-
+	// 경로 이동 중인지 AnimInstance에 전달 (이동 애니메이션 재생 여부)
 	const UPathFollowingComponent* PathFollowingComp = GetPathFollowingComponent();
-
-	const bool bWantsToMove = Enemy->IsAlive() && IsValid(PathFollowingComp) && PathFollowingComp->GetStatus() == EPathFollowingStatus::Moving;
+	const bool bWantsToMove = Enemy->IsAlive()
+		&& IsValid(PathFollowingComp)
+		&& PathFollowingComp->GetStatus() == EPathFollowingStatus::Moving;
 
 	Enemy->SetWantsToMove(bWantsToMove);
 }
@@ -126,10 +261,8 @@ void AEnemyAIController::OnUnPossess()
 		Brain->StopLogic(TEXT("Enemy unpossessed"));
 	}
 
-	StopMovement();			// 움직임 멈추기
-	ClearCombatTarget();	// 전투 종료
-
-	ClearPhaseHold();
+	StopMovement();
+	ClearCombatTarget();
 	ClearFocus(EnemyFocusPriority::AttackFacing);
 
 	if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetPawn()))
@@ -141,138 +274,40 @@ void AEnemyAIController::OnUnPossess()
 	Super::OnUnPossess();
 }
 
-// 잡몹의 발견 및 시야 상실을 타깃 변경에 반영
-void AEnemyAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
+/* Blackboard 도우미 */
+
+FBlackboard::FKey AEnemyAIController::FindKey(const UBlackboardComponent& Blackboard, FName KeyName,
+	TSubclassOf<UBlackboardKeyType> ExpectedType, bool bRequired)
 {
-	AEnemyCharacter* Enemy = Cast <AEnemyCharacter>(GetPawn());
-	if (!IsValid(Enemy) || !Enemy->IsEnemyInitialized() || !Enemy->IsAlive())
-		return;
+	const FBlackboard::FKey KeyId = Blackboard.GetKeyID(KeyName);
+	const UBlackboardData* Asset = Blackboard.GetBlackboardAsset();
 
-	// 보스의 타깃은 보스방 관리자가 선정하며 시야 상실로 초기화하지 않음
-	if (Cast<ABossCharacter>(Enemy))
+	// 키 없음
+	if (KeyId == FBlackboard::InvalidKey || !Asset)
 	{
-		return;
-	}
-	APawn* DetectedPawn = Cast<APawn>(Actor);
-	// 플레이어가 조종하는 Pawn만 공격 대상으로 선택
-	if (!IsValid(DetectedPawn) || !DetectedPawn->IsPlayerControlled())
-		return;
-
-	if (Stimulus.WasSuccessfullySensed())
-	{
-		SetCombatTarget(DetectedPawn);
-	}
-	else
-	{
-		UBlackboardComponent* BlackboardComp = GetBlackboardComponent();
-		if (!IsValid(BlackboardComp))
-			return;
-
-		// 타겟 잃었으면 집 가기
-		if (IsValid(BlackboardComp)
-			&& BlackboardComp->GetValueAsObject(EnemyBlackboardKeys::TargetActor) == DetectedPawn)
+		if (bRequired)
 		{
-			ClearCombatTarget();
+			UE_LOG(LogTemp, Error, TEXT("[Blackboard] '%s' requires key '%s'"), *GetNameSafe(Asset), *KeyName.ToString());
 		}
+		return FBlackboard::InvalidKey;
 	}
+
+	// 타입 불일치: 다른 타입 값을 읽고 쓰면 조용히 실패하므로 여기서 차단
+	if (Asset->GetKeyType(KeyId) != ExpectedType)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[Blackboard] '%s' key '%s' must be %s"),
+			*GetNameSafe(Asset), *KeyName.ToString(), *GetNameSafe(ExpectedType.Get()));
+		return FBlackboard::InvalidKey;
+	}
+
+	return KeyId;
 }
 
-// 캐릭터 준비와 전투 상태 확인 후 Blackboard 및 BT 시작
-void AEnemyAIController::TryStartEnemyAI()
+void AEnemyAIController::SetBlackboardBool(FBlackboard::FKey KeyId, bool bValue)
 {
-	/* 현재 제어 중인 Pawn 확인 */
-	AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetPawn());
-	if (!IsValid(Enemy))
-		return;
-
-	/* Enemy 초기화 여부 및 생존 여부 확인 */
-	if (!Enemy->CanRunEnemyAI())
-		return;
-
-	/* 이미 실행 중이면 중복 시작 방지 */
-	if (UBrainComponent* Brain = GetBrainComponent())
-	{
-		if (Brain->IsRunning())
-			return;
-	}
-
-	/* Enemy 설정과 BT 확인 */
-	const UEnemyConfigData* Config = Enemy->GetEnemyConfig();
-
-	if (!IsValid(Config) || !IsValid(Config->BehaviorTree))
-		return;
-
-	UBehaviorTree* Tree = Config->BehaviorTree;
-	if (!IsValid(Tree->BlackboardAsset))
-	{
-		return;
-	}
-	// 캐릭터별 인지 범위를 Controller 인스턴스에 적용
-	SightConfig->SightRadius = Config->SightRadius;
-	SightConfig->LoseSightRadius = FMath::Max(Config->SightRadius, Config->LoseSightRadius);
-	SightConfig->PeripheralVisionAngleDegrees = Config->PeripheralVisionHalfAngle;
-	EnemyPerception->ConfigureSense(*SightConfig);
-	EnemyPerception->RequestStimuliListenerUpdate();
-	
-	/* Blackboard 준비 */
-	UBlackboardComponent* BlackboardComp = nullptr;
-	if (!UseBlackboard(Tree->BlackboardAsset, BlackboardComp))
-		return;
-
-	/* 초기 값 설정 */
-	BlackboardComp->SetValueAsVector(EnemyBlackboardKeys::HomeLocation, Enemy->GetActorLocation());
-
-	BlackboardComp->SetValueAsBool(EnemyBlackboardKeys::CanAct, true);
-
-	// 보스 전환 브랜치에서 사용하는 필수 키가 없으면 시작하지 않음
-	if (Cast<ABossCharacter>(Enemy) && BlackboardComp->GetKeyID(EnemyBlackboardKeys::PhaseTransitionRequested) == FBlackboard::InvalidKey)
-	{
-		UE_LOG(LogTemp, Error, TEXT("Boss blackboard requires PhaseTransitionRequested."));
-		return;
-	}
-
-	/* BT 실행 */
-	if (!RunBehaviorTree(Tree))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[%s] Failed to run BehaviorTree"), *GetName());
-	}
-	if (ABossCharacter* Boss = Cast<ABossCharacter>(Enemy))
-	{
-		Boss->RefreshBossBlackboard();
-	}
-}
-
-// 유효한 전투 타깃을 Blackboard에 전달
-void AEnemyAIController::SetCombatTarget(AActor * NewTarget)
-{
-	// 타깃 유효성 검사
-	if (!IsValid(NewTarget))
-	{
-		ClearCombatTarget();
-		return;
-	}
-
-	// 자기 자신을 타깃으로 지정하지 않음
-	if (NewTarget == GetPawn())
-		return;
-
 	UBlackboardComponent* BlackboardComp = GetBlackboardComponent();
-	if (!IsValid(BlackboardComp))
-		return;
-	if (!IsValid(BlackboardComp))
+	if (BlackboardComp && KeyId != FBlackboard::InvalidKey)
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[SetCombatTarget] Blackboard is missing"));
-
-		return;
+		BlackboardComp->SetValue<UBlackboardKeyType_Bool>(KeyId, bValue);
 	}
-	
-	// 타깃 지정
-	BlackboardComp->SetValueAsObject(EnemyBlackboardKeys::TargetActor, NewTarget);
-	UE_LOG(LogTemp, Warning,
-		TEXT("[SetCombatTarget] Stored Target=%s"),
-		*GetNameSafe(BlackboardComp->GetValueAsObject(
-			EnemyBlackboardKeys::TargetActor)));
-
-	SetFocus(NewTarget, EAIFocusPriority::Gameplay);	// 컨트롤러가 플레이어 방향 계산하여 캐릭터가 설정된 속도로 천천히 따름
 }
