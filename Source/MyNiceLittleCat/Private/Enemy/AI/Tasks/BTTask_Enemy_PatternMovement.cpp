@@ -254,7 +254,7 @@ void UBTTask_Enemy_PatternMovement::RefreshMovement()
 
 	// 공격 실행 중 Stop/AbilityDriven은 패턴이 결정
 	// 공격 전, 방향 정렬, UsePhaseDefault, 후딜은 이동 모드를 따름 (후딜은 이동 잠금으로 정지)
-	const bool bFollowLocomotion = !bHasPattern || Movement.Policy == EEnemyPatternMovementPolicy::UsePhaseDefault;
+	const bool bFollowLocomotion = !bHasPattern || Movement.Policy == EEnemyPatternMovementPolicy::FollowLocomotion;
 
 	// 다음 행동 결정
 	if (!bFollowLocomotion)

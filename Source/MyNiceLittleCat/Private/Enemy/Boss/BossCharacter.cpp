@@ -82,7 +82,7 @@ bool ABossCharacter::InitializeEnemyExtensions()
 					continue;
 				}
 
-				if (Pattern.bLogOnly || !Pattern.bCheckTargetDistance
+				if (!Pattern.bCheckTargetDistance
 					|| (Pattern.MinRange <= Radius && Radius < Pattern.MaxRange))
 				{
 					bUsableAtArrival = true;

@@ -86,7 +86,7 @@ void UGA_BossLaserBeam::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	}
 
 	// UsePhaseDefault면 이동은 BT(페이즈 정책)에 맡기고, 그 외 (Stop 등)일 때만 제자리 고정
-	const bool bFollowPhaseMovement = ExecutionPattern.Movement.Policy == EEnemyPatternMovementPolicy::UsePhaseDefault;
+	const bool bFollowPhaseMovement = ExecutionPattern.Movement.Policy == EEnemyPatternMovementPolicy::FollowLocomotion;
 	if (!bFollowPhaseMovement)
 	{
 		// 보스를 지점으로 옮기지 않고 지금 자리에서 쏨 (이동은 보스 쪽 이동 패턴 담당)

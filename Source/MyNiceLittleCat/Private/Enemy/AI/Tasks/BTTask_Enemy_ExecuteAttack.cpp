@@ -91,7 +91,7 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeCompon
 	CachedPatternComp->SetReservedPattern(SelectedPatternId);
 	
 	// 실제 패턴 실행 전에 타깃 방향 회전을 기다려야 하는지 검사
-	const bool bNeedsFacing = !Definition.bLogOnly && Definition.bFaceTargetOnStart && IsValid(Target);
+	const bool bNeedsFacing = Definition.bFaceTargetOnStart && IsValid(Target);
 	if (!bNeedsFacing)
 	{
 		// 사전 방향 회전이 필요 없으면 선택한 패턴을 즉시 실행

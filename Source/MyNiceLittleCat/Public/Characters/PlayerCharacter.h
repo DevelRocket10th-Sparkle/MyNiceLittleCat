@@ -9,6 +9,7 @@
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
 #include "AbilitySystemComponent.h"
+#include "Interfaces/TargetableInterface.h"
 #include "PlayerCharacter.generated.h"
 
 class USpringArmComponent;
@@ -30,7 +31,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPlayerDied);
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnPotionCountChanged, int32 /*Current*/, int32 /*Max*/);
 
 UCLASS()
-class MYNICELITTLECAT_API APlayerCharacter : public ACharacter, public IAbilitySystemInterface
+class MYNICELITTLECAT_API APlayerCharacter : public ACharacter, public IAbilitySystemInterface, public ITargetableInterface
 {
 	GENERATED_BODY()
 
@@ -39,6 +40,14 @@ public:
 	APlayerCharacter();
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
+	// 엔진 표준 피해 경로 (UGameplayStatics::ApplyDamage, ApplyPointDamage) -> ApplyPlayerHit
+	// - 무적, 사망 확인과 GAS 피해 적용은 ApplyPlayerHit이 그대로 처리
+	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
+
+	// ITargetableInterface: 공격/락온 대상으로 유효한지 (사망 전)
+	// - 락온은 자기 자신을 제외하므로 플레이어가 구현해도 자기 자신을 락온하지 않음
+	virtual bool IsTargetAlive_Implementation() const override { return !bIsDead; }
 
 	void SetbIsAbleToDodge(bool bNewIsAbleToDodge) { bIsAbleToDodge = bNewIsAbleToDodge; }
 	bool GetbIsAbleToAttack() const { return bIsAbleToAttack; }
