@@ -3,6 +3,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Gimmicks/Reflection/ReflectionMath.h"
 #include "NavAreas/NavArea_Null.h"
+#include "NiagaraFunctionLibrary.h"
 
 APetReflector::APetReflector()
 {
@@ -97,4 +98,18 @@ bool APetReflector::BreakByLaser_Implementation(AActor* LaserInstigator)
 
     Destroy();
     return true;
+}
+
+void APetReflector::PlayRemoveEffect() const
+{
+    // 에셋을 안 넣었으면 조용히 건너뜀 (크래시 방지)
+    if (nullptr == RemoveEffect) return;
+
+    // 반사판 중심 + 반사판 회전 그대로 → 판 모양 파편 이펙트면 방향이 맞게 나옴
+    // bAutoDestroy=true: 재생이 끝나면 컴포넌트가 알아서 정리됨
+    // 풀링(AutoRelease): 철거를 자주 하니까 컴포넌트를 재사용해서 스폰 비용을 줄임
+    UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+        GetWorld(), RemoveEffect,
+        GetActorLocation(), GetActorRotation(), RemoveEffectScale,
+        true, true, ENCPoolMethod::AutoRelease);
 }

@@ -985,5 +985,7 @@ void UGameplayAbility_PetReflect::HandleSpecialAction(FGameplayEventData Payload
         if (const UPetSoundData* Sounds = Pet->GetSoundData())
             Pet->PlayPetSoundAtLocation(Sounds->RemoveSound, Reflector->GetActorLocation());
 
+    Reflector->PlayRemoveEffect();
+
     Reflector->Destroy();
 }
