@@ -58,6 +58,28 @@ namespace
 		return true;
 	}
 
+	// 착지점이 플레이어가 갈 수 있는 곳인지 (문 위·벽 위·문 너머 제외)
+	// 1) 착지점 바로 근처에 내비메시가 있어야 함  2) 플레이어에서 착지점까지 벽·문에 막히지 않아야 함
+	bool IsBombLandingReachable(UWorld* World, const AActor* Target, const AActor* Boss, const FVector& Ground)
+	{
+		if (!World || !Target) return false;
+
+		if (UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World))
+		{
+			FNavLocation NavLoc;
+			if (!NavSys->ProjectPointToNavigation(Ground, NavLoc, FVector(60.f, 60.f, 80.f))) return false;
+		}
+
+		FCollisionObjectQueryParams ObjectParams;
+		ObjectParams.AddObjectTypesToQuery(ECC_WorldStatic);
+		ObjectParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(BombDropLanding), false);
+		Params.AddIgnoredActor(Target);
+		if (Boss) Params.AddIgnoredActor(Boss);
+
+		return !World->LineTraceTestByObjectType(Target->GetActorLocation(), Ground + FVector(0.f, 0.f, 60.f), ObjectParams, Params);
+	}
+
 	// 보스가 죽거나 사라지거나 플레이어가 죽으면 스폰된 액터를 제거하는 감시 타이머 (어빌리티 인스턴스 수명과 무관)
 	// 보스 사망 시 패턴 컴포넌트가 GA를 회수해서 GA 쪽 바인딩만으로는 정리가 안 됨
 	template <typename TSpawned, typename TKillFunc>
@@ -235,6 +257,22 @@ void UGA_Enemy_BombDrop::DropNext()
 			ProjectBombAimToNavMesh(GetWorld(), Settings, PlayerGround, Aim);
 		}
 		bHasGround = FindGround(Aim, Ground) && FMath::Abs(Ground.Z - PlayerGround.Z) <= Settings->MaxGroundHeightDifference;
+	}
+
+	// 문 너머·문 위처럼 플레이어가 못 가는 곳이면 플레이어 발밑 근처로 다시 조준 (그래도 안 되면 이번 폭탄은 건너뜀)
+	if (bHasGround && !IsBombLandingReachable(GetWorld(), Target.Get(), Enemy.Get(), Ground))
+	{
+		bHasGround = false;
+		FVector Fallback;
+		if (FindGround(Target->GetActorLocation(), Fallback))
+		{
+			Aim = Fallback;
+			if (Settings->bKeepOnNavMesh)
+			{
+				ProjectBombAimToNavMesh(GetWorld(), Settings, Fallback, Aim);
+			}
+			bHasGround = FindGround(Aim, Ground) && IsBombLandingReachable(GetWorld(), Target.Get(), Enemy.Get(), Ground);
+		}
 	}
 
 	if (bHasGround)

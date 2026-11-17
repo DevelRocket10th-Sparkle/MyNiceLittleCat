@@ -31,5 +31,10 @@ protected:
 
 private:
 	FTimerHandle HideTimerHandle; // 말풍선 숨김 타이머
+
+	// 말풍선 뜰 때 소리 (펫 말풍선만)
+	void PlaySaySound() const;
+
+	FText LastMessage; // 마지막으로 띄운 내용 (같은 말 반복이면 소리 생략)
 	
 };

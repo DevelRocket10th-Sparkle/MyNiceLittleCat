@@ -11,6 +11,7 @@
 
 class UButton;
 class UWidget;
+class UDifficultySelectWidget;
 /**
  * 
  */
@@ -29,7 +30,9 @@ protected:
 	UFUNCTION() void HandleConfirmYes();
 	UFUNCTION() void HandleConfirmNo();
 
-	void StartNewGame();
+	void ShowDifficultySelect();
+	void CloseDifficultySelect();
+	void StartNewGame(bool bEasyMode);
 
 protected:
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UButton> NewGameButton;
@@ -44,4 +47,11 @@ protected:
 	// 새 게임 시작 레벨
 	UPROPERTY(EditDefaultsOnly, Category = "Title")
 	FName NewGameLevel = TEXT("Lv_Tutorial");
+
+	// 새 게임 난이도 선택 창 (WBP_DifficultySelect)
+	UPROPERTY(EditDefaultsOnly, Category = "Title")
+	TSubclassOf<UDifficultySelectWidget> DifficultySelectClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UDifficultySelectWidget> DifficultySelect;
 };
