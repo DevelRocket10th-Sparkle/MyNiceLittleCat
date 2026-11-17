@@ -21,6 +21,11 @@
 #include "Engine/GameInstance.h"
 #include "Items/InventorySubsystem.h"
 #include "Items/ItemAbilityTags.h"
+#include "Pet/Data/PetSoundData.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
+#include "Characters/PlayerCharacter.h"
+#include "Pet/PetFacialComponent.h"
 
 APetCharacter::APetCharacter()
 {
@@ -73,6 +78,9 @@ APetCharacter::APetCharacter()
 	GetCapsuleComponent()->SetCollisionProfileName(TEXT("Pet"));
 	// 외형 메시는 충돌 판정에서 제외
 	GetMesh()->SetCollisionProfileName(TEXT("NoCollision"));
+
+	// 표정 컴포넌트
+	FacialComponent = CreateDefaultSubobject<UPetFacialComponent>(TEXT("FacialComponent"));
 }
 
 void APetCharacter::BeginPlay()
@@ -123,6 +131,11 @@ void APetCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		if (UInventorySubsystem* Inventory = GI->GetSubsystem<UInventorySubsystem>())
 			Inventory->OnAbilityUnlocked.RemoveDynamic(this, &APetCharacter::HandleAbilityUnlocked);
 
+	// 플레이어보다 펫이 먼저 사라지면 구독 해제
+	if (APlayerCharacter* Player = BoundDeathPlayer.Get())
+		Player->OnPlayerDied.RemoveDynamic(this, &APetCharacter::HandlePartnerDied);
+	BoundDeathPlayer.Reset();
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -149,6 +162,16 @@ void APetCharacter::InitializePet(const FPetInitializationData& _data)
 	RequestedBehavior = _data.InitialBehavior;
 	bInitialized = true;
 
+	// 이전 플레이어 사망 알림 해제 -> 새 플레이어에 연결
+	// 의도: 리스폰 때마다 InitializePet이 다시 불리니까, 여기서 갈아끼우면 항상 지금 플레이어만 바라봐요
+	if (APlayerCharacter* OldPlayer = BoundDeathPlayer.Get())
+		OldPlayer->OnPlayerDied.RemoveDynamic(this, &APetCharacter::HandlePartnerDied);
+
+	BoundDeathPlayer = Cast<APlayerCharacter>(_data.PartnerPlayer.Get());
+
+	if (APlayerCharacter* NewPlayer = BoundDeathPlayer.Get())
+		NewPlayer->OnPlayerDied.AddUniqueDynamic(this, &APetCharacter::HandlePartnerDied);
+
 	// 초기 세팅이 끝나면 컨트롤러에게 알려줘요
 	if (APetAIController* PetController = Cast<APetAIController>(GetController()))
 		PetController->StartPetLogic();
@@ -168,6 +191,16 @@ bool APetCharacter::RequestBehavior(EPetBehavior NewBehavior)
 	if ((NewBehavior == EPetBehavior::MoveTo) || (NewBehavior == EPetBehavior::AbilityMoveTo)) return false;
 
 	if((EPetBehavior::Follow == NewBehavior) && (false == IsValid(GetPartnerPlayer())))
+		return false;
+
+	// 사망 반응도 플레이어가 있어야 의미가 있어요
+	if ((EPetBehavior::MournPlayer == NewBehavior) && (false == IsValid(GetPartnerPlayer())))
+		return false;
+
+	// 사망 반응 중에는 다른 행동 요청을 받지 않아요
+	// 의도: Follow/MagnetPosition/RecoverFollow Task가 같은 프레임에 행동을 덮어쓰는 걸 막아요
+	//       리스폰 때는 InitializePet이 RequestedBehavior를 직접 바꾸니까 여기 안 걸려요
+	if ((EPetBehavior::MournPlayer == RequestedBehavior) && (EPetBehavior::MournPlayer != NewBehavior))
 		return false;
 
 	CancelAbilityMove(ActiveAbilityMoveRequestId);
@@ -194,6 +227,8 @@ void APetCharacter::DebugRequestMoveTo()
 bool APetCharacter::RequestMoveTo(const FVector& _destination)
 {
 	if (false == bInitialized) return false;
+	if (EPetBehavior::MournPlayer == RequestedBehavior) return false; // 사망 반응 중엔 이동 명령 무시
+
 	if (true == _destination.ContainsNaN()) return false;
 
 	CancelAbilityMove(ActiveAbilityMoveRequestId);
@@ -209,6 +244,8 @@ bool APetCharacter::RequestMode(EPetMode _newMode)
 {
 	if(false == bInitialized)
 		return false;
+
+	if (EPetBehavior::MournPlayer == RequestedBehavior) return false; // 사망 반응 중엔 모드 변경 불가
 
 	// 올바른 모드가 요청된건지 확인해요
 	switch (_newMode)
@@ -279,6 +316,8 @@ void APetCharacter::RequestModeUseInput(EPetModeUseInputPhase Phase)
 {
 	if (false == bInitialized) return;
 
+	if (EPetBehavior::MournPlayer == RequestedBehavior) return; // 사망 반응 중엔 우클릭 무시
+
 	// 누르는중 ? + 누름/놓음/취소 전달
 	switch (Phase)
 	{
@@ -305,6 +344,8 @@ void APetCharacter::RequestModeUseInput(EPetModeUseInputPhase Phase)
 void APetCharacter::RequestSpecialAction()
 {
 	if (false == bInitialized) return;
+
+	if (EPetBehavior::MournPlayer == RequestedBehavior) return; // 사망 반응 중엔 Q 무시
 
 	const FGameplayTag SpecialActionTag = FGameplayTag::RequestGameplayTag(TEXT("Pet.SpecialAction"));
 
@@ -623,6 +664,86 @@ void APetCharacter::DebugLockPolarityN() { LockMagnetPolarity(EPetMagnetPolarity
 void APetCharacter::DebugLockPolarityS() { LockMagnetPolarity(EPetMagnetPolarity::S); }
 void APetCharacter::DebugUnlockPolarity() { UnlockMagnetPolarity(); }
 
+void APetCharacter::PlayPetSound2D(USoundBase* _sound) const
+{
+	// 슬롯이 비어 있으면 조용히 무시 (에셋 채우기 전에도 게임은 정상 동작)
+	if (false == IsValid(_sound)) return;
+
+	UGameplayStatics::PlaySound2D(this, _sound);
+}
+
+void APetCharacter::PlayPetSound3D(USoundBase* _sound) const
+{
+	PlayPetSoundAtLocation(_sound, GetActorLocation());
+}
+
+void APetCharacter::PlayPetSoundAtLocation(USoundBase* _sound, const FVector& _location) const
+{
+	if (false == IsValid(_sound)) return;
+
+	// 데이터에 감쇠가 있으면 그걸 쓰고, 없으면 nullptr → 사운드 에셋 자체 설정을 따라요
+	// 의도: 펫 3D 소리의 들리는 거리를 한 곳(DA)에서 통일해서 조절
+	USoundAttenuation* Attenuation = IsValid(SoundData) ? SoundData->Attenuation.Get() : nullptr;
+
+	UGameplayStatics::PlaySoundAtLocation(this, _sound, _location, FRotator::ZeroRotator,
+		1.f, 1.f, 0.f, Attenuation);
+}
+
+void APetCharacter::HandlePartnerDied()
+{
+	APawn* Player = GetPartnerPlayer();
+	if (false == bInitialized || false == IsValid(Player)) return;
+
+	// 순서가 중요해요: 아래 두 줄은 Behavior를 바꾸기 "전에" 불러야 입력 막기에 안 걸려요
+	// 1) 누르고 있던 우클릭부터 놓기 → 능력 쪽에 "놓음"이 먼저 전달되게
+	RequestModeUseInput(EPetModeUseInputPhase::Canceled);
+
+	// 2) 기본 모드로 → PetSelectedModeAbilityTask가 자성/반사 능력을 취소해요
+	RequestMode(EPetMode::Basic);
+
+	// 3) 플레이어 옆 자리를 목적지로 (Approach 상태의 Pet Move To가 이 값을 읽어요)
+	MoveDestination = CalculateMournLocation(Player);
+
+	// 4) 반응 행동 시작 (이후 펫 입력은 막혀요)
+	RequestBehavior(EPetBehavior::MournPlayer);
+}
+
+bool APetCharacter::TeleportToPartner()
+{
+	APawn* Player = GetPartnerPlayer();
+	if (false == bInitialized || false == IsValid(Player)) return false;
+
+	// 진행 중이던 이동부터 전부 멈춤 (Mourn의 Approach 이동, 위치 복구 타이머)
+	if (AAIController* PetController = Cast<AAIController>(GetController()))
+		PetController->StopMovement();
+	CancelNavigationRecovery();
+	GetCharacterMovement()->StopMovementImmediately();
+
+	// 플레이어 오른쪽을 우선 후보로 → 플레이어가 보이는 자리 먼저, 없으면 아무 빈자리
+	// 의도: 처음 스폰할 때(오른쪽 300)와 비슷한 위치에 나타나서 어색하지 않게
+	const FVector Preferred = Player->GetActorLocation() + Player->GetActorRightVector() * 150.f;
+	FVector SafeLocation;
+	const bool bFound = TryFindSafeRecoveryLocation(Preferred, SafeLocation, true) || TryFindSafeRecoveryLocation(Preferred, SafeLocation);
+	if (false == bFound) return false; // 자리가 없으면 기존처럼 Follow가 알아서 따라옴
+
+	// 플레이어와 같은 방향을 보게
+		// 나타난 자리에서 플레이어 쪽을 바라보게 (수평 방향만)
+	// 의도: 부활한 플레이어를 반기는 느낌. 위아래 기울기는 빼서 펫이 고개를 숙이거나 들지 않게
+	const FVector ToPlayer = (Player->GetActorLocation() - SafeLocation).GetSafeNormal2D();
+	const FRotator Facing = ToPlayer.IsNearlyZero()
+		? FRotator(0.f, Player->GetActorRotation().Yaw, 0.f) // 겹친 위치면 기존처럼 플레이어와 같은 방향
+		: ToPlayer.Rotation();
+
+	if (false == SetActorLocationAndRotation(SafeLocation, Facing, false, nullptr, ETeleportType::TeleportPhysics))
+		return false;
+
+	// 등장 소리 (기존 순간이동 복귀 소리 재사용)
+	if (SoundData)
+		PlayPetSound3D(SoundData->RecoveryTeleportSound);
+
+	return true;
+}
+
 void APetCharacter::GrantModeAbilities()
 {
 	// 해금된 모드만 능력 부여 (잠긴 모드는 해금되는 순간 HandleAbilityUnlocked에서 부여)
@@ -681,6 +802,28 @@ void APetCharacter::HandleAbilityUnlocked(FGameplayTag _abilityTag, UItemData* _
 	}
 }
 
+FVector APetCharacter::CalculateMournLocation(const APawn* _player) const
+{
+	const FVector PlayerLocation = _player->GetActorLocation();
+
+	// 펫이 있던 쪽 방향 (겹쳐 있으면 플레이어 뒤쪽)
+	FVector Direction = (GetActorLocation() - PlayerLocation).GetSafeNormal2D();
+	if (true == Direction.IsNearlyZero())
+		Direction = -_player->GetActorForwardVector().GetSafeNormal2D();
+
+	const FVector Desired = PlayerLocation + Direction * MournStandDistance;
+
+	// 네비메시 위의 점으로 맞춤 (못 찾으면 계산한 점 그대로 → MoveTo가 실패하면 제자리 반응)
+	if (UNavigationSystemV1* NavSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()))
+	{
+		FNavLocation NavLocation;
+		if (true == NavSystem->ProjectPointToNavigation(Desired, NavLocation, FVector(50.f, 50.f, 200.f), &GetNavAgentPropertiesRef()))
+			return NavLocation.Location;
+	}
+
+	return Desired;
+}
+
 void APetCharacter::TryCompleteNavigationRecovery()
 {
 	if (false == bNavigationRecoveryPending) return;
@@ -698,6 +841,12 @@ void APetCharacter::TryCompleteNavigationRecovery()
 		// 목적지의 충돌·지면·경로는 위 함수에서 검사한 상태.
 		const bool bMoved = SetActorLocation(RecoveryLocation, false, nullptr, ETeleportType::TeleportPhysics);
 		if (false == bMoved) return;
+
+		// 순간이동 복귀 소리 (도착 지점에서 뿅)
+		// 의도: 실제로 자리를 옮겼을 때만 재생
+		//       → 제자리에서 이동만 복원하거나, 0.5초 재시도가 실패할 때는 조용히
+		if (true == IsValid(SoundData))
+			PlayPetSound3D(SoundData->RecoveryTeleportSound);
 	}
 
 	// 현재 위치 또는 복귀 위치가 유효하면 이동 복원

@@ -187,6 +187,9 @@ void AMainGameMode::SetupPet(AController* Controller)
 		return;
 	}
 
+	// 이미 펫이 있었다 = 리스폰 (처음 스폰이면 플레이어 옆에 막 생겼으니 순간이동 필요 없음)
+	const bool bIsRespawn = IsValid(Pet);
+
 	if (!IsValid(Pet))
 	{
 		if (!PetClass)
@@ -234,6 +237,10 @@ void AMainGameMode::SetupPet(AController* Controller)
 	InitData.PartnerPlayer = PlayerPawn;
 	InitData.InitialBehavior = PetInitialBehavior;
 	Pet->InitializePet(InitData);
+
+	// 리스폰이면 죽은 자리에서 날아오지 않고 새 플레이어 옆에 바로 나타나게
+	if (true == bIsRespawn)
+		Pet->TeleportToPartner();
 
 	if (APlayerMainController* PlayerController = Cast<APlayerMainController>(Controller))
 	{

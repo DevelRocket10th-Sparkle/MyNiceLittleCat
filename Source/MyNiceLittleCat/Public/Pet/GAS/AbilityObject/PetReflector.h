@@ -40,6 +40,11 @@ public:
 	// [추가: 최요환 2026-10-27] 반사판 파괴형 레이저(보스 격자 레이저)에 맞으면 즉시 파괴 (IReflectiveSurfaceInterface::BreakByLaser 참고)
 	// 설치 목록(UGameplayAbility_PetReflect::PlacedReflectors)은 파괴된 반사판을 자동으로 정리하므로 따로 알릴 필요 없음
 	virtual bool BreakByLaser_Implementation(AActor* LaserInstigator) override;
+
+	// 철거될 때 반사판 자리에 일회성 이펙트를 남김
+	// 의도: 액터는 바로 Destroy되니까 이펙트는 "월드에" 따로 스폰해야 함 (Attached로 붙이면 액터와 같이 사라짐)
+	void PlayRemoveEffect() const;
+
 	// ========================================================================================
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Reflector")
@@ -54,4 +59,12 @@ protected:
 	// 철거 하이라이트에 쓸 스텐실 값 (플레이어 실루엣이 1을 쓰므로 2)
 	UPROPERTY(EditDefaultsOnly, Category = "Reflector|Remove", meta = (ClampMin = "1", ClampMax = "255"))
 	int32 RemoveOutlineStencilValue = 2;
+
+	// 철거 이펙트 에셋 (BP_PetReflector에서 지정)
+	UPROPERTY(EditDefaultsOnly, Category = "Reflector|Remove")
+	TObjectPtr<class UNiagaraSystem> RemoveEffect;
+
+	// 이펙트 크기 배율 (반사판 크기에 맞춰 BP에서 조절)
+	UPROPERTY(EditDefaultsOnly, Category = "Reflector|Remove")
+	FVector RemoveEffectScale = FVector::OneVector;
 };
