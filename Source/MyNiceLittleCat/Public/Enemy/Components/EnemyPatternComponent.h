@@ -250,12 +250,13 @@ private :
 	// 살아 있는 슬롯과 남은 생성물이 점유한 자원·위험 태그와 위험도 합
 	void CollectOccupied(FGameplayTagContainer& OutResources, int32& OutThreat) const;
 
-	// 자동 선택 후보 수집: 가중치 > 0, 실행 조건, 자원·위험도 통과 (보조 후보는 몸을 쓰지 않는 패턴만)
+	// 자동 선택 후보 수집: 가중치 > 0, 실행 조건, 자원·위험도 통과 (보조 후보는 보조 가능 패턴만)
 	void CollectCandidates(AActor* Target, bool bCompanion, const TSet<FName>& Excluded,
 		TArray<const FEnemyPatternDefinition*>& OutCandidates) const;
 
-	// 점유 중인 자원·위험도와 겹치지 않고 함께 실행할 수 있는지
-	bool CanJoin(const FEnemyPatternDefinition& Pattern, const FGameplayTagContainer& Occupied, int32 OccupiedThreat) const;
+	// 점유 중인 자원·위험도와 겹치지 않고 함께 실행할 수 있는지 (보조면 보조 실행 자원으로 판정)
+	bool CanJoin(const FEnemyPatternDefinition& Pattern, const FGameplayTagContainer& Occupied, int32 OccupiedThreat,
+		bool bAsCompanion = false) const;
 
 	// 패턴이 몸(Resource.Body)을 쓰는지
 	bool UsesBody(FName PatternId) const;
@@ -264,7 +265,8 @@ private :
 	const FEnemyPatternDefinition* PickWeighted(TConstArrayView<const FEnemyPatternDefinition*> Candidates) const;
 
 	// 패턴의 유효 자원 계산: GA 기본 자원 + 패턴 추가 자원 + 몸 사용 자동 판정
-	FGameplayTagContainer ResolvePatternResources(const FEnemyPatternDefinition& Pattern) const;
+	// - bAsCompanion이면 보조 실행용: 패턴 설정에 따른 몸 사용은 붙이지 않음 (보조는 몸 설정을 쓰지 않음)
+	FGameplayTagContainer ResolvePatternResources(const FEnemyPatternDefinition& Pattern, bool bAsCompanion = false) const;
 
 	/* 슬롯 관리 */
 
@@ -329,6 +331,9 @@ private :
 
 	// 패턴 ID와 유효 자원·위험 태그 (초기화 때 계산)
 	TMap<FName, FGameplayTagContainer> PatternResources;
+
+	// 보조로 실행할 수 있는 패턴 ID와 보조 실행 때의 자원 (bCanRunAsCompanion이고 GA가 몸을 쓰지 않는 패턴만)
+	TMap<FName, FGameplayTagContainer> CompanionResources;
 
 	// 현재 상황에서 실행을 허용한 패턴 ID와 가중치 재정의
 	TSet<FName> AvailablePatterns;

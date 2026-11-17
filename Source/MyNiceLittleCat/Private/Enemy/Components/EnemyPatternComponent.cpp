@@ -71,6 +71,21 @@ bool UEnemyPatternComponent::InitializePatterns(UAbilitySystemComponent* InASC, 
 
 		PatternHandles.Add(Pattern.PatternId, Handle);
 		PatternResources.Add(Pattern.PatternId, ResolvePatternResources(Pattern));
+
+		// 보조 가능 패턴: GA 클래스 자체가 몸을 쓰면 체크해도 보조로 쓰지 않음 (근접, 돌진, 레이저 빔)
+		if (Pattern.bCanRunAsCompanion)
+		{
+			FGameplayTagContainer AsCompanion = ResolvePatternResources(Pattern, true);
+			if (AsCompanion.HasTag(EnemyCombatTags::PatternResourceBody))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[EnemyPattern] %s: '%s' uses the body by its ability class and cannot run as a companion"),
+					*GetNameSafe(GetOwner()), *Pattern.PatternId.ToString());
+			}
+			else
+			{
+				CompanionResources.Add(Pattern.PatternId, MoveTemp(AsCompanion));
+			}
+		}
 	}
 
 	/* 3) 종료 이벤트 구독: 모든 패턴 GA를 한 번에 받아 Spec Handle로 슬롯을 찾음 */
@@ -486,7 +501,20 @@ bool UEnemyPatternComponent::IsBodyBusy() const
 		}
 
 		const FGameplayAbilitySpec* Spec = ASC->FindAbilitySpecFromHandle(Pair.Value);
-		if (Spec && Spec->IsActive())
+		if (!Spec || !Spec->IsActive())
+		{
+			continue;
+		}
+
+		// 보조로 실행 중이면 몸 설정을 쓰지 않으므로 몸 사용이 아님
+		const FGameplayAbilitySpecHandle Handle = Pair.Value;
+		const bool bRunningAsCompanion = Slots.ContainsByPredicate(
+			[&Handle](const FEnemyPatternSlot& Slot)
+			{
+				return !Slot.bPrimary && Slot.AbilityHandle == Handle;
+			});
+
+		if (!bRunningAsCompanion)
 		{
 			return true;
 		}
@@ -694,12 +722,13 @@ void UEnemyPatternComponent::CollectCandidates(AActor* Target, bool bCompanion, 
 			continue;
 		}
 
-		if (bCompanion && UsesBody(Pattern.PatternId))
+		// 보조 후보: 보조 가능으로 체크했고 GA가 몸을 쓰지 않는 패턴만
+		if (bCompanion && !CompanionResources.Contains(Pattern.PatternId))
 		{
 			continue;
 		}
 
-		if (CanExecutePattern(Pattern, Target) && CanJoin(Pattern, Occupied, OccupiedThreat))
+		if (CanExecutePattern(Pattern, Target) && CanJoin(Pattern, Occupied, OccupiedThreat, bCompanion))
 		{
 			OutCandidates.Add(&Pattern);
 		}
@@ -746,9 +775,12 @@ void UEnemyPatternComponent::CollectOccupied(FGameplayTagContainer& OutResources
 }
 
 // 점유 중인 자원·위험도와 겹치지 않고 함께 실행할 수 있는지
-bool UEnemyPatternComponent::CanJoin(const FEnemyPatternDefinition& Pattern, const FGameplayTagContainer& Occupied, int32 OccupiedThreat) const
+bool UEnemyPatternComponent::CanJoin(const FEnemyPatternDefinition& Pattern, const FGameplayTagContainer& Occupied, int32 OccupiedThreat,
+	bool bAsCompanion) const
 {
-	const FGameplayTagContainer* Resources = PatternResources.Find(Pattern.PatternId);
+	const FGameplayTagContainer* Resources = bAsCompanion
+		? CompanionResources.Find(Pattern.PatternId)
+		: PatternResources.Find(Pattern.PatternId);
 	if (!Resources)
 	{
 		return false;
@@ -812,7 +844,7 @@ const FEnemyPatternDefinition* UEnemyPatternComponent::PickWeighted(TConstArrayV
 }
 
 // 패턴의 유효 자원: GA 기본 자원 + 패턴 추가 자원 + 몸 사용 자동 판정
-FGameplayTagContainer UEnemyPatternComponent::ResolvePatternResources(const FEnemyPatternDefinition& Pattern) const
+FGameplayTagContainer UEnemyPatternComponent::ResolvePatternResources(const FEnemyPatternDefinition& Pattern, bool bAsCompanion) const
 {
 	FGameplayTagContainer Resources = Pattern.Resources;
 
@@ -823,9 +855,10 @@ FGameplayTagContainer UEnemyPatternComponent::ResolvePatternResources(const FEne
 	}
 
 	// 패턴 설정이 몸을 제어하면 자동으로 몸 점유 (회전 잠금, 시작 정렬, 정지/GA 이동)
-	// - 기존 패턴의 기본값은 모두 여기에 해당 → 독립 패턴으로 쓰려면 세 설정을 끄고 FollowLocomotion으로 둠
-	const bool bControlsBody = Pattern.bLockRotation || Pattern.bFaceTargetOnStart
-		|| Pattern.Movement.Policy != EEnemyPatternMovementPolicy::FollowLocomotion;
+	// - 보조 실행은 이 설정들을 끄고 실행하므로(AddSlot) 붙이지 않음
+	const bool bControlsBody = !bAsCompanion
+		&& (Pattern.bLockRotation || Pattern.bFaceTargetOnStart
+			|| Pattern.Movement.Policy != EEnemyPatternMovementPolicy::FollowLocomotion);
 
 	if (bControlsBody)
 	{
@@ -846,7 +879,15 @@ FEnemyPatternSlot& UEnemyPatternComponent::AddSlot(const FEnemyPatternDefinition
 	Slot.Pattern = Pattern;
 	Slot.Target = Target;
 	Slot.AbilityHandle = PatternHandles.FindChecked(Pattern.PatternId);
-	Slot.Resources = PatternResources.FindRef(Pattern.PatternId);
+	Slot.Resources = bPrimary ? PatternResources.FindRef(Pattern.PatternId) : CompanionResources.FindRef(Pattern.PatternId);
+
+	// 보조 실행: 몸은 주 패턴이 쓰므로 GA가 읽는 설정 복사본에서 몸 제어를 끔
+	if (!bPrimary)
+	{
+		Slot.Pattern.bFaceTargetOnStart = false;
+		Slot.Pattern.bLockRotation = false;
+		Slot.Pattern.Movement.Policy = EEnemyPatternMovementPolicy::FollowLocomotion;
+	}
 	Slot.Threat = Pattern.Threat;
 	Slot.Result = EEnemyPatternResult::Running;
 	Slot.bPrimary = bPrimary;
@@ -1198,6 +1239,7 @@ void UEnemyPatternComponent::ClearGrantedAbilities()
 	AbilityEndedDelegateHandle.Reset();
 	PatternHandles.Reset();
 	PatternResources.Reset();
+	CompanionResources.Reset();
 	AvailablePatterns.Reset();
 	WeightOverrides.Reset();
 }

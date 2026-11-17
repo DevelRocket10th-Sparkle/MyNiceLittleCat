@@ -130,10 +130,17 @@ struct FEnemyPatternDefinition
 
 	/* 동시 실행: 페이즈의 MaxConcurrentPatterns가 2 이상일 때만 의미 있음 */
 
-	// 이 패턴이 추가로 점유하는 자원과 위험 태그 (GA 클래스 기본 자원에 더해짐)
+	// 다른 패턴이 실행 중일 때 보조로 함께 실행될 수 있는지
+	// - 보조로 실행될 때는 시작 정렬, 회전 잠금, 이동 정책을 쓰지 않음 (몸은 주 패턴이 사용)
+	// - 주 패턴으로 뽑혔을 때는 위 설정을 그대로 사용
+	// - 근접, 돌진, 레이저 빔처럼 GA 자체가 몸을 쓰는 패턴은 체크해도 보조로 뽑히지 않음
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Concurrency")
+	bool bCanRunAsCompanion = false;
+
+	// 이 패턴이 추가로 점유하는 자원과 위험 태그 (선택: 겹치면 안 되는 조합이 있을 때만)
 	// - Enemy.Pattern.Resource.*: 실행 중에만 점유. 같은 자원을 쓰는 패턴끼리는 동시에 실행하지 않음
 	// - Enemy.Pattern.Hazard.*: 실행 중 + GA가 등록한 생성물(폭탄, 장판)이 남아 있는 동안 점유
-	// - 몸을 쓰는 패턴(회전 잠금, 시작 정렬, Stop/AbilityDriven 이동)은 Resource.Body가 자동으로 붙음
+	// - 주 패턴으로 실행될 때 몸을 쓰는 설정(회전 잠금, 시작 정렬, Stop/AbilityDriven 이동)이면 Resource.Body가 자동으로 붙음
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Concurrency", meta = (Categories = "Enemy.Pattern"))
 	FGameplayTagContainer Resources;
 
@@ -144,7 +151,7 @@ struct FEnemyPatternDefinition
 
 	// 보조 패턴으로 뽑혔을 때 시작 지연: 앞 패턴을 보고 피할 시간 (주 패턴에는 적용하지 않음)
 	// - 지연 동안에도 동시 실행 수와 자원은 이미 점유 (예약)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Concurrency", meta = (ClampMin = "0.0", Units = "s"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Concurrency", meta = (EditCondition = "bCanRunAsCompanion", ClampMin = "0.0", Units = "s"))
 	float CompanionStartDelay = 0.f;
 
 	// 값 범위 검사: 에디터 데이터 검사와 런타임 초기화 같은 규칙을 사용
