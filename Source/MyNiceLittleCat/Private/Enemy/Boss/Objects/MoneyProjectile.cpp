@@ -45,8 +45,8 @@ void AMoneyProjectile::Launch(const FVector& Direction, float Speed, float Damag
 	Movement->Activate();
 	SetLifeSpan(LifeSeconds);
 
-	// 비행 연출: 메시에 붙여 두면 탄환 제거 때 함께 정리됨
-	EnemyFeedback::PlayAttached(TrailCue, Mesh);
+	// 외형이 펄럭여도 궤적은 탄환의 진행 방향을 따른다.
+	EnemyFeedback::PlayAttached(TrailCue, Collision);
 }
 
 void AMoneyProjectile::Tick(float DeltaSeconds)

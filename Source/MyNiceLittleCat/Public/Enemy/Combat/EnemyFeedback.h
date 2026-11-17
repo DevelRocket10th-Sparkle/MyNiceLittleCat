@@ -49,6 +49,7 @@ struct FEnemyFeedbackCue
 struct MYNICELITTLECAT_API FEnemyFeedbackInstance
 {
 	TWeakObjectPtr<UNiagaraComponent> Effect;
+	TWeakObjectPtr<AActor> Visual;
 	TWeakObjectPtr<UAudioComponent> Sound;
 
 	// 이펙트는 새 입자 생성만 멈추고(남은 입자는 자연 소멸), 소리는 짧게 페이드아웃
@@ -59,9 +60,9 @@ namespace EnemyFeedback
 {
 	// 월드 위치에서 소리와 이펙트 재생 (이펙트는 재생이 끝나면 자동 제거)
 	MYNICELITTLECAT_API void PlayAtLocation(const UObject* WorldContext, const FEnemyFeedbackCue& Cue,
-		const FVector& Location, const FRotator& Rotation = FRotator::ZeroRotator);
+		const FVector& Location, const FRotator& Rotation = FRotator::ZeroRotator, FName StageCue = NAME_None);
 
 	// 컴포넌트(소켓)에 붙여 재생: 반복 연출을 끌 때 쓰는 핸들 반환
 	MYNICELITTLECAT_API FEnemyFeedbackInstance PlayAttached(const FEnemyFeedbackCue& Cue, USceneComponent* AttachTo,
-		FName Socket = NAME_None);
+		FName Socket = NAME_None, const FVector& Offset = FVector::ZeroVector, FName StageCue = NAME_None);
 }

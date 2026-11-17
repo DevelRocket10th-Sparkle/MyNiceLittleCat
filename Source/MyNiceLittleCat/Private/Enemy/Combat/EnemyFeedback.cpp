@@ -1,4 +1,5 @@
 #include "Enemy/Combat/EnemyFeedback.h"
+#include "Enemy/Combat/FeedbackVisual.h"
 
 #include "Components/AudioComponent.h"
 #include "Components/SceneComponent.h"
@@ -19,14 +20,19 @@ void FEnemyFeedbackInstance::Stop(float SoundFadeOutSeconds)
 		SoundComponent->FadeOut(FMath::Max(0.f, SoundFadeOutSeconds), 0.f);
 	}
 
+	if (AActor* Actor = Visual.Get())
+	{
+		Actor->Destroy();
+	}
+	Visual.Reset();
 	Effect.Reset();
 	Sound.Reset();
 }
 
 void EnemyFeedback::PlayAtLocation(const UObject* WorldContext, const FEnemyFeedbackCue& Cue,
-	const FVector& Location, const FRotator& Rotation)
+	const FVector& Location, const FRotator& Rotation, FName StageCue)
 {
-	if (!WorldContext || !Cue.IsSet())
+	if (!WorldContext)
 		return;
 
 	if (Cue.Sound)
@@ -34,16 +40,20 @@ void EnemyFeedback::PlayAtLocation(const UObject* WorldContext, const FEnemyFeed
 		UGameplayStatics::PlaySoundAtLocation(WorldContext, Cue.Sound, Location, Rotation, 1.f, 1.f, 0.f, Cue.Attenuation);
 	}
 
-	if (Cue.Effect)
+	const EFeedbackVisual Style = StageCue.IsNone()
+		? ResolveFeedbackVisual(Cue.Effect) : ResolveStageFeedbackVisual(StageCue, Cue.Effect);
+	const FTransform Transform(Rotation, Location, FVector(Cue.EffectScale));
+	if (!AFeedbackVisual::Play(WorldContext, Style, Transform) && Cue.Effect)
 	{
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(WorldContext, Cue.Effect, Location, Rotation, FVector(Cue.EffectScale));
 	}
 }
 
-FEnemyFeedbackInstance EnemyFeedback::PlayAttached(const FEnemyFeedbackCue& Cue, USceneComponent* AttachTo, FName Socket)
+FEnemyFeedbackInstance EnemyFeedback::PlayAttached(const FEnemyFeedbackCue& Cue, USceneComponent* AttachTo,
+	FName Socket, const FVector& Offset, FName StageCue)
 {
 	FEnemyFeedbackInstance Instance;
-	if (!IsValid(AttachTo) || !Cue.IsSet())
+	if (!IsValid(AttachTo))
 		return Instance;
 
 	if (Cue.Sound)
@@ -52,10 +62,15 @@ FEnemyFeedbackInstance EnemyFeedback::PlayAttached(const FEnemyFeedbackCue& Cue,
 			EAttachLocation::SnapToTarget, true, 1.f, 1.f, 0.f, Cue.Attenuation);
 	}
 
-	if (Cue.Effect)
+	const EFeedbackVisual Style = StageCue.IsNone()
+		? ResolveFeedbackVisual(Cue.Effect) : ResolveStageFeedbackVisual(StageCue, Cue.Effect);
+	const FTransform Base = AttachTo->GetSocketTransform(Socket);
+	const FTransform Transform(Base.GetRotation(), Base.TransformPosition(Offset), FVector(Cue.EffectScale));
+	Instance.Visual = AFeedbackVisual::Play(AttachTo, Style, Transform, AttachTo, Socket);
+	if (!Instance.Visual.IsValid() && Cue.Effect)
 	{
 		UNiagaraComponent* Effect = UNiagaraFunctionLibrary::SpawnSystemAttached(Cue.Effect, AttachTo, Socket,
-			FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget, true);
+			Offset, FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset, true);
 		if (Effect)
 		{
 			Effect->SetRelativeScale3D(FVector(Cue.EffectScale));

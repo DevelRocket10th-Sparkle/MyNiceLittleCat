@@ -224,9 +224,9 @@ bool AMoneyGun::Fire()
 	}
 	if (Settings->MuzzleEffect)
 	{
-		// 총구를 따라 움직이도록 붙여서 재생
-		UNiagaraFunctionLibrary::SpawnSystemAttached(Settings->MuzzleEffect, MuzzlePoint, NAME_None,
-			FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget, true);
+		FEnemyFeedbackCue MuzzleCue;
+		MuzzleCue.Effect = Settings->MuzzleEffect;
+		EnemyFeedback::PlayAtLocation(this, MuzzleCue, MuzzlePoint->GetComponentLocation(), MuzzlePoint->GetComponentRotation());
 	}
 	OnShot();
 	return true;

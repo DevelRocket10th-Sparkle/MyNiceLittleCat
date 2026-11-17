@@ -16,7 +16,6 @@
 #include "Enemy/Boss/BossEncounterManager.h"
 #include "Gimmicks/Stage/GimmickDoor.h"
 #include "Interfaces/ActivatableInterface.h"
-#include "NiagaraComponent.h"
 
 namespace
 {
@@ -342,6 +341,7 @@ void AStageEncounterDirector::CancelActiveCut()
 	const FCinematicHandle Cut = ActiveCut;
 	ActiveCut.Reset();
 	ActiveCutTag = NAME_None;
+	StopCinematicCues();
 
 	if (UCinematicSubsystem* Cinematics = GetWorld() ? GetWorld()->GetSubsystem<UCinematicSubsystem>() : nullptr)
 	{
@@ -394,6 +394,10 @@ void AStageEncounterDirector::HandleCutEnded(FCinematicHandle Handle, ECinematic
 	ActiveCut.Reset();
 	ActiveCutTag = NAME_None;
 
+	if (Reason != ECinematicEndReason::Finished)
+	{
+		StopCinematicCues();
+	}
 	CompleteCut(CutTag);
 }
 
@@ -601,7 +605,7 @@ void AStageEncounterDirector::HandleCueMarker(const FCinematicMarkerArgs& Args, 
 	const FStageCinematicCue* Cue = CinematicCues.Find(CueName);
 
 	// 등록하지 않은 이름: 자리만 만들어 둔 마커이므로 조용히 무시
-	if (!Cue || !Cue->Feedback.IsSet())
+	if (!Cue)
 	{
 		return;
 	}
@@ -647,7 +651,7 @@ void AStageEncounterDirector::HandleCueMarker(const FCinematicMarkerArgs& Args, 
 	if (Cue->Target == EStageCueTarget::Stage)
 	{
 		const FTransform Stage = GetStageTransform();
-		EnemyFeedback::PlayAtLocation(this, Cue->Feedback, Stage.TransformPosition(Cue->Offset), Stage.Rotator());
+		EnemyFeedback::PlayAtLocation(this, Cue->Feedback, Stage.TransformPosition(Cue->Offset), Stage.Rotator(), CueName);
 		return;
 	}
 
@@ -661,11 +665,7 @@ void AStageEncounterDirector::HandleCueMarker(const FCinematicMarkerArgs& Args, 
 
 	if (Cue->bAttach)
 	{
-		FEnemyFeedbackInstance Instance = EnemyFeedback::PlayAttached(Cue->Feedback, Anchor, Cue->Socket);
-		if (UNiagaraComponent* Effect = Instance.Effect.Get())
-		{
-			Effect->SetRelativeLocation(Cue->Offset);
-		}
+		FEnemyFeedbackInstance Instance = EnemyFeedback::PlayAttached(Cue->Feedback, Anchor, Cue->Socket, Cue->Offset, CueName);
 
 		if (Cue->StopAfterSeconds > 0.f)
 		{
@@ -683,7 +683,7 @@ void AStageEncounterDirector::HandleCueMarker(const FCinematicMarkerArgs& Args, 
 	/* 그 자리에서 한 번 재생 */
 
 	const FTransform Base = Cue->Socket.IsNone() ? Anchor->GetComponentTransform() : Anchor->GetSocketTransform(Cue->Socket);
-	EnemyFeedback::PlayAtLocation(this, Cue->Feedback, Base.TransformPosition(Cue->Offset), Base.Rotator());
+	EnemyFeedback::PlayAtLocation(this, Cue->Feedback, Base.TransformPosition(Cue->Offset), Base.Rotator(), CueName);
 }
 
 void AStageEncounterDirector::StopCinematicCues()
