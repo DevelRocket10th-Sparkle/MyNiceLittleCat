@@ -1,6 +1,5 @@
 #include "Enemy/GAS/Abilities/GA_Enemy_BombDrop.h"
-#include "Enemy/Datas/BombDropPatternSettings.h"
-#include "Enemy/Components/EnemyPatternComponent.h"
+#include "Enemy/Data/BombDropPatternSettings.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/Bomb/BombEnemy.h"
 #include "Characters/PlayerCharacter.h"
@@ -111,58 +110,47 @@ namespace
 	}
 }
 
-UGA_Enemy_BombDrop::UGA_Enemy_BombDrop()
+// 요청 수신, Enemy 생존 확인, CommitAbility는 부모 ActivateAbility가 처리 → 여기서는 설정만 검사
+bool UGA_Enemy_BombDrop::CanStartPattern() const
 {
-	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
-}
-
-void UGA_Enemy_BombDrop::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
-	const FGameplayEventData* TriggerEventData)
-{
-	Enemy = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo());
-	PatternComponent = Enemy.IsValid() ? Enemy->GetPatternComponent() : nullptr;
-
-	FEnemyPatternDefinition Definition;
-	AActor* ExecutionTarget = nullptr;
-	if (!Enemy.IsValid() || !Enemy->IsAlive() || !PatternComponent.IsValid()
-		|| !PatternComponent->GetActiveExecution(Definition, ExecutionTarget, RequestId))
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
-
-	BindOwnerCleanup(Enemy.Get());
-
-	Settings = Cast<UBombDropPatternSettings>(Definition.ExecutionSettings);
-	Target = ExecutionTarget;
-	if (!Settings || !Settings->IsValidConfiguration() || !Target.IsValid()
-		|| Settings->GetExecutionSeconds() + 0.5f >= Definition.MaxExecutionSeconds
-		|| !CommitAbility(Handle, ActorInfo, ActivationInfo))
+	// 멤버 Settings는 StartPattern에서 채우므로 지역 변수 이름을 따로 씀 (이름 가림 방지)
+	const UBombDropPatternSettings* BombSettings = GetPatternSettings<UBombDropPatternSettings>();
+	if (!BombSettings || !BombSettings->IsValidConfiguration() || !IsValid(ExecutionTarget)
+		|| BombSettings->GetExecutionSeconds() + 0.5f >= ExecutionPattern.MaxExecutionSeconds)
 	{
 		UE_LOG(LogTemp, Error, TEXT("BombDrop: invalid settings or MaxExecutionSeconds too short (needs > %.1f) on %s"),
-			Settings ? Settings->GetExecutionSeconds() + 0.5f : 0.f, *GetNameSafe(Enemy.Get()));
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
+			BombSettings ? BombSettings->GetExecutionSeconds() + 0.5f : 0.f, *GetNameSafe(Enemy.Get()));
+		return false;
 	}
+	return true;
+}
+
+bool UGA_Enemy_BombDrop::StartPattern()
+{
+	// 폭탄은 설정이 유효할 때만 생기므로 바인딩을 설정 검사 뒤로 옮겨도 정리 범위는 같음
+	BindOwnerCleanup(Enemy.Get());
+
+	Settings = GetPatternSettings<UBombDropPatternSettings>();
+	Target = ExecutionTarget.Get();
 
 	// 이미 폭탄이 꽉 차 있으면 이번엔 실행하지 않음 (다른 공격이 선택되도록)
 	if (Settings->MaxAliveBombs > 0 && CountAliveBombs() >= Settings->MaxAliveBombs)
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
-		return;
+		// 기존과 같이 정상 종료(취소 아님): 이미 종료됐으므로 true 반환
+		FinishPattern();
+		return true;
 	}
 
-	if (Definition.bLockRotation)
+	// 회전 잠금 해제는 부모(UEnemyPatternAbility)가 EndAbility에서 처리
+	if (ExecutionPattern.bLockRotation)
 	{
-		Enemy->AcquireRotationLock();
-		bOwnsRotationLock = true;
+		LockRotation();
 	}
 
 	Dropped = 0;
 	GetWorld()->GetTimerManager().SetTimer(CancelCheckTimer, this, &UGA_Enemy_BombDrop::CheckCancel, 0.1f, true);
 	DropNext();
+	return true;
 }
 
 void UGA_Enemy_BombDrop::BindOwnerCleanup(AEnemyCharacter* OwnerEnemy)
@@ -294,7 +282,14 @@ void UGA_Enemy_BombDrop::DropNext()
 		Params.Owner = Enemy.Get();
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
-		if (ABombEnemy* Bomb = GetWorld()->SpawnActor<ABombEnemy>(Settings->BombClass, SpawnLocation, Facing, Params))
+		// 일정 확률로 다른 폭탄(절연체 등)을 섞어서 떨어뜨림
+		TSubclassOf<ABombEnemy> SpawnClass = Settings->BombClass;
+		if (Settings->MixedBombClass && FMath::FRand() < Settings->MixedBombChance)
+		{
+			SpawnClass = Settings->MixedBombClass;
+		}
+
+		if (ABombEnemy* Bomb = GetWorld()->SpawnActor<ABombEnemy>(SpawnClass, SpawnLocation, Facing, Params))
 		{
 			if (Settings->bRandomizePolarity)
 			{
@@ -310,6 +305,10 @@ void UGA_Enemy_BombDrop::DropNext()
 			}
 			Bomb->LaunchCharacter(FVector(0.f, 0.f, -Settings->DropSpeed), true, true);
 			AliveBombs.Add(Bomb);
+
+			// 폭탄이 남아 있는 동안 패턴의 위험 태그와 위험도 유지 (같은 위험 태그의 패턴과 겹치지 않음)
+			RegisterLingeringHazard(Bomb);
+
 			WatchBombOwner(GetWorld(), Bomb, Enemy.Get(), [](ABombEnemy* B)
 			{
 				UE_LOG(LogTemp, Log, TEXT("[BombDrop] Boss gone or player dead -> destroying %s"), *GetNameSafe(B));
@@ -335,21 +334,21 @@ void UGA_Enemy_BombDrop::DropNext()
 	else
 	{
 		// 폭탄은 스스로 움직이므로 다 떨어뜨리면 바로 패턴 종료
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+		FinishPattern();
 	}
 }
 
 void UGA_Enemy_BombDrop::CheckCancel()
 {
-	bool bCancel = !Enemy.IsValid() || !Enemy->IsAlive() || !Target.IsValid()
-		|| !PatternComponent.IsValid() || !PatternComponent->IsRequestRunning(RequestId);
+	// 활성·생존·요청 진행 확인은 부모 도우미로 대체, 타깃 확인만 이 GA의 조건
+	bool bCancel = !IsPatternExecutionValid() || !Target.IsValid();
 	if (const APlayerCharacter* Player = Cast<APlayerCharacter>(Target.Get()))
 	{
 		bCancel |= Player->GetbIsDead();
 	}
 	if (bCancel)
 	{
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		CancelPattern();
 	}
 }
 
@@ -368,24 +367,14 @@ bool UGA_Enemy_BombDrop::FindGround(const FVector& Around, FVector& OutGround) c
 	return true;
 }
 
-void UGA_Enemy_BombDrop::EndAbility(const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
-	bool bReplicateEndAbility, bool bWasCancelled)
+// 부모 EndAbility가 먼저 호출 → 이 정리 뒤에 부모가 회전 잠금 해제, Enemy/PatternComponent/RequestId 초기화, Super::EndAbility 진행
+void UGA_Enemy_BombDrop::StopPattern(bool bWasCancelled)
 {
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(StepTimer);
 		World->GetTimerManager().ClearTimer(CancelCheckTimer);
 	}
-	if (Enemy.IsValid() && bOwnsRotationLock)
-	{
-		Enemy->ReleaseRotationLock();
-	}
-	bOwnsRotationLock = false;
 	Settings = nullptr;
 	Target.Reset();
-	PatternComponent.Reset();
-	Enemy.Reset();
-	RequestId = 0;
-	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

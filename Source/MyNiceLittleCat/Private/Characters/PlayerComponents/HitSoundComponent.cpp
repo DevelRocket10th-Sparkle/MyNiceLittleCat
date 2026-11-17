@@ -2,6 +2,7 @@
 
 #include "Characters/PlayerComponents/HitSoundComponent.h"
 #include "Characters/GAS/PlayerAttributeSet.h"
+#include "Characters/PlayerCharacter.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
 #include "Kismet/GameplayStatics.h"
@@ -59,7 +60,12 @@ void UHitSoundComponent::HandleHealthChanged(const FOnAttributeChangeData& Data)
 void UHitSoundComponent::PlayHitSound()
 {
 	const UWorld* World = GetWorld();
-	const int32 Count = HitSounds.Num();
+
+	// 쉬움 모드면 쉬움 모드용 소리 (비어 있으면 기본 소리)
+	const APlayerCharacter* Player = Cast<APlayerCharacter>(GetOwner());
+	const bool bUseEasy = Player && Player->IsEasyMode() && EasyModeHitSounds.Num() > 0;
+	const TArray<TObjectPtr<USoundBase>>& Sounds = bUseEasy ? EasyModeHitSounds : HitSounds;
+	const int32 Count = Sounds.Num();
 	if (!World || Count == 0)
 	{
 		return;
@@ -73,13 +79,14 @@ void UHitSoundComponent::PlayHitSound()
 	LastPlayTime = Now;
 
 	int32 Index = FMath::RandRange(0, Count - 1);
-	if (Count > 1 && Index == LastIndex)
+	if (Count > 1 && Index == LastIndex && bUseEasy == bLastWasEasy)
 	{
 		Index = (Index + 1 + FMath::RandRange(0, Count - 2)) % Count;
 	}
 	LastIndex = Index;
+	bLastWasEasy = bUseEasy;
 
-	USoundBase* Sound = HitSounds[Index];
+	USoundBase* Sound = Sounds[Index];
 	if (!Sound)
 	{
 		return;

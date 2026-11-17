@@ -1,5 +1,5 @@
 #include "Enemy/Boss/Objects/MoneyProjectile.h"
-#include "Characters/PlayerCharacter.h"
+#include "Enemy/Combat/EnemyTargetUtils.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
@@ -11,12 +11,11 @@ AMoneyProjectile::AMoneyProjectile()
 	SetRootComponent(Collision);
 	Collision->InitSphereRadius(12.f);
 	Collision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	Collision->SetCollisionObjectType(ECC_GameTraceChannel1); // 엔진 설정에 정의한 탄환 전용 충돌 채널
-	Collision->SetCollisionResponseToAllChannels(ECR_Ignore);
-	Collision->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
-	Collision->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-	Collision->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-	Collision->SetCollisionResponseToChannel(ECC_GameTraceChannel1, ECR_Ignore);
+
+	// 충돌 설정은 Project Settings > Collision의 "EnemyProjectile" 프로필로 지정
+	// (채널 번호가 바뀌어도 코드 수정 불필요, 다른 탄환 BP도 같은 프로필 재사용)
+	Collision->SetCollisionProfileName(TEXT("EnemyProjectile"));
+
 	Collision->OnComponentHit.AddDynamic(this, &AMoneyProjectile::HandleHit);
 	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
 	Mesh->SetupAttachment(Collision);
@@ -67,10 +66,13 @@ void AMoneyProjectile::HandleHit(UPrimitiveComponent* HitComponent, AActor* Othe
 		return;
 	}
 	bConsumed = true;
+	
+	// 대상 판정과 피해 전달은 EnemyTargetUtils에 위임 (탄환은 플레이어 타입을 모름)
+	// - 가해자 컨트롤러는 이 탄환의 Instigator(발사한 보스)에서 구함
 	if (HasAuthority())
 	{
-		if (APlayerCharacter* Player = Cast<APlayerCharacter>(OtherActor); Player && !Player->GetbIsDead())
-			Player->ApplyPlayerHit(HitDamage, Movement->Velocity.GetSafeNormal2D());
+		EnemyTargetUtils::ApplyAttackHit(OtherActor, HitDamage, Movement->Velocity.GetSafeNormal2D(), this);
 	}
+
 	Destroy();
 }
