@@ -661,10 +661,10 @@ const FEnemyPatternDefinition* UEnemyPatternComponent::FindPattern(FName Pattern
 }
 
 // 실행 주체, 허용 목록, 타깃 생존 및 선택적인 거리 조건 확인
-bool UEnemyPatternComponent::MatchesGeometry(const FEnemyPatternDefinition& Pattern, AActor* Target) const
+bool UEnemyPatternComponent::MatchesGeometry(const FEnemyPatternDefinition& Pattern, AActor* Target, bool bIgnorePhaseList) const
 {
 	const AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner());
-	if (!IsValid(Enemy) || !Enemy->IsAlive() || !AvailablePatterns.Contains(Pattern.PatternId))
+	if (!IsValid(Enemy) || !Enemy->IsAlive() || (!bIgnorePhaseList && !AvailablePatterns.Contains(Pattern.PatternId)))
 	{
 		return false;
 	}
@@ -696,9 +696,9 @@ bool UEnemyPatternComponent::MatchesGeometry(const FEnemyPatternDefinition& Patt
 }
 
 // 거리 조건에 행동 가능 여부, 시야 및 GAS 활성화 조건을 추가 검사
-bool UEnemyPatternComponent::CanExecutePattern(const FEnemyPatternDefinition& Pattern, AActor* Target) const
+bool UEnemyPatternComponent::CanExecutePattern(const FEnemyPatternDefinition& Pattern, AActor* Target, bool bIgnorePhaseList) const
 {
-	if (!MatchesGeometry(Pattern, Target) || !ASC.IsValid())
+	if (!MatchesGeometry(Pattern, Target, bIgnorePhaseList) || !ASC.IsValid())
 	{
 		return false;
 	}
@@ -1202,8 +1202,9 @@ void UEnemyPatternComponent::StartPersistentPattern(int32 StateIndex)
 	AActor* Target = ResolvePersistentTarget();
 
 	// 전환 중 차단, AI 정지, 같은 패턴 실행 중, 거리·시야·GA 조건
+	// - 상시 패턴은 페이즈 랜덤 목록에 없어도 실행 (랜덤 목록에도 넣으면 주 패턴으로 뽑혀 몸을 씀)
 	bool bReady = Pattern && IsValid(Enemy) && Enemy->CanRunEnemyAI() && !bRequestsBlocked && ASC.IsValid()
-		&& !IsPatternRunning(PatternId) && CanExecutePattern(*Pattern, Target);
+		&& !IsPatternRunning(PatternId) && CanExecutePattern(*Pattern, Target, true);
 
 	// 실행 중인 패턴과 위험 태그·위험도가 겹치지 않을 때만 (보조 실행 자원 기준)
 	if (bReady)

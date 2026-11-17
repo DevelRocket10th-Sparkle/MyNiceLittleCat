@@ -271,10 +271,11 @@ private :
 	const FEnemyPatternDefinition* FindPattern(FName PatternId) const;
 
 	// 실행 주체, 허용 목록, 타깃 생존 및 선택적인 거리 조건 확인
-	bool MatchesGeometry(const FEnemyPatternDefinition& Pattern, AActor* Target) const;
+	// - bIgnorePhaseList: 페이즈 랜덤 목록(AvailablePatterns) 검사 생략 (상시 패턴은 랜덤 목록 밖에서 실행)
+	bool MatchesGeometry(const FEnemyPatternDefinition& Pattern, AActor* Target, bool bIgnorePhaseList = false) const;
 
 	// 거리 조건에 행동 가능 여부, 시야 및 GAS 활성화 조건을 추가 검사
-	bool CanExecutePattern(const FEnemyPatternDefinition& Pattern, AActor* Target) const;
+	bool CanExecutePattern(const FEnemyPatternDefinition& Pattern, AActor* Target, bool bIgnorePhaseList = false) const;
 
 	// 살아 있는 슬롯과 남은 생성물이 점유한 자원·위험 태그와 위험도 합
 	void CollectOccupied(FGameplayTagContainer& OutResources, int32& OutThreat) const;
