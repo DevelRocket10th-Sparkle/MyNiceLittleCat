@@ -38,14 +38,14 @@
 APlayerCharacter::APlayerCharacter()
 {
     // 쉬움 모드 쪽쪽이 기본 메시
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> PacifierFinder(TEXT("/Game/_ExternalAssets/pacifierR18_c4d.pacifierR18_c4d"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> PacifierFinder(TEXT("/Game/Test/Test_Player/Pacifier/pacifierR18_c4d.pacifierR18_c4d"));
     if (PacifierFinder.Succeeded())
     {
         EasyModePacifierMesh = PacifierFinder.Object;
     }
 
     // 쉬움 모드 포션 대신 젖병
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> BottleFinder(TEXT("/Game/_ExternalAssets/BabyBottle/SM_BabyBottle.SM_BabyBottle"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> BottleFinder(TEXT("/Game/Test/Test_Player/BabyBottle/SM_BabyBottle.SM_BabyBottle"));
     if (BottleFinder.Succeeded())
     {
         EasyModePotionMesh = BottleFinder.Object;
@@ -281,6 +281,11 @@ void APlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+    if (bIsDodging)
+    {
+        UpdateDodge(DeltaTime);
+    }
+
     // 공격 중 회전
     const UAnimInstance* Anim = GetMesh()->GetAnimInstance();
     const bool bAttacking = Anim && Anim->GetCurrentActiveMontage() && !bIsDodging;
@@ -495,8 +500,7 @@ void APlayerCharacter::RefillPotions()
 void APlayerCharacter::Move(const FInputActionValue& Value)
 {
     if (bIsDead) return;
-    if (bIsDodging) return;
-    if (!bIsAbleToMove) return;
+    if (!bIsDodging && !bIsAbleToMove) return;
     if (bIsDeflected) return;
 
     const FVector2D Input = Value.Get<FVector2D>();
@@ -518,6 +522,14 @@ void APlayerCharacter::Move(const FInputActionValue& Value)
 
     const FVector RightDirection =
         FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+
+    // 구르는 중: 이동은 하지 않고 방향만 기록 (UpdateDodge가 이 방향으로 조향)
+    if (bIsDodging)
+    {
+        LastMoveInputDir = (ForwardDirection * Input.Y + RightDirection * Input.X).GetSafeNormal2D();
+        LastMoveInputFrame = GFrameCounter;
+        return;
+    }
 
     // 입력에 따른 Enemy 밀어내기 적용
     const FVector WorldMoveInput = ForwardDirection * Input.Y + RightDirection * Input.X;
@@ -593,13 +605,7 @@ void APlayerCharacter::StartDodge()
 
     bIsAbleToAttack = false;
 
-    GetWorldTimerManager().SetTimer(
-        DodgeUpdateTimer,
-        this,
-        &APlayerCharacter::UpdateDodge,
-        0.02f,
-        true
-    );
+    // 구르기 속도·조향은 Tick에서 매 프레임 갱신 (타이머 주기로 끊기면 카메라가 덜컹거림)
 
     GetWorldTimerManager().SetTimer(
         DodgeEndTimer,
@@ -610,17 +616,29 @@ void APlayerCharacter::StartDodge()
     );
 }
 
-void APlayerCharacter::UpdateDodge()
+void APlayerCharacter::UpdateDodge(float DeltaTime)
 {
     if (!bIsDodging) return;
 
     constexpr float DodgeSpeed = 1000.0f;
 
+    // 조향: 이동 입력이 들어오는 동안 그쪽으로 초당 DodgeSteerRate도까지 꺾음
+    if (DodgeSteerRate > 0.f && LastMoveInputFrame + 1 >= GFrameCounter && !LastMoveInputDir.IsNearlyZero())
+    {
+        const float Current = DodgeDirection.HeadingAngle();
+        const float Target = LastMoveInputDir.HeadingAngle();
+        const float MaxStep = FMath::DegreesToRadians(DodgeSteerRate) * DeltaTime;
+        const float NewHeading = Current + FMath::Clamp(FMath::FindDeltaAngleRadians(Current, Target), -MaxStep, MaxStep);
+
+        DodgeDirection = FVector(FMath::Cos(NewHeading), FMath::Sin(NewHeading), 0.f);
+        SetActorRotation(FRotator(0.f, FMath::RadiansToDegrees(NewHeading), 0.f));
+    }
+
     UCharacterMovementComponent* MoveComp = GetCharacterMovement();
     FVector Velocity = MoveComp->Velocity;
 
-    Velocity.X = DodgeDirection.X * DodgeSpeed;
-    Velocity.Y = DodgeDirection.Y * DodgeSpeed;
+    Velocity.X = DodgeDirection.X * DodgeRollSpeed;
+    Velocity.Y = DodgeDirection.Y * DodgeRollSpeed;
 
     // Z 속도는 유지해서 살짝 뜨는 동작과 중력 적용
     MoveComp->Velocity = Velocity;

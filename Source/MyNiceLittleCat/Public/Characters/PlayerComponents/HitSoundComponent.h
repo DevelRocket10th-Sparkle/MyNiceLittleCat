@@ -36,6 +36,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hit Sound")
 	TArray<TObjectPtr<USoundBase>> HitSounds;
 
+	// 쉬움 모드일 때 대신 쓸 소리들 (비워두면 HitSounds 사용)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hit Sound|Easy Mode")
+	TArray<TObjectPtr<USoundBase>> EasyModeHitSounds;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hit Sound", meta = (ClampMin = "0"))
 	FVector2D VolumeRange = FVector2D(0.9f, 1.f);
 
@@ -62,4 +66,5 @@ private:
 	TWeakObjectPtr<class UAbilitySystemComponent> BoundASC;
 	float LastPlayTime = -1000.f;
 	int32 LastIndex = INDEX_NONE;
+	bool bLastWasEasy = false;
 };

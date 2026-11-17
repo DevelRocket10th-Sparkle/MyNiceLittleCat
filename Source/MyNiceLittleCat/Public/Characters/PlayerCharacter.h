@@ -100,7 +100,7 @@ protected:
 	void SwitchTarget(const FInputActionValue& Value);
 	// 구르기 시작
 	void StartDodge();
-	void UpdateDodge();
+	void UpdateDodge(float DeltaTime);
 	// 구르기 종료
 	void EndDodge();
 
@@ -314,6 +314,13 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Dodge", meta = (ClampMin = "0", Units = "s"))
 	float DodgeChainWindow = 0.5f;
+
+	// 구르는 중 이동 입력 방향으로 꺾는 속도 (초당 각도, 0이면 조향 안 함)
+	UPROPERTY(EditDefaultsOnly, Category = "Dodge", meta = (ClampMin = "0", Units = "deg"))
+	float DodgeSteerRate = 180.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Dodge")
+	float DodgeRollSpeed = 1000.f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<UStaticMeshComponent> PotionMesh;
