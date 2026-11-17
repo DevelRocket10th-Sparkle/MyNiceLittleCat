@@ -5,7 +5,6 @@
 #include "AIController.h"
 #include "Animation/AnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "GameFramework/CharacterMovementComponent.h"
 
 #include "Enemy/Combat/EnemyTargetUtils.h"
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
@@ -45,12 +44,7 @@ bool UGA_Enemy_MeleeAttack::StartPattern()
 
 	/* 이동 정지 및 잠금 */
 
-	if (AAIController* AI = Cast<AAIController>(Enemy->GetController()))
-	{
-		AI->StopMovement();
-	}
-	Enemy->GetCharacterMovement()->StopMovementImmediately();
-
+	StopOwnerMovement();
 	LockMovement();
 	if (ExecutionPattern.bLockRotation)
 	{
@@ -75,12 +69,13 @@ bool UGA_Enemy_MeleeAttack::StartPattern()
 
 	/* 4) 몽타주 재생: Ability가 취소되면 몽타주도 정지 */
 
+	// 근접은 몽타주가 끝나야 완료되므로 몽타주 없이는 시작하지 않음 (몸을 쓰는 GA라 보조·상시로 실행되지 않음)
 	UAbilityTask_PlayMontageAndWait* MontageTask =
-		UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-			this, NAME_None,
-			MeleeSettings->Montage, 1.f,
-			MeleeSettings->MontageSection, true
-		);
+		CreatePatternMontageTask(MeleeSettings->Montage, 1.f, MeleeSettings->MontageSection);
+	if (!MontageTask)
+	{
+		return false;
+	}
 	MontageTask->OnCompleted.AddDynamic(this, &UGA_Enemy_MeleeAttack::HandleMontageCompleted);
 	MontageTask->OnInterrupted.AddDynamic(this, &UGA_Enemy_MeleeAttack::HandleMontageCancelled);
 	MontageTask->OnCancelled.AddDynamic(this, &UGA_Enemy_MeleeAttack::HandleMontageCancelled);

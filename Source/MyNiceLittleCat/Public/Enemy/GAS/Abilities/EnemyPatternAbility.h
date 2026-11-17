@@ -6,7 +6,8 @@
 * UEnemyPatternComponent가 실행하는 모든 공격 GA의 공통 부모
 * - 실행 컨텍스트(패턴 설정, 타깃, 요청 번호) 수신, 유효성 확인, 이동/회전 잠금 획득과 자동 해제
 * - 파생 GA는 CanStartPattern(설정 검사)과 StartPattern(동작 시작), StopPattern(정리)만 구현
-* 
+* - 몸을 쓰는 동작(이동 정지, 회전, 잠금, 몽타주)은 도우미로만: 보조·상시 실행에서 자동 생략되어 주 패턴의 몸을 방해하지 않음
+*
 * 실행 흐름
 *	ActivateAbility -> 컨텍스트 수신 -> CanStartPattern -> CommitAblity -> StartPattern
 *	-> (FinishPatter / CancelPattern) -> EndAbility -> StopPattern -> 이동/회전 잠금 해제 -> 참조 정리
@@ -23,6 +24,8 @@
 #include "EnemyPatternAbility.generated.h"
 
 class AEnemyCharacter;
+class UAbilityTask_PlayMontageAndWait;
+class UAnimMontage;
 class UEnemyPatternComponent;
 
 /**
@@ -76,9 +79,28 @@ protected :
 	void CancelPattern();
 
 	// 이동 잠금 획득: 한 실행에서 한 번만 획득하고, EndAbility에서 자동 해제
+	// - 보조·상시 실행에서는 아무 일도 하지 않음 (몸은 주 패턴이 사용)
 	void LockMovement();
 	// 회전 잠금 획득: 한 실행에서 한 번만 획득하고, EndAbility에서 자동 해제
+	// - 보조·상시 실행에서는 아무 일도 하지 않음
 	void LockRotation();
+
+	// 보조 또는 상시 패턴으로 실행 중인지 (몸은 주 패턴이 사용)
+	// - 몸을 쓰는 동작은 아래 도우미를 쓰면 자동으로 생략됨. 도우미가 없는 동작만 GA가 이 값으로 직접 판단
+	bool IsRunningAsCompanion() const { return bRunningAsCompanion; }
+
+	/* 몸을 쓰는 동작 도우미: 보조·상시 실행에서는 자동으로 생략 (파생 GA는 엔진 함수를 직접 부르지 말고 이 도우미 사용) */
+
+	// 공격 주체 이동 즉시 정지: AI 경로 이동 + 캐릭터 이동 속도
+	void StopOwnerMovement();
+
+	// 공격 주체를 지점 쪽으로 수평 회전
+	void FaceOwnerToward(const FVector& WorldPoint);
+
+	// 패턴 몽타주 재생 Task 생성 (Ability가 끝나면 몽타주도 정지)
+	// - 델리게이트를 연결한 뒤 호출자가 ReadyForActivation 호출
+	// - 보조·상시 실행이거나 몽타주가 없으면 nullptr: 몽타주 완료를 기다리는 GA는 nullptr 처리 필요
+	UAbilityTask_PlayMontageAndWait* CreatePatternMontageTask(UAnimMontage* Montage, float Rate = 1.f, FName Section = NAME_None);
 
 	// 이 패턴 전용 실행 설정 (설정 타입이 다르면 nullptr)
 	template <typename TSettings>
@@ -117,6 +139,9 @@ protected :
 
 	// 이번 실행의 패턴 요청 번호
 	int64 RequestId = 0;
+
+	// 이번 실행이 보조 또는 상시 패턴인지 (활성화 때 컴포넌트에서 받음)
+	bool bRunningAsCompanion = false;
 
 private :
 

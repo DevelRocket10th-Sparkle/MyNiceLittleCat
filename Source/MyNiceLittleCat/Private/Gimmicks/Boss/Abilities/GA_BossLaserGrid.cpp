@@ -13,8 +13,6 @@
 #include "Enemy/Boss/BossCharacter.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
-#include "AIController.h"
-#include "GameFramework/CharacterMovementComponent.h"
 
 bool UGA_BossLaserGrid::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
@@ -60,14 +58,12 @@ bool UGA_BossLaserGrid::StartPattern()
 
 	UE_LOG(LogTemp, Log, TEXT("[BossLaserGrid] %s: 시작 (%d회, 피해 %.1f)"), *Enemy->GetName(), GridSettings->VolleyCount, GetDamagePerHitOverride());
 
+	// 몸을 쓰는 동작은 부모 도우미 사용: 보조·상시 실행에서는 이동 정지, 정렬, 잠금, 몽타주가 자동 생략 (주 패턴일 때만 설정대로)
+
 	// 보스를 지점으로 옮기지 않고 지금 자리에서 실행 (이동은 보스 쪽 이동 패턴 담당)
 	if (GridSettings->bLockMovement)
 	{
-		if (AAIController* AI = Cast<AAIController>(Enemy->GetController()))
-		{
-			AI->StopMovement();
-		}
-		Enemy->GetCharacterMovement()->StopMovementImmediately();
+		StopOwnerMovement();
 
 		// 이동/회전 잠금 해제는 부모(UEnemyPatternAbility)가 EndAbility에서 처리
 		LockMovement();
@@ -83,10 +79,9 @@ bool UGA_BossLaserGrid::StartPattern()
 		LockRotation();
 	}
 
-	if (GridSettings->StartMontage)
+	// 보조·상시 실행이거나 몽타주가 없으면 nullptr
+	if (UAbilityTask_PlayMontageAndWait* MontageTask = CreatePatternMontageTask(GridSettings->StartMontage))
 	{
-		UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-			this, NAME_None, GridSettings->StartMontage, 1.f, NAME_None, true);
 		MontageTask->ReadyForActivation();
 	}
 
@@ -229,17 +224,13 @@ float UGA_BossLaserGrid::GetDamagePerHitOverride() const
 
 void UGA_BossLaserGrid::FaceTarget()
 {
-	if (!Enemy.IsValid() || !IsValid(ExecutionTarget))
+	if (!IsValid(ExecutionTarget))
 	{
 		return;
 	}
 
-	FVector Direction = ExecutionTarget->GetActorLocation() - Enemy->GetActorLocation();
-	Direction.Z = 0.f;
-	if (!Direction.IsNearlyZero())
-	{
-		Enemy->SetActorRotation(Direction.Rotation());
-	}
+	// 보조·상시 실행에서는 도우미가 회전을 생략
+	FaceOwnerToward(ExecutionTarget->GetActorLocation());
 }
 
 bool UGA_BossLaserGrid::IsExecutionValid() const

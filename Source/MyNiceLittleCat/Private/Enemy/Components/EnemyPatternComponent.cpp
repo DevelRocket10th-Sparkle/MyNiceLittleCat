@@ -421,6 +421,12 @@ bool UEnemyPatternComponent::IsRequestRunning(int64 RequestId) const
 	return GetRequestResult(RequestId) == EEnemyPatternResult::Running;
 }
 
+bool UEnemyPatternComponent::IsCompanionRequest(int64 RequestId) const
+{
+	const FEnemyPatternSlot* Slot = FindSlot(RequestId);
+	return Slot && !Slot->bPrimary;
+}
+
 bool UEnemyPatternComponent::GetExecutionForAbility(const FGameplayAbilitySpecHandle& AbilityHandle,
 	FEnemyPatternDefinition& OutPattern, AActor*& OutTarget, int64& OutRequestId) const
 {

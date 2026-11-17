@@ -8,10 +8,8 @@
 #include "Enemy/Boss/BossCharacter.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
-#include "AIController.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/Character.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "Enemy/GAS/EnemyCombatTags.h"
@@ -79,11 +77,7 @@ bool UGA_BossLaserBeam::StartPattern()
 	if (!bFollowPhaseMovement)
 	{
 		// 보스를 지점으로 옮기지 않고 지금 자리에서 쏨 (이동은 보스 쪽 이동 패턴 담당)
-		if (AAIController* AI = Cast<AAIController>(Enemy->GetController()))
-		{
-			AI->StopMovement();
-		}
-		Enemy->GetCharacterMovement()->StopMovementImmediately();
+		StopOwnerMovement();
 
 		// 이동/회전 잠금 해제는 부모(UEnemyPatternAbility)가 EndAbility에서 처리
 		LockMovement();
@@ -129,10 +123,9 @@ void UGA_BossLaserBeam::StartShot()
 
 	FindTargetFloorPoint(AimPoint);
 
-	if (LaserSettings->ChargeMontage)
+	// 보조·상시 실행이거나 몽타주가 없으면 nullptr
+	if (UAbilityTask_PlayMontageAndWait* MontageTask = CreatePatternMontageTask(LaserSettings->ChargeMontage))
 	{
-		UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-			this, NAME_None, LaserSettings->ChargeMontage, 1.f, NAME_None, true);
 		MontageTask->ReadyForActivation();
 	}
 
@@ -390,17 +383,8 @@ ULaserBeamComponent* UGA_BossLaserBeam::FindLaserComponent() const
 
 void UGA_BossLaserBeam::FaceAimPoint()
 {
-	if (!Enemy.IsValid())
-	{
-		return;
-	}
-
-	FVector Direction = AimPoint - Enemy->GetActorLocation();
-	Direction.Z = 0.f;
-	if (!Direction.IsNearlyZero())
-	{
-		Enemy->SetActorRotation(Direction.Rotation());
-	}
+	// 보조·상시 실행에서는 도우미가 회전을 생략
+	FaceOwnerToward(AimPoint);
 }
 
 void UGA_BossLaserBeam::ShowAimWarning(float Duration)

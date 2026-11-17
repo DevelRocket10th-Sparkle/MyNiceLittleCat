@@ -197,6 +197,9 @@ public :
 	// 요청이 아직 실행 중(예약, 실행, 후딜)인지
 	bool IsRequestRunning(int64 RequestId) const;
 
+	// 보조 또는 상시 패턴으로 실행 중인 요청인지 (몸은 주 패턴이 쓰므로 GA가 이동, 회전, 몽타주를 쓰지 않아야 함)
+	bool IsCompanionRequest(int64 RequestId) const;
+
 	// 공격 GA가 활성화 직후 호출: 자기 Spec Handle로 자기 실행의 설정, 타깃, 번호를 받음
 	// - 패턴마다 Spec이 따로라 동시에 여러 GA가 실행돼도 서로의 설정을 받지 않음
 	bool GetExecutionForAbility(const FGameplayAbilitySpecHandle& AbilityHandle,

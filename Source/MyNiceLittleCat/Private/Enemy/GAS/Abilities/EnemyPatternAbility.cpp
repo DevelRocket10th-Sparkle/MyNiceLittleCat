@@ -3,6 +3,10 @@
 
 #include "Enemy/GAS/Abilities/EnemyPatternAbility.h"
 
+#include "AIController.h"
+#include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
+#include "GameFramework/CharacterMovementComponent.h"
+
 #include "Enemy/Components/EnemyPatternComponent.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
@@ -33,6 +37,7 @@ void UEnemyPatternAbility::ActivateAbility(const FGameplayAbilitySpecHandle Hand
 	}
 
 	ExecutionTarget = Target;
+	bRunningAsCompanion = PatternComponent->IsCompanionRequest(RequestId);
 
 	/* 설정 검사 후 실행 확정 */
 
@@ -80,6 +85,7 @@ void UEnemyPatternAbility::EndAbility(const FGameplayAbilitySpecHandle Handle, c
 	PatternComponent.Reset();
 	Enemy.Reset();
 	RequestId = 0;
+	bRunningAsCompanion = false;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -107,8 +113,55 @@ void UEnemyPatternAbility::CancelPattern()
 	}
 }
 
+void UEnemyPatternAbility::StopOwnerMovement()
+{
+	// 보조·상시 실행은 몸을 쓰지 않음: 주 패턴과 BT의 이동을 끊지 않도록 무시
+	if (bRunningAsCompanion || !Enemy.IsValid())
+	{
+		return;
+	}
+
+	if (AAIController* AI = Cast<AAIController>(Enemy->GetController()))
+	{
+		AI->StopMovement();
+	}
+	Enemy->GetCharacterMovement()->StopMovementImmediately();
+}
+
+void UEnemyPatternAbility::FaceOwnerToward(const FVector& WorldPoint)
+{
+	if (bRunningAsCompanion || !Enemy.IsValid())
+	{
+		return;
+	}
+
+	FVector Direction = WorldPoint - Enemy->GetActorLocation();
+	Direction.Z = 0.f;
+	if (!Direction.IsNearlyZero())
+	{
+		Enemy->SetActorRotation(Direction.Rotation());
+	}
+}
+
+UAbilityTask_PlayMontageAndWait* UEnemyPatternAbility::CreatePatternMontageTask(UAnimMontage* Montage, float Rate, FName Section)
+{
+	// 보조·상시 실행의 몽타주는 주 패턴 몽타주를 끊으므로 재생하지 않음
+	if (bRunningAsCompanion || !Montage)
+	{
+		return nullptr;
+	}
+
+	return UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(this, NAME_None, Montage, Rate, Section, true);
+}
+
 void UEnemyPatternAbility::LockMovement()
 {
+	// 보조·상시 실행은 몸을 쓰지 않음: 주 패턴의 이동을 막지 않도록 무시
+	if (bRunningAsCompanion)
+	{
+		return;
+	}
+
 	if (!bOwnsMovementLock && Enemy.IsValid())
 	{
 		Enemy->AcquireAttackMovementLock();
@@ -118,6 +171,12 @@ void UEnemyPatternAbility::LockMovement()
 
 void UEnemyPatternAbility::LockRotation()
 {
+	// 보조·상시 실행은 몸을 쓰지 않음
+	if (bRunningAsCompanion)
+	{
+		return;
+	}
+
 	if (!bOwnsRotationLock && Enemy.IsValid())
 	{
 		Enemy->AcquireRotationLock();
