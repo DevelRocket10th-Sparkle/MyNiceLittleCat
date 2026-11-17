@@ -36,19 +36,7 @@
 // Sets default values
 APlayerCharacter::APlayerCharacter()
 {
-    // 쉬움 모드 쪽쪽이 기본 메시
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> PacifierFinder(TEXT("/Game/Test/Test_Player/Pacifier/pacifierR18_c4d.pacifierR18_c4d"));
-    if (PacifierFinder.Succeeded())
-    {
-        EasyModePacifierMesh = PacifierFinder.Object;
-    }
-
-    // 쉬움 모드 포션 대신 젖병
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> BottleFinder(TEXT("/Game/Test/Test_Player/BabyBottle/SM_BabyBottle.SM_BabyBottle"));
-    if (BottleFinder.Succeeded())
-    {
-        EasyModePotionMesh = BottleFinder.Object;
-    }
+    // 쉬움 모드 쪽쪽이·젖병 메시는 캐릭터 BP의 Easy Mode 항목에서 지정
 
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
