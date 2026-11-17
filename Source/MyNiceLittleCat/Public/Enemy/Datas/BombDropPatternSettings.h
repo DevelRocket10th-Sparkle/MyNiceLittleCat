@@ -18,6 +18,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BombDrop")
 	TSubclassOf<ABombEnemy> BombClass;
 
+	// 섞어서 떨어뜨릴 다른 폭탄 (예: 절연체 폭탄). 비워두면 BombClass만 떨어뜨림
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BombDrop")
+	TSubclassOf<ABombEnemy> MixedBombClass;
+
+	// 폭탄 한 발마다 MixedBombClass가 나올 확률
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BombDrop", meta = (ClampMin = "0", ClampMax = "1"))
+	float MixedBombChance = 0.35f;
+
 	// 한 번 실행에 떨어뜨릴 폭탄 수
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BombDrop", meta = (ClampMin = "1", ClampMax = "16"))
 	int32 BombCount = 3;
