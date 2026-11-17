@@ -103,6 +103,18 @@ void AStageEncounterDirector::OnEncounterReset()
 	CancelActiveCut();
 	ClearActiveTransition();
 
+	// 플레이어에게 넘겼던 문을 원래 설정으로 복원 (열림 상태도 되돌린 뒤 아래에서 강제를 풀어 그 위치로 이동)
+	for (const TPair<TWeakObjectPtr<AGimmickDoor>, FStageDoorDefaultState>& Pair : FreedDoorDefaults)
+	{
+		if (AGimmickDoor* Door = Pair.Key.Get())
+		{
+			Door->SetLocked(Pair.Value.bLocked, this);
+			Door->SetPlayerCanToggle(Pair.Value.bPlayerCanToggle);
+			Door->SetActivated(Pair.Value.bActivated, this);
+		}
+	}
+	FreedDoorDefaults.Reset();
+
 	// 연출이 강제한 문 상태를 풀어 문 자체 상태(신호 기준, 기본 닫힘)로 즉시 복귀
 	for (AGimmickDoor* Door : Doors)
 	{
@@ -127,8 +139,18 @@ void AStageEncounterDirector::OnEncounterCleared()
 		{
 			Door->SetActivated(true, this);
 			Door->ReleaseForcedDoorState();
+
+			// 처치 후에는 잠긴 문(대문 등)도 플레이어가 여닫을 수 있게 넘김
+			if (bPlayerControlsDoorsAfterClear)
+			{
+				Door->SetLocked(false, this);
+				Door->SetPlayerCanToggle(true);
+			}
 		}
 	}
+
+	// 처치 후에는 초기화가 없으므로 복원 기록 정리
+	FreedDoorDefaults.Reset();
 
 	OnStageCleared();
 }
@@ -150,6 +172,7 @@ bool AStageEncounterDirector::BeginPhaseTransition(const FBossPhaseTransitionCon
 	CurrentBoss = Context.Boss;
 	ActiveTransitionId = Context.TransitionId;
 	ActiveTransitionPhaseId = Context.ToPhaseId;
+	ActiveTransitionFromPhaseId = Context.FromPhaseId;
 
 	OnPhaseStagingBegin(Context.ToPhaseId, Context.Boss);
 
@@ -187,6 +210,30 @@ void AStageEncounterDirector::SetDoor(int32 DoorIndex, bool bOpen, float Duratio
 	// - 시간 0 이하(스킵, 초기화)는 즉시 이동: 문 효과음 없음
 	const bool bInstant = Duration <= 0.f;
 	Door->ForceDoorState(bOpen, Duration, bInstant);
+}
+
+void AStageEncounterDirector::FreeDoorForPlayer(int32 DoorIndex)
+{
+	AGimmickDoor* Door = Doors.IsValidIndex(DoorIndex) ? Doors[DoorIndex].Get() : nullptr;
+	if (!Door)
+	{
+		return;
+	}
+
+	// 처음 넘길 때의 설정만 기록 (두 번 넘겨도 원래 상태 유지)
+	if (!FreedDoorDefaults.Contains(Door))
+	{
+		FStageDoorDefaultState& Saved = FreedDoorDefaults.Add(Door);
+		Saved.bLocked = Door->IsLocked();
+		Saved.bPlayerCanToggle = Door->CanPlayerToggle();
+		Saved.bActivated = Door->IsActivated();
+	}
+
+	// 신호 상태를 지금 위치에 맞춘 뒤 강제를 풀어 문이 움직이지 않게 함
+	Door->SetActivated(Door->IsDoorOpen(), this);
+	Door->ReleaseForcedDoorState();
+	Door->SetLocked(false, this);
+	Door->SetPlayerCanToggle(true);
 }
 
 bool AStageEncounterDirector::IsDoorOpen(int32 DoorIndex) const
@@ -420,6 +467,7 @@ void AStageEncounterDirector::UpdateArenaEntryCheck()
 	const int64 TransitionId = ActiveTransitionId;
 	const FName PhaseId = ActiveTransitionPhaseId;
 	const int32 DoorToClose = Staging->DoorToClose;
+	const FName EndedPhaseId = ActiveTransitionFromPhaseId;
 	ClearActiveTransition();
 
 	ABossCharacter* Boss = GetCurrentBoss();
@@ -430,6 +478,19 @@ void AStageEncounterDirector::UpdateArenaEntryCheck()
 
 	// 아레나에 들어온 플레이어 뒤의 문을 닫음
 	SetDoor(DoorToClose, false, PhaseDoorCloseSeconds);
+
+	// 끝난 페이즈를 치른 방의 문을 플레이어에게 넘김 (이제 자유롭게 오갈 수 있는 곳)
+	if (const FStagePhaseStaging* EndedStaging = FindPhaseStaging(EndedPhaseId))
+	{
+		for (const int32 DoorIndex : EndedStaging->DoorsFreedOnPhaseEnd)
+		{
+			// 방금 닫은 새 아레나 문은 넘기지 않음 (설정 실수 방지)
+			if (DoorIndex != DoorToClose)
+			{
+				FreeDoorForPlayer(DoorIndex);
+			}
+		}
+	}
 
 	OnStagePhaseStarted(PhaseId, Boss);
 }
@@ -463,6 +524,7 @@ void AStageEncounterDirector::ClearActiveTransition()
 	GetWorldTimerManager().ClearTimer(ArenaEntryTimer);
 	ActiveTransitionId = 0;
 	ActiveTransitionPhaseId = NAME_None;
+	ActiveTransitionFromPhaseId = NAME_None;
 }
 
 /* 공통 마커 */

@@ -6,6 +6,7 @@
 * - 보스방 매니저에 연출 담당자로 등록, 등장 컷 → 전투 시작, 페이즈 전환 컷 → 아레나 진입 대기 → 다음 페이즈
 * - 공통 마커 처리: Door:<번호>:Open|Close[:초], Door:<번호>:Lock|Unlock, Event:<이름>[:Off]
 * - 문은 연출 중에만 강제하고, 초기화·처치 때 강제를 풀어 문 자체 규칙(신호, 플레이어, 잠금)에 돌려줌
+* - 페이즈가 끝난 방의 문(DoorsFreedOnPhaseEnd)과 처치 후의 문은 플레이어에게 넘김 (잠금 해제 + 여닫기), 초기화 때 원래대로
 * - 스테이지마다 다른 부분은 파생 클래스(C++ 또는 BP)가 아래 확장 지점에서 처리
 *
 * 확장 지점 (BlueprintNativeEvent: C++ override 또는 BP 이벤트로 구현)
@@ -65,6 +66,21 @@ struct FStagePhaseStaging
 	// 페이즈가 시작될 때 닫을 문 번호 (INDEX_NONE이면 없음)
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Stage")
 	int32 DoorToClose = INDEX_NONE;
+
+	// 이 페이즈가 끝나면 플레이어에게 넘길 문 번호 (이 페이즈를 치른 방의 문)
+	// - 다음 페이즈가 실제로 시작될 때(플레이어가 다음 아레나에 들어온 뒤) 적용
+	// - 연출 강제를 풀되 지금 열림/닫힘은 유지, 잠금 해제, 플레이어 여닫기 허용
+	// - 마지막 페이즈의 문은 보스 처치 때 함께 넘어감 (bPlayerControlsDoorsAfterClear)
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Stage")
+	TArray<int32> DoorsFreedOnPhaseEnd;
+};
+
+// 스테이지가 플레이어에게 넘긴 문의 원래 상태 (전투 초기화 때 복원)
+struct FStageDoorDefaultState
+{
+	bool bLocked = false;
+	bool bPlayerCanToggle = false;
+	bool bActivated = false;
 };
 
 UCLASS(Abstract, Blueprintable)
@@ -99,6 +115,11 @@ public :
 	// 문이 열려 있는지 (없는 문은 false)
 	UFUNCTION(BlueprintPure, Category = "Stage|Doors")
 	bool IsDoorOpen(int32 DoorIndex) const;
+
+	// 문을 플레이어에게 넘김: 연출 강제 해제(현재 위치 유지), 잠금 해제, 여닫기 허용
+	// - 전투 초기화 때 원래 상태(잠금, 여닫기, 열림)로 되돌림
+	UFUNCTION(BlueprintCallable, Category = "Stage|Doors")
+	void FreeDoorForPlayer(int32 DoorIndex);
 
 	// 스테이지 전용 컷 재생: 끝나면 OnCutFinished(CutTag) 호출 (재생할 수 없어도 바로 호출)
 	UFUNCTION(BlueprintCallable, Category = "Stage|Cinematic")
@@ -271,6 +292,11 @@ protected :
 	UPROPERTY(EditInstanceOnly, Category = "Stage|Doors", meta = (ClampMin = "0.0", Units = "s"))
 	float PhaseDoorCloseSeconds = 0.18f;
 
+	// 보스 처치 후 Doors 목록의 문을 모두 플레이어에게 넘김 (잠금 해제 + 여닫기 허용)
+	// - 끄면 처치 후 문이 열린 채로만 남고 플레이어 설정(잠금, 여닫기)은 그대로
+	UPROPERTY(EditInstanceOnly, Category = "Stage|Doors")
+	bool bPlayerControlsDoorsAfterClear = true;
+
 	/* 마커 이벤트 */
 
 	// 마커 Event:<이름>을 받을 액터: IActivatableInterface 구현 액터 (기믹, 또는 인터페이스를 추가한 BP)
@@ -291,6 +317,12 @@ private :
 	// 진행 중인 페이즈 전환 (0이면 없음)
 	int64 ActiveTransitionId = 0;
 	FName ActiveTransitionPhaseId;
+
+	// 진행 중인 전환에서 끝나는 페이즈 (그 방의 문을 다음 페이즈 시작 때 넘김)
+	FName ActiveTransitionFromPhaseId;
+
+	// 플레이어에게 넘긴 문과 원래 상태 (전투 초기화 때 복원)
+	TMap<TWeakObjectPtr<AGimmickDoor>, FStageDoorDefaultState> FreedDoorDefaults;
 
 	// 아레나 진입 확인 타이머
 	FTimerHandle ArenaEntryTimer;

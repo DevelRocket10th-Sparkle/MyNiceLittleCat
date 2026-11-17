@@ -70,6 +70,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Gimmick|Door|Lock")
 	bool IsLocked() const { return bLocked; }
 
+	/* 플레이어 여닫기 */
+
+	// 플레이어 여닫기 허용 변경: 연출이 끝난 뒤 스테이지가 문을 플레이어에게 넘길 때 사용
+	UFUNCTION(BlueprintCallable, Category = "Gimmick|Door|Interaction")
+	void SetPlayerCanToggle(bool bNewCanToggle) { bPlayerCanToggle = bNewCanToggle; }
+
+	// Getter: 플레이어가 여닫을 수 있는 문인지 (잠금과 별개)
+	UFUNCTION(BlueprintPure, Category = "Gimmick|Door|Interaction")
+	bool CanPlayerToggle() const { return bPlayerCanToggle; }
+
 	/* IInteractableInterface: 플레이어 여닫기, 잠긴 문 확인 */
 
 	virtual bool CanInteract_Implementation(AActor* InteractInstigator) const override;
