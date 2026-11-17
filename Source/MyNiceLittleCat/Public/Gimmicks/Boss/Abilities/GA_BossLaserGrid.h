@@ -3,7 +3,7 @@
 ///
 /// 레벨에 배치한 격자 레이저(ALaserGridPattern)로 VolleyCount번 발사하는 보스 패턴 GA입니다.
 /// 보스 PatternSet에 패턴으로 등록하면 기존 BT 공격 Task(UEnemyPatternComponent)가 근접·단일 레이저 패턴처럼 실행합니다.
-/// 흐름: GetActiveExecution으로 설정(UBossLaserGridPatternSettings) 받기 → 보스의 UBossGimmickComponent에서 격자 액터 찾기
+/// 흐름: GetExecutionForAbility로 설정(UBossLaserGridPatternSettings) 받기 → 보스의 UBossGimmickComponent에서 격자 액터 찾기
 ///       → CommitAbility → (옵션) 이동/회전 잠금 (보스를 지점으로 옮기지 않음, 이동은 보스 쪽 이동 패턴 담당)
 ///       → 발사 모양(시퀀스 DA)을 골라 PlaySequenceOnce → 끝나면 VolleyInterval 뒤 다음 발사 … VolleyCount번 → 정상 종료
 /// 레이저 교대 페이즈에서는 격자 차례일 때만 실행되고(CanActivateAbility), 정상 종료 시 순번을 단일 레이저로 넘깁니다.

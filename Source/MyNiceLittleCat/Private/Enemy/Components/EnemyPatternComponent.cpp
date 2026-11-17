@@ -13,17 +13,18 @@
 
 #include "Enemy/Combat/EnemyTargetUtils.h"
 #include "Enemy/EnemyCharacter.h"
+#include "Enemy/GAS/EnemyCombatTags.h"
+#include "Enemy/GAS/Abilities/EnemyPatternAbility.h"
 
 UEnemyPatternComponent::UEnemyPatternComponent()
 {
 	// GA 종료 이벤트와 타이머로 동작하므로 Tick 불필요
 	PrimaryComponentTick.bCanEverTick = false;
-
 }
 
 /* 초기화와 설정 */
 
-// 이전 실행 정리 후 패턴 설정 검사 및 필요한 GA 부여
+// 이전 실행 정리 후 패턴 설정 검사, 패턴마다 GA Spec 부여, 유효 자원 계산
 bool UEnemyPatternComponent::InitializePatterns(UAbilitySystemComponent* InASC, UEnemyPatternSetData* InPatternSet)
 {
 	StopAndInvalidate();
@@ -32,12 +33,13 @@ bool UEnemyPatternComponent::InitializePatterns(UAbilitySystemComponent* InASC, 
 	ASC = InASC;
 	PatternSet = InPatternSet;
 
-	// ASC 또는 패턴 설정이 유효하지 않으면 false 반환
 	if (!GetOwner()->HasAuthority() || !IsValid(InASC) || !IsValid(InPatternSet) || InPatternSet->Patterns.IsEmpty())
+	{
 		return false;
-	
+	}
 
-	/* 패턴 부여 전에 전체 설정 검사: 하나라도 잘못되면 아무것도 부여하지 않음 */
+	/* 1) 부여 전에 전체 설정 검사: 하나라도 잘못되면 아무것도 부여하지 않음 */
+
 	TSet<FName> PatternIds;
 
 	for (const FEnemyPatternDefinition& Pattern : InPatternSet->Patterns)
@@ -50,48 +52,35 @@ bool UEnemyPatternComponent::InitializePatterns(UAbilitySystemComponent* InASC, 
 			return false;
 		}
 
-		// 설정 검사 완료된 패턴 ID 수집
 		PatternIds.Add(Pattern.PatternId);
 	}
 
-	/* GA 부여: 같은 AbilityClass는 한 번만 부여하고 핸들 공유 */
-	TMap<TSubclassOf<UGameplayAbility>, FGameplayAbilitySpecHandle> GrantedClasses;
+	/* 2) 패턴마다 GA Spec 부여 */
 
+	// 같은 GA 클래스라도 패턴마다 따로 부여: InstancedPerActor는 Spec마다 인스턴스가 하나라,
+	// Spec을 공유하면 같은 클래스의 두 패턴이 동시에 실행될 수 없고 종료 이벤트도 구분할 수 없음
 	for (const FEnemyPatternDefinition& Pattern : InPatternSet->Patterns)
 	{
-		// ASC에 부여한 능력 식별 핸들
-		FGameplayAbilitySpecHandle Handle;
-
-		if (const FGameplayAbilitySpecHandle* Existing = GrantedClasses.Find(Pattern.AbilityClass))
+		// SourceObject = 이 컴포넌트: GA 디버깅 시 부여 출처 확인용
+		const FGameplayAbilitySpecHandle Handle = InASC->GiveAbility(FGameplayAbilitySpec(Pattern.AbilityClass, 1, INDEX_NONE, this));
+		if (!Handle.IsValid())
 		{
-			Handle = *Existing;	// 동일 GA 클래스의 기존 핸들
-		}
-		else
-		{
-			// SourceObject = 이 컴포넌트: GA 디버깅 시 부여 출처 확인용
-			Handle = InASC->GiveAbility(
-				FGameplayAbilitySpec(
-					Pattern.AbilityClass,
-					1,
-					INDEX_NONE,
-					this
-				)
-			);
-
-			// 부여 실패 시 이미 부여한 GA까지 정리하고 초기화 실패
-			if (!Handle.IsValid())
-			{
-				ClearGrantedAbilities();
-				return false;
-			}
-
-			GrantedClasses.Add(Pattern.AbilityClass, Handle);
+			ClearGrantedAbilities();
+			return false;
 		}
 
 		PatternHandles.Add(Pattern.PatternId, Handle);
+		PatternResources.Add(Pattern.PatternId, ResolvePatternResources(Pattern));
 	}
 
+	/* 3) 종료 이벤트 구독: 모든 패턴 GA를 한 번에 받아 Spec Handle로 슬롯을 찾음 */
+
+	AbilityEndedDelegateHandle = InASC->OnAbilityEnded.AddUObject(this, &UEnemyPatternComponent::HandleAbilityEnded);
+
+	// 기본 상태: 모든 패턴 허용, 가중치는 패턴 기본값, 한 번에 하나
 	AvailablePatterns = MoveTemp(PatternIds);
+	WeightOverrides.Reset();
+	Concurrency = FEnemyPatternConcurrency();
 
 	bStopped = false;
 	bRequestsBlocked = false;
@@ -99,18 +88,45 @@ bool UEnemyPatternComponent::InitializePatterns(UAbilitySystemComponent* InASC, 
 	return true;
 }
 
-// 현재 페이즈에서 사용할 패턴 ID만 교체
+// 사용할 패턴 ID만 교체 (가중치는 패턴 기본값)
 void UEnemyPatternComponent::SetAvailablePatterns(const TArray<FName>& PatternIds)
 {
 	AvailablePatterns.Reset();
+	WeightOverrides.Reset();
 
-	for (FName PatternId : PatternIds)
+	for (const FName PatternId : PatternIds)
 	{
 		if (HasPattern(PatternId))
 		{
 			AvailablePatterns.Add(PatternId);
 		}
 	}
+}
+
+// 사용할 패턴, 가중치 재정의, 동시 실행 설정을 한 번에 교체
+void UEnemyPatternComponent::SetPatternSelection(const TArray<FEnemyPatternSelectionEntry>& Entries, const FEnemyPatternConcurrency& InConcurrency)
+{
+	AvailablePatterns.Reset();
+	WeightOverrides.Reset();
+
+	for (const FEnemyPatternSelectionEntry& Entry : Entries)
+	{
+		if (!HasPattern(Entry.PatternId))
+		{
+			continue;
+		}
+
+		AvailablePatterns.Add(Entry.PatternId);
+
+		// 재정의가 없으면 기록하지 않음 → 패턴 기본 Weight 사용
+		if (Entry.bOverrideWeight)
+		{
+			WeightOverrides.Add(Entry.PatternId, Entry.Weight);
+		}
+	}
+
+	FString Error;
+	Concurrency = InConcurrency.Validate(Error) ? InConcurrency : FEnemyPatternConcurrency();
 }
 
 bool UEnemyPatternComponent::ConfigureAttackInterval(float InMinInterval, float InMaxInterval)
@@ -120,6 +136,7 @@ bool UEnemyPatternComponent::ConfigureAttackInterval(float InMinInterval, float 
 	{
 		return false;
 	}
+
 	MinAttackInterval = InMinInterval;
 	MaxAttackInterval = InMaxInterval;
 	return true;
@@ -136,9 +153,12 @@ bool UEnemyPatternComponent::CanStartAttack() const
 {
 	const AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner());
 
+	// 주 패턴은 하나씩: BT가 기다리는 요청이 없고, 몸을 쓰는 GA가 실제로 끝났고, 빈 자리가 있어야 함
 	return IsValid(Enemy) && Enemy->HasAuthority() && Enemy->CanRunEnemyAI()
 		&& !bStopped && !bRequestsBlocked && ASC.IsValid() && HasPatterns()
-		&& ActiveRequestId == 0 && IsIdle() && GetAttackIntervalRemaining() <= 0.f;
+		&& PrimaryRequestId == 0 && !IsBodyBusy()
+		&& GetRunningSlotCount() < Concurrency.MaxConcurrentPatterns
+		&& GetAttackIntervalRemaining() <= 0.f;
 }
 
 float UEnemyPatternComponent::GetAttackIntervalRemaining() const
@@ -151,49 +171,46 @@ float UEnemyPatternComponent::GetAttackIntervalRemaining() const
 bool UEnemyPatternComponent::HasPatternInRange(AActor* Target) const
 {
 	if (bStopped || !PatternSet)
-		return false;
-
-	// 실행 가능한 패턴이 하나라도 있으면 true
-	for (const FEnemyPatternDefinition& Pattern : PatternSet->Patterns)
 	{
-		if (MatchesGeometry(Pattern, Target))
-		{
-			return true;
-		}
+		return false;
 	}
 
-	// 실행 가능한 패턴이 하나도 없으면 false
-	return false;
+	return PatternSet->Patterns.ContainsByPredicate(
+		[this, Target](const FEnemyPatternDefinition& Pattern)
+		{
+			return MatchesGeometry(Pattern, Target);
+		});
 }
 
 bool UEnemyPatternComponent::HasExecutableAttack(AActor* Target) const
 {
 	if (!CanStartAttack())
-		return false;
-
-	// 자동 선택 대상(가중치 > 0) 중 실행 가능한 패턴이 하나라도 있으면 true
-	for (const FEnemyPatternDefinition& Pattern : PatternSet->Patterns)
 	{
-		// 실행 가능한 패턴이 하나라도 있으면 true
-		// 패턴 선택 가중치가 유효하고 실행 가능한 패턴인지 확인
-		if (Pattern.Weight > 0.f && CanExecutePattern(Pattern, Target))
-		{
-			return true;
-		}
+		return false;
 	}
 
-	// 실행 가능한 패턴이 하나도 없으면 false
-	return false;
+	TArray<const FEnemyPatternDefinition*> Candidates;
+	CollectCandidates(Target, false, {}, Candidates);
+	return !Candidates.IsEmpty();
 }
 
 bool UEnemyPatternComponent::CanStartPattern(FName PatternId, AActor* Target) const
 {
 	if (!CanStartAttack())
+	{
 		return false;
+	}
 
 	const FEnemyPatternDefinition* Pattern = FindPattern(PatternId);
+	if (!Pattern || !CanExecutePattern(*Pattern, Target))
+	{
+		return false;
+	}
 
-	return Pattern && CanExecutePattern(*Pattern, Target);
+	FGameplayTagContainer Occupied;
+	int32 OccupiedThreat = 0;
+	CollectOccupied(Occupied, OccupiedThreat);
+	return CanJoin(*Pattern, Occupied, OccupiedThreat);
 }
 
 bool UEnemyPatternComponent::PickAttackPattern(AActor* Target, FName& OutPatternId) const
@@ -201,213 +218,158 @@ bool UEnemyPatternComponent::PickAttackPattern(AActor* Target, FName& OutPattern
 	OutPatternId = NAME_None;
 
 	if (!CanStartAttack())
+	{
 		return false;
+	}
 
-	/* 후보 수집 및 가중치 계산 */
+	// 주 패턴 후보: 실행 중인 보조 패턴과 남은 생성물의 자원·위험도까지 반영
 	TArray<const FEnemyPatternDefinition*> Candidates;
+	CollectCandidates(Target, false, {}, Candidates);
 
-	// 패턴 선택 후보들의 가중치 합산 구하기
-	float TotalWeight = 0.f;
-	for (const FEnemyPatternDefinition& Pattern : PatternSet->Patterns)
-	{
-		if (Pattern.Weight > 0.f && CanExecutePattern(Pattern, Target))
-		{
-			Candidates.Add(&Pattern);
-			TotalWeight += Pattern.Weight;
-		}
-	}
-
-	// 후보들의 가중치 합산이 유효하지 않으면 실패 처리
-	if (Candidates.IsEmpty()
-		|| !FMath::IsFinite(TotalWeight)
-		|| TotalWeight <= 0.f)
+	const FEnemyPatternDefinition* Selected = PickWeighted(Candidates);
+	if (!Selected)
 	{
 		return false;
 	}
 
-	/* 가중치 추첨: 0 ~ 총합 사이 값을 뽑고, 후보 가중치를 차례로 빼서 처음으로 0 이하가 되는 후보 선택 */
-
-	float Roll = FMath::FRand() * TotalWeight;	// 난수에 총합을 곱해서 값 추첨
-
-	// 부동소수점 오차로 반복문에서 선택되지 않는 경우를 대비해 마지막 후보를 기본값을 설정
-	const FEnemyPatternDefinition* Selected = Candidates.Last();
-
-	// 반복문을 돌며 추첨된 값(Roll)에 해당하는 후보자 찾기
-	for (const FEnemyPatternDefinition* Candidate : Candidates)
-	{
-		// 각 후보자들의 가중치를 추첨된 값에서 뺌
-		Roll -= Candidate->Weight;
-
-		// 가중치를 차감한 결과가 처음으로 0 이하가 되는 후보를 선택
-		if (Roll <= 0.f)
-		{
-			Selected = Candidate;
-			break;
-		}
-	}
-
-	// 추첨 성공
 	OutPatternId = Selected->PatternId;
 	return true;
 }
 
 /* 실행 요청 */
 
-// 조건을 만족하는 후보 중 확률 가중치로 공격 하나 선택
-bool UEnemyPatternComponent::TryStartAttack(AActor * Target, int64 & OutRequestId)
+bool UEnemyPatternComponent::TryStartAttack(AActor* Target, int64& OutRequestId)
 {
 	OutRequestId = 0;
 
-	// 패턴 추첨해서 시작 시도
 	FName SelectedId;
 	return PickAttackPattern(Target, SelectedId) && TryStartPattern(SelectedId, Target, OutRequestId);
 }
 
-// 지정한 패턴을 실행하고 요청 번호 반환
+// 지정한 패턴을 주 패턴으로 실행하고, 이어서 빈 자리에 보조 패턴 추첨
 bool UEnemyPatternComponent::TryStartPattern(FName PatternId, AActor* Target, int64& OutRequestId)
 {
 	OutRequestId = 0;
 
-	const FEnemyPatternDefinition* Pattern = FindPattern(PatternId);
-	if (!CanStartAttack() || !Pattern || !CanExecutePattern(*Pattern, Target))
+	PruneLingeringHazards();
+
+	// 직접 지정은 가중치를 보지 않음: 가중치 0 = 자동 선택에서만 제외
+	if (!CanStartPattern(PatternId, Target))
+	{
 		return false;
+	}
 
-	/* 요청 상태 준비 */
-
-	UnbindAbilityEnded();
-
-	bRecovering = false;
-	ActivePattern = *Pattern;
-	ActiveTarget = Target;
+	/* 1) 주 패턴 슬롯 생성과 GA 활성화 */
 
 	// 실행 설정으로 인계했으므로 사전 선택 기록은 비움
 	ReservedPatternId = NAME_None;
 
-	ActiveAbilityHandle = PatternHandles.FindChecked(PatternId);
-	ActiveRequestId = ++NextRequestId;
-	ActiveResult = EEnemyPatternResult::Running;
+	const int64 RequestId = AddSlot(*FindPattern(PatternId), Target, true).RequestId;
+	PrimaryRequestId = RequestId;
 
-	// 활성화 직전 요청 번호: 이전 실행의 콜백을 무시하는 기준
-	const int64 StartedRequestId = ActiveRequestId;
-
-	/* 종료 이벤트 구독: 활성화 도중 즉시 종료되는 경우도 받기 위해 활성화 전에 구독 */
-
-	AbilityEndedDelegateHandle = ASC->OnAbilityEnded.AddWeakLambda(
-		this,
-		[this, StartedRequestId](const FAbilityEndedData& EndedData)
-		{
-			if (StartedRequestId == ActiveRequestId)
-			{
-				HandleAbilityEnded(EndedData);
-			}
-		}
-	);
-
-	/* GA 활성화 */
-
-	if (!ASC->TryActivateAbility(ActiveAbilityHandle))
+	if (!ActivateSlot(RequestId))
 	{
-		ActiveResult = EEnemyPatternResult::Failed;
-		UnbindAbilityEnded();
-		ActiveRequestId = 0;
-		ActiveTarget.Reset();
 		return false;
 	}
 
 	// 활성화 중 사망 또는 초기화로 실행이 무효화됐으면 요청을 반환하지 않음
-	if (bStopped || ActiveRequestId != StartedRequestId)
+	if (bStopped || PrimaryRequestId != RequestId)
 	{
 		return false;
 	}
 
-	OutRequestId = ActiveRequestId;
+	OutRequestId = RequestId;
 
-	/* GA 종료 누락 감시 */
+	/* 2) 보조 패턴: 주 패턴의 자원이 점유된 뒤에 추첨해야 겹치지 않음 */
 
-	if (ActiveResult == EEnemyPatternResult::Running && AbilityEndedDelegateHandle.IsValid())
-	{
-		GetWorld()->GetTimerManager().SetTimer(
-			ExecutionTimeoutHandle,
-			this,
-			&UEnemyPatternComponent::HandleExecutionTimeout,
-			Pattern->MaxExecutionSeconds,
-			false
-		);
-	}
+	FillCompanions(Target);
 
 	return true;
 }
 
-// 요청 번호가 일치하는 공격만 취소하고 Cancelled 결과 유지
+// 요청 번호가 일치하는 실행만 취소
 void UEnemyPatternComponent::CancelRequest(int64 RequestId)
 {
-	if (!IsRequestRunning(RequestId))
-		return;
-
-	bRecovering = false;
-	ActiveResult = EEnemyPatternResult::Cancelled;
-	ReleaseRecoveryMovementLock();
-	
-	GetWorld()->GetTimerManager().ClearTimer(ExecutionTimeoutHandle);
-	GetWorld()->GetTimerManager().ClearTimer(RecoveryTimerHandle);
-
-	UnbindAbilityEnded();
-
-	if (ASC.IsValid())
+	FEnemyPatternSlot* Slot = FindSlot(RequestId);
+	if (!Slot || Slot->Result != EEnemyPatternResult::Running)
 	{
-		ASC->CancelAbilityHandle(ActiveAbilityHandle);
+		return;
+	}
+
+	const bool bStarted = Slot->bStarted;
+	const FGameplayAbilitySpecHandle AbilityHandle = Slot->AbilityHandle;
+
+	if (Slot->bPrimary)
+	{
+		ReleaseRecoveryMovementLock();
+	}
+
+	// 결과를 먼저 기록: GA 취소로 들어오는 종료 이벤트가 이 슬롯을 다시 처리하지 않음
+	FinishSlot(RequestId, EEnemyPatternResult::Cancelled);
+
+	// 시작 지연 예약은 GA가 없으므로 슬롯만 정리
+	if (bStarted && ASC.IsValid())
+	{
+		ASC->CancelAbilityHandle(AbilityHandle);
 	}
 }
 
-// 현재 요청 번호로 실행 중인 공격 취소
 void UEnemyPatternComponent::CancelActiveRequest()
 {
-	CancelRequest(ActiveRequestId);
+	CancelRequest(PrimaryRequestId);
 }
 
-// 실행 중이면 먼저 취소하고 요청 번호, 결과 및 타깃 해제
-void UEnemyPatternComponent::ReleaseRequest(int64 RequestId)
+// 주 패턴, 보조 패턴, 시작 지연 예약을 모두 취소 (남은 생성물은 각 GA의 정리 규칙을 따름)
+void UEnemyPatternComponent::CancelAllRequests()
 {
-	if (RequestId == 0 || RequestId != ActiveRequestId)
-		return;
-
-	CancelRequest(RequestId);
-
-	if (GetWorld())
+	TArray<int64, TInlineAllocator<4>> RunningIds;
+	for (const FEnemyPatternSlot& Slot : Slots)
 	{
-		GetWorld()->GetTimerManager().ClearTimer(ExecutionTimeoutHandle);
-		GetWorld()->GetTimerManager().ClearTimer(RecoveryTimerHandle);
+		if (Slot.Result == EEnemyPatternResult::Running)
+		{
+			RunningIds.Add(Slot.RequestId);
+		}
 	}
 
-	ActiveRequestId = 0;
-	ActiveResult = EEnemyPatternResult::Invalid;
-	ActiveTarget.Reset();
-
-	UnbindAbilityEnded();
+	for (const int64 RequestId : RunningIds)
+	{
+		CancelRequest(RequestId);
+	}
 }
 
-// 요청을 먼저 무효화한 뒤 타이머, 구독 및 능력 실행 정리
+// 주 패턴 요청 해제: 실행 중이면 먼저 취소하고 결과와 타깃 해제
+void UEnemyPatternComponent::ReleaseRequest(int64 RequestId)
+{
+	if (RequestId == 0 || RequestId != PrimaryRequestId)
+	{
+		return;
+	}
+
+	CancelRequest(RequestId);
+	RemoveSlot(RequestId);
+	PrimaryRequestId = 0;
+}
+
+// 모든 요청을 무효화한 뒤 타이머, 남은 생성물 기록, 능력 실행 정리
 void UEnemyPatternComponent::StopAndInvalidate()
 {
 	ReleaseRecoveryMovementLock();
 	ResetAttackInterval();
 
-	bRecovering = false;
 	bStopped = true;
 	bRequestsBlocked = true;
 
-	ActiveRequestId = 0;
-	ActiveResult = EEnemyPatternResult::Invalid;
-	ReservedPatternId = NAME_None;
-
-	if (UWorld* World = GetWorld())
+	for (FEnemyPatternSlot& Slot : Slots)
 	{
-		World->GetTimerManager().ClearTimer(ExecutionTimeoutHandle);
-		World->GetTimerManager().ClearTimer(RecoveryTimerHandle);
+		ClearSlotTimers(Slot);
 	}
 
-	UnbindAbilityEnded();
+	Slots.Reset();
+	LingeringHazards.Reset();
+	PrimaryRequestId = 0;
+	ReservedPatternId = NAME_None;
 
+	// 슬롯을 먼저 비웠으므로 취소로 들어오는 종료 이벤트는 무시됨
 	if (ASC.IsValid())
 	{
 		for (const TPair<FName, FGameplayAbilitySpecHandle>& Pair : PatternHandles)
@@ -415,43 +377,49 @@ void UEnemyPatternComponent::StopAndInvalidate()
 			ASC->CancelAbilityHandle(Pair.Value);
 		}
 	}
-
-	ActiveTarget.Reset();
 }
 
 /* 요청 상태 조회 */
 
 EEnemyPatternResult UEnemyPatternComponent::GetRequestResult(int64 RequestId) const
 {
-	if (bStopped
-		|| RequestId == 0
-		|| RequestId != ActiveRequestId)
-		return EEnemyPatternResult::Invalid;
-
-	return ActiveResult;
+	const FEnemyPatternSlot* Slot = bStopped ? nullptr : FindSlot(RequestId);
+	return Slot ? Slot->Result : EEnemyPatternResult::Invalid;
 }
 
 bool UEnemyPatternComponent::IsRequestRunning(int64 RequestId) const
 {
-	return !bStopped
-		&& RequestId != 0 && RequestId == ActiveRequestId
-		&& ActiveResult == EEnemyPatternResult::Running;
+	return GetRequestResult(RequestId) == EEnemyPatternResult::Running;
 }
 
-bool UEnemyPatternComponent::GetActiveExecution(FEnemyPatternDefinition& OutPattern, AActor*& OutTarget, int64& OutRequestId) const
+bool UEnemyPatternComponent::GetExecutionForAbility(const FGameplayAbilitySpecHandle& AbilityHandle,
+	FEnemyPatternDefinition& OutPattern, AActor*& OutTarget, int64& OutRequestId) const
 {
 	OutPattern = FEnemyPatternDefinition();
 	OutTarget = nullptr;
 	OutRequestId = 0;
 
-	// 활성화된 패턴 없으면 false 반환
-	if (!IsRequestRunning(ActiveRequestId))
+	if (bStopped)
+	{
 		return false;
+	}
 
-	OutPattern = ActivePattern;
-	OutTarget = ActiveTarget.Get();
-	OutRequestId = ActiveRequestId;
+	// 이 Spec으로 활성화한 실행 중 슬롯 (패턴마다 Spec이 따로라 하나뿐)
+	const FEnemyPatternSlot* Slot = Slots.FindByPredicate(
+		[&AbilityHandle](const FEnemyPatternSlot& Candidate)
+		{
+			return Candidate.AbilityHandle == AbilityHandle && Candidate.bStarted
+				&& Candidate.Result == EEnemyPatternResult::Running && !Candidate.bRecovering;
+		});
 
+	if (!Slot)
+	{
+		return false;
+	}
+
+	OutPattern = Slot->Pattern;
+	OutTarget = Slot->Target.Get();
+	OutRequestId = Slot->RequestId;
 	return true;
 }
 
@@ -461,39 +429,112 @@ bool UEnemyPatternComponent::GetActiveMovement(FEnemyPatternMovementSettings& Ou
 	OutTarget = nullptr;
 	OutRequestId = 0;
 
-	// 활성화된 패턴 없으면 false 반환
-	if (!IsRequestRunning(ActiveRequestId))
-		return false;
-
-	// 후딜 중에는 기본값(FollowLocomotion) 유지: 실제 정지는 후딜 이동 잠금이 담당
-	if (!bRecovering)
+	const FEnemyPatternSlot* Primary = IsRequestRunning(PrimaryRequestId) ? FindSlot(PrimaryRequestId) : nullptr;
+	if (!Primary)
 	{
-		OutMovement = ActivePattern.Movement;
+		return false;
 	}
 
-	OutTarget = ActiveTarget.Get();
-	OutRequestId = ActiveRequestId;
+	// 후딜 중에는 기본값(FollowLocomotion) 유지: 실제 정지는 후딜 이동 잠금이 담당
+	if (!Primary->bRecovering)
+	{
+		OutMovement = Primary->Pattern.Movement;
+	}
+
+	OutTarget = Primary->Target.Get();
+	OutRequestId = Primary->RequestId;
 	return true;
 }
 
-// 관리 중인 공격 GA가 실제로 모두 종료됐는지 확인
+// 관리 중인 GA와 예약이 모두 끝났는지
 bool UEnemyPatternComponent::IsIdle() const
 {
-	if (ActiveResult == EEnemyPatternResult::Running)
+	if (GetRunningSlotCount() > 0)
+	{
 		return false;
+	}
 
-	// 취소 요청을 했어도 실제 GA가 종료되지 않았으면 새로 실행 하지 않음
+	// 취소 요청을 했어도 실제 GA가 종료되지 않았으면 Idle이 아님
 	if (ASC.IsValid())
 	{
 		for (const TPair<FName, FGameplayAbilitySpecHandle>& Pair : PatternHandles)
 		{
 			const FGameplayAbilitySpec* Spec = ASC->FindAbilitySpecFromHandle(Pair.Value);
 			if (Spec && Spec->IsActive())
+			{
 				return false;
+			}
 		}
 	}
 
 	return true;
+}
+
+// 몸을 쓰는 패턴 GA가 실행 중인지 (취소 후 아직 끝나지 않은 GA 포함, 후딜 제외)
+bool UEnemyPatternComponent::IsBodyBusy() const
+{
+	if (!ASC.IsValid())
+	{
+		return false;
+	}
+
+	for (const TPair<FName, FGameplayAbilitySpecHandle>& Pair : PatternHandles)
+	{
+		if (!UsesBody(Pair.Key))
+		{
+			continue;
+		}
+
+		const FGameplayAbilitySpec* Spec = ASC->FindAbilitySpecFromHandle(Pair.Value);
+		if (Spec && Spec->IsActive())
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool UEnemyPatternComponent::IsRecovering() const
+{
+	const FEnemyPatternSlot* Primary = FindSlot(PrimaryRequestId);
+	return Primary && Primary->Result == EEnemyPatternResult::Running && Primary->bRecovering;
+}
+
+int32 UEnemyPatternComponent::GetRunningSlotCount() const
+{
+	int32 Count = 0;
+	for (const FEnemyPatternSlot& Slot : Slots)
+	{
+		Count += Slot.Result == EEnemyPatternResult::Running ? 1 : 0;
+	}
+	return Count;
+}
+
+/* 남은 위험 생성물 */
+
+void UEnemyPatternComponent::RegisterLingeringHazard(int64 RequestId, AActor* SpawnedActor)
+{
+	const FEnemyPatternSlot* Slot = FindSlot(RequestId);
+	if (!Slot || !IsValid(SpawnedActor))
+	{
+		return;
+	}
+
+	// 위험 태그만 남김: 기술 자원(몸 등)은 GA가 끝나면 해제
+	FEnemyPatternLingeringHazard Hazard;
+	Hazard.RequestId = RequestId;
+	Hazard.Actor = SpawnedActor;
+	Hazard.Hazards = Slot->Resources.Filter(FGameplayTagContainer(EnemyCombatTags::PatternHazard));
+	Hazard.Threat = Slot->Threat;
+
+	if (Hazard.Hazards.IsEmpty() && Hazard.Threat == 0)
+	{
+		return;
+	}
+
+	PruneLingeringHazards();
+	LingeringHazards.Add(MoveTemp(Hazard));
 }
 
 /* 패턴 정보 조회 */
@@ -509,15 +550,24 @@ bool UEnemyPatternComponent::GetPatternDefinition(FName PatternId, FEnemyPattern
 
 	const FEnemyPatternDefinition* Pattern = bStopped ? nullptr : FindPattern(PatternId);
 	if (!Pattern)
+	{
 		return false;
+	}
 
 	OutDefinition = *Pattern;
 	return true;
 }
 
+float UEnemyPatternComponent::GetSelectionWeight(const FEnemyPatternDefinition& Pattern) const
+{
+	const float* Override = WeightOverrides.Find(Pattern.PatternId);
+	return Override ? *Override : Pattern.Weight;
+}
+
 FName UEnemyPatternComponent::GetActivePatternId() const
 {
-	return IsRequestRunning(ActiveRequestId) ? ActivePattern.PatternId : ReservedPatternId;
+	const FEnemyPatternSlot* Primary = IsRequestRunning(PrimaryRequestId) ? FindSlot(PrimaryRequestId) : nullptr;
+	return Primary ? Primary->Pattern.PatternId : ReservedPatternId;
 }
 
 void UEnemyPatternComponent::ClearReservedPattern(FName PatternId)
@@ -538,7 +588,7 @@ void UEnemyPatternComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-/* 내부 처리 */
+/* 후보 검사 */
 
 const FEnemyPatternDefinition* UEnemyPatternComponent::FindPattern(FName PatternId) const
 {
@@ -546,6 +596,7 @@ const FEnemyPatternDefinition* UEnemyPatternComponent::FindPattern(FName Pattern
 	{
 		return nullptr;
 	}
+
 	return PatternSet->Patterns.FindByPredicate(
 		[PatternId](const FEnemyPatternDefinition& Pattern)
 		{
@@ -557,13 +608,13 @@ const FEnemyPatternDefinition* UEnemyPatternComponent::FindPattern(FName Pattern
 bool UEnemyPatternComponent::MatchesGeometry(const FEnemyPatternDefinition& Pattern, AActor* Target) const
 {
 	const AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner());
-	if (!IsValid(Enemy) || !Enemy->IsAlive()
-		|| !AvailablePatterns.Contains(Pattern.PatternId))
+	if (!IsValid(Enemy) || !Enemy->IsAlive() || !AvailablePatterns.Contains(Pattern.PatternId))
+	{
 		return false;
+	}
 
 	// 타깃, 거리, 시야 조건을 모두 사용하지 않는 아레나 패턴은 타깃이 없어도 실행 가능
-	const bool bNeedsTarget = Pattern.bRequiresTarget
-		|| Pattern.bCheckTargetDistance || Pattern.bRequiresLineOfSight;
+	const bool bNeedsTarget = Pattern.bRequiresTarget || Pattern.bCheckTargetDistance || Pattern.bRequiresLineOfSight;
 	if (!bNeedsTarget)
 	{
 		return true;
@@ -581,7 +632,7 @@ bool UEnemyPatternComponent::MatchesGeometry(const FEnemyPatternDefinition& Patt
 
 	// 수평 거리 범위와 높이 차이
 	const FVector DeltaLocation = Target->GetActorLocation() - Enemy->GetActorLocation();
-	const float DistanceSquared = DeltaLocation.SizeSquared2D();
+	const double DistanceSquared = DeltaLocation.SizeSquared2D();
 
 	return DistanceSquared >= FMath::Square(Pattern.MinRange)
 		&& DistanceSquared <= FMath::Square(Pattern.MaxRange)
@@ -592,65 +643,501 @@ bool UEnemyPatternComponent::MatchesGeometry(const FEnemyPatternDefinition& Patt
 bool UEnemyPatternComponent::CanExecutePattern(const FEnemyPatternDefinition& Pattern, AActor* Target) const
 {
 	if (!MatchesGeometry(Pattern, Target) || !ASC.IsValid())
+	{
 		return false;
+	}
 
 	const AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner());
 	if (!Enemy->CanRunEnemyAI())
+	{
 		return false;
+	}
 
 	if (Pattern.bRequiresLineOfSight)
 	{
 		const AAIController* AI = Cast<AAIController>(Enemy->GetController());
-		
 		if (!IsValid(Target) || !AI || !AI->LineOfSightTo(Target))
+		{
 			return false;
+		}
 	}
 
-	// GA가 이미 실행 중이 아니고, GA 자체의 활성화 조건(태그, 쿨다운 등)도 만족해야 함
+	// 이 패턴의 GA가 이미 실행 중이 아니고, GA 자체의 활성화 조건(태그, 쿨다운 등)도 만족해야 함
 	const FGameplayAbilitySpecHandle* Handle = PatternHandles.Find(Pattern.PatternId);
-	const FGameplayAbilitySpec* Spec =
-		Handle
-		? ASC->FindAbilitySpecFromHandle(*Handle)
-		: nullptr;
+	const FGameplayAbilitySpec* Spec = Handle ? ASC->FindAbilitySpecFromHandle(*Handle) : nullptr;
 
-	return Spec && !Spec->IsActive()
-		&& Spec->Ability
+	return Spec && !Spec->IsActive() && Spec->Ability
 		&& Spec->Ability->CanActivateAbility(*Handle, ASC->AbilityActorInfo.Get());
 }
 
-// 현재 능력의 종료 이벤트만 받아 완료 또는 취소 기록
-void UEnemyPatternComponent::HandleAbilityEnded(const FAbilityEndedData& EndedData)
+// 자동 선택 후보 수집
+void UEnemyPatternComponent::CollectCandidates(AActor* Target, bool bCompanion, const TSet<FName>& Excluded,
+	TArray<const FEnemyPatternDefinition*>& OutCandidates) const
 {
-	if (bStopped
-		|| ActiveResult != EEnemyPatternResult::Running
-		|| EndedData.AbilitySpecHandle != ActiveAbilityHandle)
+	OutCandidates.Reset();
+
+	if (!PatternSet)
 	{
 		return;
 	}
 
-	GetWorld()->GetTimerManager().ClearTimer(ExecutionTimeoutHandle);
-	UnbindAbilityEnded();
+	// 지금 점유 중인 자원과 위험도: 실행 중, 예약 중, 남은 생성물 모두 포함
+	FGameplayTagContainer Occupied;
+	int32 OccupiedThreat = 0;
+	CollectOccupied(Occupied, OccupiedThreat);
+
+	for (const FEnemyPatternDefinition& Pattern : PatternSet->Patterns)
+	{
+		// 순서: 가중치(자동 선택 대상) → 역할(보조는 몸 사용 금지) → 실행 조건 → 자원·위험도
+		if (Excluded.Contains(Pattern.PatternId) || GetSelectionWeight(Pattern) <= 0.f)
+		{
+			continue;
+		}
+
+		if (bCompanion && UsesBody(Pattern.PatternId))
+		{
+			continue;
+		}
+
+		if (CanExecutePattern(Pattern, Target) && CanJoin(Pattern, Occupied, OccupiedThreat))
+		{
+			OutCandidates.Add(&Pattern);
+		}
+	}
+}
+
+// 살아 있는 슬롯과 남은 생성물이 점유한 자원·위험 태그와 위험도 합
+void UEnemyPatternComponent::CollectOccupied(FGameplayTagContainer& OutResources, int32& OutThreat) const
+{
+	OutResources.Reset();
+	OutThreat = 0;
+
+	// 위험도를 이미 센 요청: 실행 중인 슬롯과 그 슬롯이 남긴 생성물을 두 번 세지 않음
+	TSet<int64, DefaultKeyFuncs<int64>, TInlineSetAllocator<8>> CountedRequests;
+
+	for (const FEnemyPatternSlot& Slot : Slots)
+	{
+		if (Slot.Result != EEnemyPatternResult::Running)
+		{
+			continue;
+		}
+
+		OutResources.AppendTags(Slot.Resources);
+		OutThreat += Slot.Threat;
+		CountedRequests.Add(Slot.RequestId);
+	}
+
+	for (const FEnemyPatternLingeringHazard& Hazard : LingeringHazards)
+	{
+		if (!Hazard.Actor.IsValid())
+		{
+			continue;
+		}
+
+		OutResources.AppendTags(Hazard.Hazards);
+
+		// 같은 요청의 생성물 여러 개(폭탄 3개)는 위험도를 한 번만 셈
+		if (!CountedRequests.Contains(Hazard.RequestId))
+		{
+			OutThreat += Hazard.Threat;
+			CountedRequests.Add(Hazard.RequestId);
+		}
+	}
+}
+
+// 점유 중인 자원·위험도와 겹치지 않고 함께 실행할 수 있는지
+bool UEnemyPatternComponent::CanJoin(const FEnemyPatternDefinition& Pattern, const FGameplayTagContainer& Occupied, int32 OccupiedThreat) const
+{
+	const FGameplayTagContainer* Resources = PatternResources.Find(Pattern.PatternId);
+	if (!Resources)
+	{
+		return false;
+	}
+
+	// 자원·위험 태그 충돌: 양방향 계층 비교 (Body와 Body.Arms처럼 부모/자식 관계도 충돌)
+	if (Resources->HasAny(Occupied) || Occupied.HasAny(*Resources))
+	{
+		return false;
+	}
+
+	// 위험도 예산: 혼자 실행하는 경우는 항상 허용 (예산보다 큰 패턴이 영원히 막히지 않도록)
+	const int32 MaxThreat = Concurrency.MaxThreat;
+	if (MaxThreat > 0 && OccupiedThreat > 0 && OccupiedThreat + Pattern.Threat > MaxThreat)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+bool UEnemyPatternComponent::UsesBody(FName PatternId) const
+{
+	const FGameplayTagContainer* Resources = PatternResources.Find(PatternId);
+	return Resources && Resources->HasTag(EnemyCombatTags::PatternResourceBody);
+}
+
+const FEnemyPatternDefinition* UEnemyPatternComponent::PickWeighted(TConstArrayView<const FEnemyPatternDefinition*> Candidates) const
+{
+	/* 1) 유효 가중치 합산 */
+
+	float TotalWeight = 0.f;
+	for (const FEnemyPatternDefinition* Candidate : Candidates)
+	{
+		TotalWeight += GetSelectionWeight(*Candidate);
+	}
+
+	if (Candidates.IsEmpty() || !FMath::IsFinite(TotalWeight) || TotalWeight <= 0.f)
+	{
+		return nullptr;
+	}
+
+	/* 2) 가중치 추첨: 0 ~ 총합 사이 값을 뽑고, 후보 가중치를 차례로 빼서 처음 0 이하가 되는 후보 선택 */
+
+	float Roll = FMath::FRand() * TotalWeight;
+
+	// 부동소수점 오차로 반복문에서 선택되지 않는 경우를 대비해 마지막 후보를 기본값으로
+	const FEnemyPatternDefinition* Selected = Candidates.Last();
+
+	for (const FEnemyPatternDefinition* Candidate : Candidates)
+	{
+		Roll -= GetSelectionWeight(*Candidate);
+		if (Roll <= 0.f)
+		{
+			Selected = Candidate;
+			break;
+		}
+	}
+
+	return Selected;
+}
+
+// 패턴의 유효 자원: GA 기본 자원 + 패턴 추가 자원 + 몸 사용 자동 판정
+FGameplayTagContainer UEnemyPatternComponent::ResolvePatternResources(const FEnemyPatternDefinition& Pattern) const
+{
+	FGameplayTagContainer Resources = Pattern.Resources;
+
+	// GA 클래스 기본 자원: 근접, 돌진처럼 클래스 자체가 몸을 쓰는 경우 페이즈 설정자가 따로 적지 않아도 됨
+	if (const UEnemyPatternAbility* AbilityDefaults = Cast<UEnemyPatternAbility>(Pattern.AbilityClass->GetDefaultObject()))
+	{
+		Resources.AppendTags(AbilityDefaults->GetDefaultPatternResources());
+	}
+
+	// 패턴 설정이 몸을 제어하면 자동으로 몸 점유 (회전 잠금, 시작 정렬, 정지/GA 이동)
+	// - 기존 패턴의 기본값은 모두 여기에 해당 → 독립 패턴으로 쓰려면 세 설정을 끄고 FollowLocomotion으로 둠
+	const bool bControlsBody = Pattern.bLockRotation || Pattern.bFaceTargetOnStart
+		|| Pattern.Movement.Policy != EEnemyPatternMovementPolicy::FollowLocomotion;
+
+	if (bControlsBody)
+	{
+		Resources.AddTag(EnemyCombatTags::PatternResourceBody);
+	}
+
+	return Resources;
+}
+
+/* 슬롯 관리 */
+
+// 슬롯 생성: 자원과 동시 실행 수를 이 시점부터 점유
+FEnemyPatternSlot& UEnemyPatternComponent::AddSlot(const FEnemyPatternDefinition& Pattern, AActor* Target, bool bPrimary)
+{
+	FEnemyPatternSlot& Slot = Slots.AddDefaulted_GetRef();
+
+	Slot.RequestId = ++NextRequestId;
+	Slot.Pattern = Pattern;
+	Slot.Target = Target;
+	Slot.AbilityHandle = PatternHandles.FindChecked(Pattern.PatternId);
+	Slot.Resources = PatternResources.FindRef(Pattern.PatternId);
+	Slot.Threat = Pattern.Threat;
+	Slot.Result = EEnemyPatternResult::Running;
+	Slot.bPrimary = bPrimary;
+
+	// 주의: 반환한 참조는 다음 AddSlot/RemoveSlot 전까지만 유효 (배열 재할당)
+	return Slot;
+}
+
+FEnemyPatternSlot* UEnemyPatternComponent::FindSlot(int64 RequestId)
+{
+	return RequestId == 0 ? nullptr : Slots.FindByPredicate(
+		[RequestId](const FEnemyPatternSlot& Slot)
+		{
+			return Slot.RequestId == RequestId;
+		});
+}
+
+const FEnemyPatternSlot* UEnemyPatternComponent::FindSlot(int64 RequestId) const
+{
+	return const_cast<UEnemyPatternComponent*>(this)->FindSlot(RequestId);
+}
+
+// 슬롯의 GA 활성화: 실패하면 슬롯을 지우고 false
+bool UEnemyPatternComponent::ActivateSlot(int64 RequestId)
+{
+	FEnemyPatternSlot* Slot = FindSlot(RequestId);
+	if (!Slot || !ASC.IsValid())
+	{
+		return false;
+	}
+
+	// GA는 활성화 도중 GetExecutionForAbility로 이 슬롯을 찾으므로 활성화 전에 표시
+	Slot->bStarted = true;
+
+	const FGameplayAbilitySpecHandle AbilityHandle = Slot->AbilityHandle;
+	const float TimeoutSeconds = Slot->Pattern.MaxExecutionSeconds;
+	const bool bPrimary = Slot->bPrimary;
+
+	// 이 아래부터 Slot 포인터는 쓰지 않음: 활성화 중 콜백이 슬롯을 지우거나 배열을 바꿀 수 있음
+	if (!ASC->TryActivateAbility(AbilityHandle))
+	{
+		RemoveSlot(RequestId);
+
+		if (bPrimary && PrimaryRequestId == RequestId)
+		{
+			PrimaryRequestId = 0;
+		}
+
+		return false;
+	}
+
+	// 활성화 안에서 바로 끝나지 않았을 때만 종료 누락 감시
+	if (FEnemyPatternSlot* Running = FindSlot(RequestId);
+		Running && Running->Result == EEnemyPatternResult::Running && !Running->bRecovering)
+	{
+		GetWorld()->GetTimerManager().SetTimer(Running->TimeoutTimer,
+			FTimerDelegate::CreateUObject(this, &UEnemyPatternComponent::HandleExecutionTimeout, RequestId),
+			TimeoutSeconds, false);
+	}
+
+	return true;
+}
+
+// 주 패턴 시작 직후 빈 자리에 보조 패턴을 하나씩 추첨해 예약 또는 실행
+void UEnemyPatternComponent::FillCompanions(AActor* Target)
+{
+	const int32 FreeSlots = Concurrency.MaxConcurrentPatterns - GetRunningSlotCount();
+
+	// 이번 추첨에서 이미 뽑았거나 시작에 실패한 패턴
+	TSet<FName> Excluded;
+
+	for (int32 SlotIndex = 0; SlotIndex < FreeSlots; ++SlotIndex)
+	{
+		// 빈 자리마다 확률 추첨: 상한까지 항상 채우지 않도록 하는 밸런싱 손잡이
+		if (FMath::FRand() >= Concurrency.CompanionChance)
+		{
+			continue;
+		}
+
+		// 한 자리를 채울 때까지 후보를 다시 계산하며 추첨 (앞에서 뽑힌 패턴의 자원·위험도 반영)
+		while (true)
+		{
+			TArray<const FEnemyPatternDefinition*> Candidates;
+			CollectCandidates(Target, true, Excluded, Candidates);
+
+			const FEnemyPatternDefinition* Selected = PickWeighted(Candidates);
+			if (!Selected)
+			{
+				// 함께 실행할 후보가 더 없음: 남은 자리도 채울 수 없으므로 종료
+				return;
+			}
+
+			Excluded.Add(Selected->PatternId);
+
+			const int64 RequestId = AddSlot(*Selected, Target, false).RequestId;
+
+			// 시작 지연: 지연 동안에도 자리와 자원은 예약으로 점유
+			if (Selected->CompanionStartDelay > 0.f)
+			{
+				GetWorld()->GetTimerManager().SetTimer(FindSlot(RequestId)->StartDelayTimer,
+					FTimerDelegate::CreateUObject(this, &UEnemyPatternComponent::HandleStartDelayFinished, RequestId),
+					Selected->CompanionStartDelay, false);
+				break;
+			}
+
+			if (ActivateSlot(RequestId))
+			{
+				break;
+			}
+
+			// 활성화 실패: 슬롯은 ActivateSlot이 지웠으므로 다른 후보로 다시 추첨
+		}
+	}
+}
+
+// 슬롯 종료: 주 패턴은 결과를 남기고(BT가 해제), 보조 패턴은 슬롯을 지움
+void UEnemyPatternComponent::FinishSlot(int64 RequestId, EEnemyPatternResult Result)
+{
+	FEnemyPatternSlot* Slot = FindSlot(RequestId);
+	if (!Slot)
+	{
+		return;
+	}
+
+	ClearSlotTimers(*Slot);
+	Slot->bRecovering = false;
+	Slot->Result = Result;
+
+	if (!Slot->bPrimary)
+	{
+		RemoveSlot(RequestId);
+	}
+}
+
+void UEnemyPatternComponent::RemoveSlot(int64 RequestId)
+{
+	const int32 Index = Slots.IndexOfByPredicate(
+		[RequestId](const FEnemyPatternSlot& Slot)
+		{
+			return Slot.RequestId == RequestId;
+		});
+
+	if (Index == INDEX_NONE)
+	{
+		return;
+	}
+
+	ClearSlotTimers(Slots[Index]);
+	Slots.RemoveAtSwap(Index);
+}
+
+void UEnemyPatternComponent::ClearSlotTimers(FEnemyPatternSlot& Slot)
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(Slot.StartDelayTimer);
+		World->GetTimerManager().ClearTimer(Slot.TimeoutTimer);
+		World->GetTimerManager().ClearTimer(Slot.RecoveryTimer);
+	}
+}
+
+void UEnemyPatternComponent::PruneLingeringHazards()
+{
+	LingeringHazards.RemoveAllSwap(
+		[](const FEnemyPatternLingeringHazard& Hazard)
+		{
+			return !Hazard.Actor.IsValid();
+		});
+}
+
+/* GAS와 타이머 콜백 */
+
+// 모든 패턴 GA의 종료 이벤트: Spec Handle로 실행 중인 슬롯을 찾아 처리
+void UEnemyPatternComponent::HandleAbilityEnded(const FAbilityEndedData& EndedData)
+{
+	if (bStopped)
+	{
+		return;
+	}
+
+	FEnemyPatternSlot* Slot = Slots.FindByPredicate(
+		[&EndedData](const FEnemyPatternSlot& Candidate)
+		{
+			return Candidate.AbilityHandle == EndedData.AbilitySpecHandle && Candidate.bStarted
+				&& Candidate.Result == EEnemyPatternResult::Running && !Candidate.bRecovering;
+		});
+
+	// 이미 취소/해제된 실행이나 이 컴포넌트가 관리하지 않는 GA
+	if (!Slot)
+	{
+		return;
+	}
+
+	const int64 RequestId = Slot->RequestId;
+	GetWorld()->GetTimerManager().ClearTimer(Slot->TimeoutTimer);
 
 	if (EndedData.bWasCancelled)
 	{
-		ActiveResult = EEnemyPatternResult::Cancelled;
+		FinishSlot(RequestId, EEnemyPatternResult::Cancelled);
 		return;
 	}
 
-	// 정상 종료: 후딜이 있으면 후딜 후 완료
-	if (ActivePattern.RecoverySeconds > 0.f)
+	const float RecoverySeconds = Slot->Pattern.RecoverySeconds;
+
+	// 주 패턴: 후딜(이동 잠금) 후 완료, 다음 공격 간격 추첨
+	if (Slot->bPrimary)
 	{
-		StartRecovery(ActivePattern.RecoverySeconds);
+		if (RecoverySeconds > 0.f)
+		{
+			StartPrimaryRecovery(*Slot);
+		}
+		else
+		{
+			HandleRecoveryFinished(RequestId);
+		}
 		return;
 	}
 
-	HandleRecoveryFinished();
+	// 보조 패턴: 후딜 동안 자리만 유지 (몸을 쓰지 않으므로 이동 잠금 없음)
+	if (RecoverySeconds > 0.f)
+	{
+		Slot->bRecovering = true;
+		GetWorld()->GetTimerManager().SetTimer(Slot->RecoveryTimer,
+			FTimerDelegate::CreateUObject(this, &UEnemyPatternComponent::HandleRecoveryFinished, RequestId),
+			RecoverySeconds, false);
+		return;
+	}
+
+	FinishSlot(RequestId, EEnemyPatternResult::Completed);
 }
 
-void UEnemyPatternComponent::StartRecovery(float Duration)
+// 시작 지연 종료: 그사이 조건이 바뀌었으면 실행하지 않고 자리 반환
+void UEnemyPatternComponent::HandleStartDelayFinished(int64 RequestId)
 {
-	bRecovering = true;
-	
+	const FEnemyPatternSlot* Slot = FindSlot(RequestId);
+	if (!Slot || Slot->Result != EEnemyPatternResult::Running || Slot->bStarted)
+	{
+		return;
+	}
+
+	const bool bCanRun = !bStopped && !bRequestsBlocked && CanExecutePattern(Slot->Pattern, Slot->Target.Get());
+	if (!bCanRun || !ActivateSlot(RequestId))
+	{
+		// ActivateSlot이 실패했으면 이미 지워졌으므로 남아 있을 때만 정리
+		FinishSlot(RequestId, EEnemyPatternResult::Failed);
+	}
+}
+
+// 종료 이벤트 누락을 실패로 기록하고 해당 능력 취소
+void UEnemyPatternComponent::HandleExecutionTimeout(int64 RequestId)
+{
+	const FEnemyPatternSlot* Slot = FindSlot(RequestId);
+	if (!Slot || Slot->Result != EEnemyPatternResult::Running || !Slot->bStarted || Slot->bRecovering)
+	{
+		return;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[EnemyPattern] %s: pattern '%s' did not end within %.1fs"),
+		*GetNameSafe(GetOwner()), *Slot->Pattern.PatternId.ToString(), Slot->Pattern.MaxExecutionSeconds);
+
+	const FGameplayAbilitySpecHandle AbilityHandle = Slot->AbilityHandle;
+	FinishSlot(RequestId, EEnemyPatternResult::Failed);
+
+	if (ASC.IsValid())
+	{
+		ASC->CancelAbilityHandle(AbilityHandle);
+	}
+}
+
+// 후딜 종료: 주 패턴은 이동 잠금 해제와 다음 공격 간격 추첨
+void UEnemyPatternComponent::HandleRecoveryFinished(int64 RequestId)
+{
+	const FEnemyPatternSlot* Slot = FindSlot(RequestId);
+	if (!Slot || Slot->Result != EEnemyPatternResult::Running)
+	{
+		return;
+	}
+
+	if (Slot->bPrimary)
+	{
+		ReleaseRecoveryMovementLock();
+		RollNextAttackTime();
+	}
+
+	FinishSlot(RequestId, EEnemyPatternResult::Completed);
+}
+
+void UEnemyPatternComponent::StartPrimaryRecovery(FEnemyPatternSlot& Slot)
+{
+	Slot.bRecovering = true;
+
 	// 후딜 동안 제자리 정지
 	if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner()))
 	{
@@ -660,31 +1147,22 @@ void UEnemyPatternComponent::StartRecovery(float Duration)
 		Enemy->ConsumeMovementInputVector();
 	}
 
-	GetWorld()->GetTimerManager().SetTimer(RecoveryTimerHandle, this,
-		&UEnemyPatternComponent::HandleRecoveryFinished, Duration, false);
+	GetWorld()->GetTimerManager().SetTimer(Slot.RecoveryTimer,
+		FTimerDelegate::CreateUObject(this, &UEnemyPatternComponent::HandleRecoveryFinished, Slot.RequestId),
+		Slot.Pattern.RecoverySeconds, false);
 
 	// 알림 중 BT가 요청을 취소해도 후딜 타이머를 다시 만들지 않도록 마지막에 통지
 	OnRecoveryStarted.Broadcast();
 }
 
-void UEnemyPatternComponent::HandleRecoveryFinished()
-{
-	ReleaseRecoveryMovementLock();
-	bRecovering = false;
-
-	if (IsRequestRunning(ActiveRequestId))
-	{
-		RollNextAttackTime();
-		ActiveResult = EEnemyPatternResult::Completed;
-	}
-}
-
 void UEnemyPatternComponent::ReleaseRecoveryMovementLock()
 {
 	if (!bOwnsRecoveryMovementLock)
+	{
 		return;
+	}
 
-	// 다른 GA나 상태가 보유한 이동 제한까지 해제하지 않음
+	// 다른 GA나 상태가 보유한 이동 잠금까지 해제하지 않음
 	if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner()))
 	{
 		Enemy->ReleaseAttackMovementLock();
@@ -695,57 +1173,31 @@ void UEnemyPatternComponent::ReleaseRecoveryMovementLock()
 
 void UEnemyPatternComponent::RollNextAttackTime()
 {
-	// 정상 완료 한 번에만 추첨: 요청 해제나 BT 조건 조회는 이 시각을 바꾸지 않음
+	// 주 패턴 정상 완료 한 번에만 추첨: 요청 해제, BT 조건 조회, 보조 패턴은 이 시각을 바꾸지 않음
 	const float Interval = FMath::FRandRange(MinAttackInterval, MaxAttackInterval);
 	NextAttackAllowedTime = GetWorld()->GetTimeSeconds() + static_cast<double>(Interval);
 }
 
-// 종료 이벤트 누락을 실패로 기록하고 해당 능력 취소
-void UEnemyPatternComponent::HandleExecutionTimeout()
-{
-	if (ActiveResult != EEnemyPatternResult::Running)
-		return;
-
-	UE_LOG(LogTemp, Warning, TEXT("[EnemyPattern] %s: pattern '%s' did not end within %.1fs"),
-		*GetNameSafe(GetOwner()), *ActivePattern.PatternId.ToString(), ActivePattern.MaxExecutionSeconds);
-
-	ActiveResult = EEnemyPatternResult::Failed;
-	UnbindAbilityEnded();
-
-	if (ASC.IsValid())
-	{
-		ASC->CancelAbilityHandle(ActiveAbilityHandle);
-	}
-}
-
-void UEnemyPatternComponent::UnbindAbilityEnded()
+// 이 컴포넌트가 부여한 GA 제거와 종료 이벤트 구독 해제
+void UEnemyPatternComponent::ClearGrantedAbilities()
 {
 	if (ASC.IsValid())
 	{
 		ASC->OnAbilityEnded.Remove(AbilityEndedDelegateHandle);
+
+		if (GetOwner()->HasAuthority())
+		{
+			// 패턴마다 Spec이 따로라 중복 없이 하나씩 제거
+			for (const TPair<FName, FGameplayAbilitySpecHandle>& Pair : PatternHandles)
+			{
+				ASC->ClearAbility(Pair.Value);
+			}
+		}
 	}
 
 	AbilityEndedDelegateHandle.Reset();
-}
-
-// 이 컴포넌트가 부여한 GA를 중복 없이 서버에서 제거
-void UEnemyPatternComponent::ClearGrantedAbilities()
-{
-	if (ASC.IsValid() && GetOwner()->HasAuthority())
-	{
-		// 같은 GA 클래스는 핸들을 공유하므로 한 번만 제거
-		TSet<FGameplayAbilitySpecHandle> UniqueHandles;
-		for (const TPair<FName, FGameplayAbilitySpecHandle>& Pair : PatternHandles)
-		{
-			UniqueHandles.Add(Pair.Value);
-		}
-
-		for (FGameplayAbilitySpecHandle Handle : UniqueHandles)
-		{
-			ASC->ClearAbility(Handle);
-		}
-	}
-
 	PatternHandles.Reset();
+	PatternResources.Reset();
 	AvailablePatterns.Reset();
+	WeightOverrides.Reset();
 }

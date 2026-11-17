@@ -2,9 +2,9 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
-* 수정 일자: 2026.11.17. (EnemyPhaseConfigData → BossPhaseConfigData, 로그 전용 페이즈 제거)
+* 수정 일자: 2026.11.17. (허용 패턴 ID 목록 → 가중치 재정의 패턴 목록과 동시 실행 설정)
 * 보스 페이즈 설정용 데이터 에셋
-* - 페이즈 순서, 진행 조건(체력/기믹), 허용 패턴, 이동/회전 정책, 기본 전환 연출
+* - 페이즈 순서, 진행 조건(체력/기믹), 패턴 목록과 가중치, 동시 실행, 이동/회전 정책, 기본 전환 연출
 * - 레벨 액터 참조와 실행 상태는 저장하지 않음 (레벨 참조는 BossEncounterManager가 보스에 전달)
 */
 
@@ -14,6 +14,7 @@
 #include "Engine/DataAsset.h"
 
 #include "Enemy/Data/BossMovementTypes.h"
+#include "Enemy/Data/EnemyPatternSetData.h"
 
 #include "BossPhaseConfigData.generated.h"
 
@@ -48,8 +49,21 @@ struct FBossPhaseDefinition
 		EditCondition = "Kind == EBossPhaseKind::Combat", EditConditionHides))
 	float HealthFloorRatio = 0.f;
 
-	// 이 페이즈에서 허용할 PatternSet의 패턴 ID
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Phase")
+	/* 패턴 */
+
+	// 이 페이즈에서 쓸 패턴과 가중치 재정의 (PatternSet의 패턴 ID)
+	// - 목록에 없는 패턴은 이 페이즈에서 실행하지 않음 (직접 지정도 불가)
+	// - 재정의 가중치 0: 자동 선택에서만 제외
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Patterns", meta = (TitleProperty = "PatternId"))
+	TArray<FEnemyPatternSelectionEntry> Patterns;
+
+	// 동시 실행 상한, 보조 패턴 확률, 위험도 예산
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Patterns")
+	FEnemyPatternConcurrency Concurrency;
+
+	// 이전 형식: 저장된 이름 그대로 읽은 뒤 PostLoad에서 Patterns로 옮기고 비움 (편집 불가, 에셋을 다시 저장한 뒤 삭제)
+	// - 리다이렉트로 _DEPRECATED에 옮기는 방식은 이 구조체 배열에서 값이 들어오지 않아 이름을 유지
+	UPROPERTY()
 	TArray<FName> AllowedPatternIds;
 
 	/* 기본 전환 연출: 레벨에 전환 담당자(IBossPhaseTransitionHandler)가 있으면 그쪽이 우선 */
@@ -110,6 +124,9 @@ struct FBossPhaseDefinition
 
 	/* 조회 */
 
+	// 이 페이즈 패턴 목록에 해당 ID가 있는지
+	bool HasPattern(FName PatternId) const;
+
 	// 패턴별 예외가 있고 bOverrideMovementMode가 켜져 있으면 해당 모드, 그 외에는 페이즈 기본 모드
 	EBossPhaseMovementMode ResolveMovementMode(FName PatternId) const;
 
@@ -131,6 +148,9 @@ class MYNICELITTLECAT_API UBossPhaseConfigData : public UDataAsset
 	GENERATED_BODY()
 
 public :
+
+	// 이전 형식(AllowedPatternIds) 에셋을 새 패턴 목록으로 옮김
+	virtual void PostLoad() override;
 
 	// 페이즈 순서, 중복 ID, 체력 하한 감소, 이동 설정 검사
 	bool ValidateConfiguration(FString& OutError) const;

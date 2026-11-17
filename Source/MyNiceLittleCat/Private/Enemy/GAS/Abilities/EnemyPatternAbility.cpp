@@ -21,12 +21,12 @@ void UEnemyPatternAbility::ActivateAbility(const FGameplayAbilitySpecHandle Hand
 	Enemy = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo());
 	PatternComponent = Enemy.IsValid() ? Enemy->GetPatternComponent() : nullptr;
 
-	// GetActiveExecution이 출력할 원래 타깃
+	// GetExecutionForAbility가 출력할 원래 타깃
 	AActor* Target = nullptr;
 
 	// 패턴 실행에 필요한 정보가 하나라도 없으면 취소 종료
 	if (!Enemy.IsValid() || !Enemy->IsAlive() || !PatternComponent.IsValid()
-		|| !PatternComponent->GetActiveExecution(ExecutionPattern, Target, RequestId))
+		|| !PatternComponent->GetExecutionForAbility(Handle, ExecutionPattern, Target, RequestId))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
@@ -130,4 +130,12 @@ float UEnemyPatternAbility::CalculatePatternDamage() const
 	const UEnemyAttributeSet* Stat = Enemy.IsValid() ? Enemy->GetAttributeSet() : nullptr;
 
 	return Stat ? Stat->GetAttackPower() * ExecutionPattern.DamageMultiplier : 0.f;
+}
+
+void UEnemyPatternAbility::RegisterLingeringHazard(AActor* SpawnedActor) const
+{
+	if (PatternComponent.IsValid())
+	{
+		PatternComponent->RegisterLingeringHazard(RequestId, SpawnedActor);
+	}
 }

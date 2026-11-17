@@ -13,6 +13,12 @@
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/GAS/EnemyCombatTags.h"
 
+UGA_Enemy_MeleeAttack::UGA_Enemy_MeleeAttack()
+{
+	// 몽타주와 회전을 쓰므로 몸 점유: 돌진 등 다른 몸 사용 패턴과 동시에 실행되지 않음 (돌진 GA는 상속으로 함께 적용)
+	DefaultPatternResources.AddTag(EnemyCombatTags::PatternResourceBody);
+}
+
 /* UEnemyPatternAbility */
 
 bool UGA_Enemy_MeleeAttack::CanStartPattern() const

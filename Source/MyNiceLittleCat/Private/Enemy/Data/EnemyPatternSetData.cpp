@@ -56,6 +56,27 @@ bool FEnemyPatternDefinition::Validate(FString& OutError) const
 		return false;
 	}
 
+	// 동시 실행 설정
+	if (Threat < 0 || !FMath::IsFinite(CompanionStartDelay) || CompanionStartDelay < 0.f)
+	{
+		OutError = FString::Printf(TEXT("Pattern '%s': invalid Threat or CompanionStartDelay."), *Name);
+		return false;
+	}
+
+	return true;
+}
+
+/* FEnemyPatternConcurrency */
+
+bool FEnemyPatternConcurrency::Validate(FString& OutError) const
+{
+	if (MaxConcurrentPatterns < 1 || MaxThreat < 0
+		|| !FMath::IsFinite(CompanionChance) || CompanionChance < 0.f || CompanionChance > 1.f)
+	{
+		OutError = TEXT("Invalid concurrency settings (MaxConcurrentPatterns >= 1, 0 <= CompanionChance <= 1, MaxThreat >= 0).");
+		return false;
+	}
+
 	return true;
 }
 

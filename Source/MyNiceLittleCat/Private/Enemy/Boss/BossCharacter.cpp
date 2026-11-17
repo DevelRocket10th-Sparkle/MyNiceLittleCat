@@ -146,7 +146,7 @@ void ABossCharacter::ScheduleEncounterFailure()
 	// 실패가 확정된 순간부터 공격, 전환, 기믹이 더 진행하지 않도록 즉시 정리
 	PhaseComponent->StopAndInvalidate();
 	GetPatternComponent()->SetRequestsBlocked(true);
-	GetPatternComponent()->CancelActiveRequest();
+	GetPatternComponent()->CancelAllRequests();
 	StopPhaseGimmicks();
 
 	// 이 예약 이후 보스가 사망 또는 초기화되면 실행하지 않음
@@ -293,7 +293,8 @@ void ABossCharacter::HandleTransitionRequested()
 	}
 
 	GetPatternComponent()->SetRequestsBlocked(true);
-	GetPatternComponent()->CancelActiveRequest();
+	// 주 패턴뿐 아니라 보조 패턴과 시작 지연 예약까지 취소 (전환 Task는 IsIdle을 기다림)
+	GetPatternComponent()->CancelAllRequests();
 
 	// 이전 페이즈의 공격 간격을 새 페이즈 첫 공격에 넘기지 않음
 	GetPatternComponent()->ResetAttackInterval();
@@ -316,7 +317,8 @@ bool ABossCharacter::HandlePhaseEntered(const FBossPhaseDefinition& Phase)
 		return false;
 	}
 
-	GetPatternComponent()->SetAvailablePatterns(Phase.AllowedPatternIds);
+	// 패턴 목록, 가중치 재정의, 동시 실행 설정을 한 번에 교체
+	GetPatternComponent()->SetPatternSelection(Phase.Patterns, Phase.Concurrency);
 
 	if (IsValid(PhaseGimmickComponent))
 	{
@@ -390,12 +392,12 @@ bool ABossCharacter::ValidatePhasePatterns() const
 	for (const FBossPhaseDefinition& Phase : PhaseConfig->Phases)
 	{
 		// 허용 목록의 모든 패턴이 PatternSet에 있어야 함
-		for (const FName PatternId : Phase.AllowedPatternIds)
+		for (const FEnemyPatternSelectionEntry& Entry : Phase.Patterns)
 		{
-			if (!Patterns->HasPattern(PatternId))
+			if (!Patterns->HasPattern(Entry.PatternId))
 			{
 				UE_LOG(LogTemp, Error, TEXT("[Boss] %s: phase '%s' uses unknown pattern '%s'"),
-					*GetName(), *Phase.PhaseId.ToString(), *PatternId.ToString());
+					*GetName(), *Phase.PhaseId.ToString(), *Entry.PatternId.ToString());
 				return false;
 			}
 		}
@@ -408,11 +410,12 @@ bool ABossCharacter::ValidatePhasePatterns() const
 		}
 
 		const float Radius = Phase.MovementAcceptanceRadius;
-		const bool bUsableAtArrival = Phase.AllowedPatternIds.ContainsByPredicate(
-			[Patterns, Radius](FName CandidateId)
+		// 이 페이즈의 유효 가중치(재정의 포함)로 자동 선택 대상인지 판단
+		const bool bUsableAtArrival = Phase.Patterns.ContainsByPredicate(
+			[Patterns, Radius](const FEnemyPatternSelectionEntry& Entry)
 			{
 				FEnemyPatternDefinition Pattern;
-				return Patterns->GetPatternDefinition(CandidateId, Pattern) && Pattern.Weight > 0.f
+				return Patterns->GetPatternDefinition(Entry.PatternId, Pattern) && Entry.ResolveWeight(Pattern) > 0.f
 					&& (!Pattern.bCheckTargetDistance || (Pattern.MinRange <= Radius && Radius < Pattern.MaxRange));
 			});
 

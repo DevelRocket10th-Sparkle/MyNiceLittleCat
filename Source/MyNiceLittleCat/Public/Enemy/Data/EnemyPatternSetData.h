@@ -2,9 +2,9 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
-* 수정 일자: 2026.11.12. (로그 전용 패턴 제거, 이동 정책 이름 변경, 이전 형식 이전 코드 제거)
+* 수정 일자: 2026.11.17. (동시 실행 설정, 상황별 패턴 선택 목록과 가중치 재정의 추가)
 * 패턴 정보 설정 및 보관용 데이터 에셋
-* - 캐릭터별 공격 목록: 실행 GA, 거리/시야 조건, 선택 가중치, 후딜, 이동 정책
+* - 캐릭터별 공격 목록: 실행 GA, 거리/시야 조건, 선택 가중치, 후딜, 이동 정책, 동시 실행 자원
 * - 런타임 실행 상태는 저장하지 않음 (UEnemyPatternComponent가 관리)
 */
 
@@ -12,6 +12,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "GameplayTagContainer.h"
 #include "Enemy/Data/EnemyPatternExecutionSettings.h"
 #include "EnemyPatternSetData.generated.h"
 
@@ -100,7 +101,8 @@ struct FEnemyPatternDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Condition")
 	bool bRequiresLineOfSight = true;
 
-	// 자동 선택 확률의 상대 가중치: 0이면 BT에서 직접 지정할 때만 실행
+	// 자동 선택 확률의 기본 상대 가중치 (페이즈 패턴 목록에서 재정의 가능)
+	// - 0이면 자동 선택에서 제외, BT에서 직접 지정할 때만 실행
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Condition", meta = (ClampMin = "0.0"))
 	float Weight = 1.f;
 
@@ -126,9 +128,75 @@ struct FEnemyPatternDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Behavior", meta = (ClampMin = "0.1", Units = "s"))
 	float MaxExecutionSeconds = 15.f;
 
+	/* 동시 실행: 페이즈의 MaxConcurrentPatterns가 2 이상일 때만 의미 있음 */
+
+	// 이 패턴이 추가로 점유하는 자원과 위험 태그 (GA 클래스 기본 자원에 더해짐)
+	// - Enemy.Pattern.Resource.*: 실행 중에만 점유. 같은 자원을 쓰는 패턴끼리는 동시에 실행하지 않음
+	// - Enemy.Pattern.Hazard.*: 실행 중 + GA가 등록한 생성물(폭탄, 장판)이 남아 있는 동안 점유
+	// - 몸을 쓰는 패턴(회전 잠금, 시작 정렬, Stop/AbilityDriven 이동)은 Resource.Body가 자동으로 붙음
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Concurrency", meta = (Categories = "Enemy.Pattern"))
+	FGameplayTagContainer Resources;
+
+	// 위험도: 실행 중인 패턴(남은 생성물 포함)의 합이 페이즈의 MaxThreat를 넘으면 함께 실행하지 않음
+	// - 0이면 위험도 예산을 쓰지 않음 (연출용, 보조 효과 등)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Concurrency", meta = (ClampMin = "0"))
+	int32 Threat = 1;
+
+	// 보조 패턴으로 뽑혔을 때 시작 지연: 앞 패턴을 보고 피할 시간 (주 패턴에는 적용하지 않음)
+	// - 지연 동안에도 동시 실행 수와 자원은 이미 점유 (예약)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Concurrency", meta = (ClampMin = "0.0", Units = "s"))
+	float CompanionStartDelay = 0.f;
+
 	// 값 범위 검사: 에디터 데이터 검사와 런타임 초기화 같은 규칙을 사용
 	bool Validate(FString& OutError) const;
 
+};
+
+// 상황(보스 페이즈 등)별 패턴 사용 목록의 항목: 사용할 패턴과 가중치 재정의
+USTRUCT(BlueprintType)
+struct FEnemyPatternSelectionEntry
+{
+	GENERATED_BODY()
+
+	// 사용할 패턴 ID (PatternSet에 있어야 함)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern")
+	FName PatternId;
+
+	// 체크하면 패턴 기본 Weight 대신 아래 값 사용
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern", meta = (InlineEditConditionToggle))
+	bool bOverrideWeight = false;
+
+	// 이 상황에서의 가중치: 0이면 자동 선택에서 제외 (BT 직접 지정 실행은 허용)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern", meta = (EditCondition = "bOverrideWeight", ClampMin = "0.0"))
+	float Weight = 1.f;
+
+	// 유효 가중치: 재정의가 없으면 패턴 기본값
+	float ResolveWeight(const FEnemyPatternDefinition& Pattern) const { return bOverrideWeight ? Weight : Pattern.Weight; }
+};
+
+// 동시 실행 설정 (보스 페이즈마다 다르게 지정, 일반 Enemy는 기본값 = 한 번에 하나)
+USTRUCT(BlueprintType)
+struct FEnemyPatternConcurrency
+{
+	GENERATED_BODY()
+
+	// 동시에 실행할 수 있는 패턴 수 상한: 1이면 기존과 같음
+	// - 상한일 뿐 목표가 아님: 실행 가능한 후보가 없으면 가능한 수만 실행
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Concurrency", meta = (ClampMin = "1"))
+	int32 MaxConcurrentPatterns = 1;
+
+	// 빈 자리마다 보조 패턴을 붙일 확률: 1이면 가능한 만큼 항상 채움
+	// - 상한까지 매번 채우면 난이도가 급격히 오르므로 밸런싱 손잡이로 사용
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Concurrency", meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "MaxConcurrentPatterns > 1"))
+	float CompanionChance = 1.f;
+
+	// 동시에 살아 있는 위험도 합 상한 (실행 중 + 남은 생성물): 0이면 제한 없음
+	// - 두 개씩은 피할 수 있어도 세 개가 겹치면 피할 곳이 없어지는 경우를 막는 장치
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Concurrency", meta = (ClampMin = "0", EditCondition = "MaxConcurrentPatterns > 1"))
+	int32 MaxThreat = 0;
+
+	// 값 범위 검사
+	bool Validate(FString& OutError) const;
 };
 
 /**

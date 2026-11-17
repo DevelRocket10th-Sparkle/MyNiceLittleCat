@@ -260,6 +260,10 @@ void UGA_Enemy_BombDrop::DropNext()
 			}
 			Bomb->LaunchCharacter(FVector(0.f, 0.f, -Settings->DropSpeed), true, true);
 			AliveBombs.Add(Bomb);
+
+			// 폭탄이 남아 있는 동안 패턴의 위험 태그와 위험도 유지 (같은 위험 태그의 패턴과 겹치지 않음)
+			RegisterLingeringHazard(Bomb);
+
 			WatchBombOwner(GetWorld(), Bomb, Enemy.Get(), [](ABombEnemy* B)
 			{
 				UE_LOG(LogTemp, Log, TEXT("[BombDrop] Boss gone or player dead -> destroying %s"), *GetNameSafe(B));

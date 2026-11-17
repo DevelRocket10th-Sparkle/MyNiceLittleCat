@@ -14,6 +14,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "Enemy/GAS/EnemyCombatTags.h"
 
 namespace
 {
@@ -29,6 +30,12 @@ namespace
 	{
 		return FloorPoint + FVector(0.f, 0.f, Laser->GetBeamRadius());
 	}
+}
+
+UGA_BossLaserBeam::UGA_BossLaserBeam()
+{
+	// 이동 속도와 회전을 제어하므로 몸 점유: 다른 몸 사용 패턴과 동시에 실행되지 않음
+	DefaultPatternResources.AddTag(EnemyCombatTags::PatternResourceBody);
 }
 
 // 요청 수신, Enemy 생존 확인, CommitAbility는 부모 ActivateAbility가 처리 → 여기서는 실행 조건만 검사

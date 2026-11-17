@@ -335,9 +335,9 @@ bool AEnemyCharacter::CanReceivePlayerPush() const
 
 	const bool bRecovering = PatternComponent->IsRecovering();
 
-	// 공격 실행 중에는 밀림 거부
+	// 몸을 쓰는 공격 실행 중에는 밀림 거부 (보조 패턴만 실행 중이면 허용)
 	// 후딜 중에는 밀림 허용
-	if (!PatternComponent->IsIdle() && !bRecovering)
+	if (PatternComponent->IsBodyBusy() && !bRecovering)
 		return false;
 
 	// 후딜이 소유한 이동 잠금 1개는 밀림 판정에서만 제외

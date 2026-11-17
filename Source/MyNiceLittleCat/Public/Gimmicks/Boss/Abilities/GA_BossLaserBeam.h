@@ -3,7 +3,7 @@
 ///
 /// 보스가 위쪽(눈·가슴 높이의 레이저 컴포넌트)에서 플레이어가 서 있는 바닥 지점으로 레이저를 내리쏘는 패턴 GA입니다.
 /// 보스 PatternSet에 패턴으로 등록하면 기존 BT 공격 Task(UEnemyPatternComponent)가 근접 패턴처럼 실행합니다.
-/// 흐름: GetActiveExecution으로 설정(UBossLaserPatternSettings)·타깃 받기 → CommitAbility → 이동 정지·이동/회전 잠금
+/// 흐름: GetExecutionForAbility로 설정(UBossLaserPatternSettings)·타깃 받기 → CommitAbility → 이동 정지·이동/회전 잠금
 ///       1. 추적(AimTrackTime): 공격 지점이 플레이어 발밑을 따라가고 원형 경고도 따라감, 보스는 지점 쪽으로 회전
 ///       2. 확정(LockDelay): 지점 고정, 경고가 차오름
 ///       3. 발사(FireDuration): 보스의 ULaserBeamComponent로 지점을 향해 발사. bTrackDuringFire면 지점이 플레이어 쪽으로 이동
@@ -40,6 +40,9 @@ class MYNICELITTLECAT_API UGA_BossLaserBeam : public UEnemyPatternAbility
 	GENERATED_BODY()
 
 public:
+	// 이동 속도와 회전을 제어하므로 몸 점유 자원(Resource.Body) 기본 지정
+	UGA_BossLaserBeam();
+
 	// 레이저 교대 페이즈에서는 단일 레이저 차례일 때만 실행
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr,

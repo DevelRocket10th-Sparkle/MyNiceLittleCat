@@ -2,6 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.11.13.
+* 수정 일자: 2026.11.17. (자기 Spec Handle로 실행 컨텍스트 수신, GA 기본 점유 자원, 남은 위험 생성물 등록)
 * UEnemyPatternComponent가 실행하는 모든 공격 GA의 공통 부모
 * - 실행 컨텍스트(패턴 설정, 타깃, 요청 번호) 수신, 유효성 확인, 이동/회전 잠금 획득과 자동 해제
 * - 파생 GA는 CanStartPattern(설정 검사)과 StartPattern(동작 시작), StopPattern(정리)만 구현
@@ -15,6 +16,7 @@
 
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbility.h"
+#include "GameplayTagContainer.h"
 
 #include "Enemy/Data/EnemyPatternSetData.h"
 
@@ -46,6 +48,9 @@ public :
 		const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		bool bReplicateEndAbility, bool bWasCancelled) override;
+
+	// Getter: 이 GA 클래스가 기본으로 점유하는 자원 (패턴 컴포넌트가 초기화 때 CDO에서 읽음)
+	const FGameplayTagContainer& GetDefaultPatternResources() const { return DefaultPatternResources; }
 
 protected :
 
@@ -85,8 +90,17 @@ protected :
 	// 1회 타격 피해량 = AttackPower * 패턴 DamageMultiplier
 	float CalculatePatternDamage() const;
 
+	// 이 실행이 만든 액터가 살아 있는 동안 패턴의 위험 태그와 위험도를 계속 점유 (폭탄, 장판, 포탑)
+	// - 위험 태그가 없고 위험도가 0인 패턴이면 아무 일도 하지 않음
+	void RegisterLingeringHazard(AActor* SpawnedActor) const;
+
 protected :
 	
+	// 이 GA 클래스의 기본 점유 자원 (패턴 데이터의 Resources와 합쳐짐)
+	// - 몸을 쓰는 GA는 생성자에서 Enemy.Pattern.Resource.Body를 넣어 둠 → 페이즈 설정자가 근접 조합마다 금지 등록할 필요 없음
+	UPROPERTY(EditDefaultsOnly, Category = "Pattern", meta = (Categories = "Enemy.Pattern"))
+	FGameplayTagContainer DefaultPatternResources;
+
 	// 현재 실행용으로 복사한 패턴 설정
 	UPROPERTY(BlueprintReadOnly, Category = "Pattern")
 	FEnemyPatternDefinition ExecutionPattern;

@@ -9,6 +9,15 @@
 
 /* FBossPhaseDefinition */
 
+bool FBossPhaseDefinition::HasPattern(FName PatternId) const
+{
+	return Patterns.ContainsByPredicate(
+		[PatternId](const FEnemyPatternSelectionEntry& Entry)
+		{
+			return Entry.PatternId == PatternId;
+		});
+}
+
 const FBossPatternMovementOverride* FBossPhaseDefinition::FindMovementOverride(FName PatternId) const
 {
 	if (PatternId.IsNone())
@@ -46,6 +55,31 @@ bool FBossPhaseDefinition::UsesWaypoints() const
 }
 
 /* UBossPhaseConfigData */
+
+void UBossPhaseConfigData::PostLoad()
+{
+	Super::PostLoad();
+
+	// 이전 형식 이전: 가중치 재정의 없이 옮기므로 기존 가중치와 선택 확률이 그대로 유지됨
+	for (FBossPhaseDefinition& Phase : Phases)
+	{
+		if (Phase.AllowedPatternIds.IsEmpty())
+		{
+			continue;
+		}
+
+		if (Phase.Patterns.IsEmpty())
+		{
+			for (const FName PatternId : Phase.AllowedPatternIds)
+			{
+				FEnemyPatternSelectionEntry& Entry = Phase.Patterns.AddDefaulted_GetRef();
+				Entry.PatternId = PatternId;
+			}
+		}
+
+		Phase.AllowedPatternIds.Empty();
+	}
+}
 
 // 페이즈 순서, 중복 ID, 체력 하한 감소, 이동 설정 검사
 bool UBossPhaseConfigData::ValidateConfiguration(FString& OutError) const
@@ -93,13 +127,36 @@ bool UBossPhaseConfigData::ValidateConfiguration(FString& OutError) const
 			return false;
 		}
 
+		/* 패턴 */
+
+		// 패턴 목록: 빈 ID와 중복 금지
+		TSet<FName> PatternIds;
+		for (const FEnemyPatternSelectionEntry& Entry : Phase.Patterns)
+		{
+			if (Entry.PatternId.IsNone() || PatternIds.Contains(Entry.PatternId)
+				|| !FMath::IsFinite(Entry.Weight) || Entry.Weight < 0.f)
+			{
+				OutError = FString::Printf(TEXT("Phase '%s': invalid pattern entry '%s'."),
+					*PhaseName, *Entry.PatternId.ToString());
+				return false;
+			}
+			PatternIds.Add(Entry.PatternId);
+		}
+
+		FString ConcurrencyError;
+		if (!Phase.Concurrency.Validate(ConcurrencyError))
+		{
+			OutError = FString::Printf(TEXT("Phase '%s': %s"), *PhaseName, *ConcurrencyError);
+			return false;
+		}
+
 		// 패턴별 이동 예외: 중복 없이 이 페이즈에서 허용한 패턴만
 		TSet<FName> OverrideIds;
 		for (const FBossPatternMovementOverride& Override : Phase.PatternMovementOverrides)
 		{
 			if (Override.PatternId.IsNone()
 				|| OverrideIds.Contains(Override.PatternId)
-				|| !Phase.AllowedPatternIds.Contains(Override.PatternId))
+				|| !Phase.HasPattern(Override.PatternId))
 			{
 				OutError = FString::Printf(TEXT("Phase '%s': invalid movement override '%s'."),
 					*PhaseName, *Override.PatternId.ToString());
