@@ -441,6 +441,22 @@ void AStageEncounterDirector::FinishPhaseStaging()
 
 	OnPhaseStagingFinished(ActiveTransitionPhaseId, Boss);
 
+	// 끝난 페이즈를 치른 방의 문을 플레이어에게 넘김
+	// - 전환 컷이 끝나 플레이어가 다음 아레나로 걸어가는 동안부터 여닫을 수 있음
+	//   (아레나 진입 후에 넘기면 플레이어는 이미 새 아레나에 갇혀 있어 처치 전까지 쓸 수 없음)
+	// - 다음 아레나의 닫을 문은 넘기지 않음 (진입 때 다시 강제로 닫힘)
+	if (const FStagePhaseStaging* EndedStaging = FindPhaseStaging(ActiveTransitionFromPhaseId))
+	{
+		const int32 NextDoorToClose = Staging ? Staging->DoorToClose : INDEX_NONE;
+		for (const int32 DoorIndex : EndedStaging->DoorsFreedOnPhaseEnd)
+		{
+			if (DoorIndex != NextDoorToClose)
+			{
+				FreeDoorForPlayer(DoorIndex);
+			}
+		}
+	}
+
 	// 플레이어가 아레나에 들어올 때까지 대기 후 다음 페이즈 시작
 	UpdateArenaEntryCheck();
 	if (ActiveTransitionId != 0)
@@ -467,7 +483,6 @@ void AStageEncounterDirector::UpdateArenaEntryCheck()
 	const int64 TransitionId = ActiveTransitionId;
 	const FName PhaseId = ActiveTransitionPhaseId;
 	const int32 DoorToClose = Staging->DoorToClose;
-	const FName EndedPhaseId = ActiveTransitionFromPhaseId;
 	ClearActiveTransition();
 
 	ABossCharacter* Boss = GetCurrentBoss();
@@ -476,21 +491,8 @@ void AStageEncounterDirector::UpdateArenaEntryCheck()
 		return;
 	}
 
-	// 아레나에 들어온 플레이어 뒤의 문을 닫음
+	// 아레나에 들어온 플레이어 뒤의 문을 닫음 (넘겨준 문이었어도 다시 연출이 강제)
 	SetDoor(DoorToClose, false, PhaseDoorCloseSeconds);
-
-	// 끝난 페이즈를 치른 방의 문을 플레이어에게 넘김 (이제 자유롭게 오갈 수 있는 곳)
-	if (const FStagePhaseStaging* EndedStaging = FindPhaseStaging(EndedPhaseId))
-	{
-		for (const int32 DoorIndex : EndedStaging->DoorsFreedOnPhaseEnd)
-		{
-			// 방금 닫은 새 아레나 문은 넘기지 않음 (설정 실수 방지)
-			if (DoorIndex != DoorToClose)
-			{
-				FreeDoorForPlayer(DoorIndex);
-			}
-		}
-	}
 
 	OnStagePhaseStarted(PhaseId, Boss);
 }

@@ -68,7 +68,8 @@ struct FStagePhaseStaging
 	int32 DoorToClose = INDEX_NONE;
 
 	// 이 페이즈가 끝나면 플레이어에게 넘길 문 번호 (이 페이즈를 치른 방의 문)
-	// - 다음 페이즈가 실제로 시작될 때(플레이어가 다음 아레나에 들어온 뒤) 적용
+	// - 다음 페이즈로 가는 전환 컷이 끝날 때 적용 (플레이어가 다음 아레나로 이동하는 동안부터 여닫기 가능)
+	// - 다음 페이즈의 DoorToClose와 같은 번호는 넘기지 않음
 	// - 연출 강제를 풀되 지금 열림/닫힘은 유지, 잠금 해제, 플레이어 여닫기 허용
 	// - 마지막 페이즈의 문은 보스 처치 때 함께 넘어감 (bPlayerControlsDoorsAfterClear)
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Stage")
