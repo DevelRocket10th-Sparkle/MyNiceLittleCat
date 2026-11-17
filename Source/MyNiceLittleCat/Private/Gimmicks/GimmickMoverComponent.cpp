@@ -226,7 +226,7 @@ void UGimmickMoverComponent::CaptureClosedTransform()
 	}
 }
 
-void UGimmickMoverComponent::SetOpen(bool bOpen, bool bInstant)
+void UGimmickMoverComponent::SetOpen(bool bOpen, bool bInstant, float DurationOverride)
 {
 	CaptureClosedTransform();
 
@@ -234,7 +234,13 @@ void UGimmickMoverComponent::SetOpen(bool bOpen, bool bInstant)
 	const bool bChanged = bTargetOpen != bOpen;
 	bTargetOpen = bOpen;
 
-	const float Duration = bOpen ? OpenDuration : (CloseDuration < 0.f ? OpenDuration : CloseDuration);
+	// 기본 시간: 열림은 OpenDuration, 닫힘은 CloseDuration(음수면 OpenDuration)
+	const float DefaultDuration = bOpen ? OpenDuration : (CloseDuration < 0.f ? OpenDuration : CloseDuration);
+
+	// 호출에서 시간을 지정했으면 이번 이동만 그 시간 사용
+	const float Duration = DurationOverride >= 0.f ? DurationOverride : DefaultDuration;
+	ActiveDuration = Duration;
+
 	if (bInstant || Duration <= KINDA_SMALL_NUMBER)
 	{
 		const bool bWasMoving = bMoving;
@@ -275,7 +281,8 @@ void UGimmickMoverComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		return;
 	}
 
-	const float Duration = bTargetOpen ? OpenDuration : (CloseDuration < 0.f ? OpenDuration : CloseDuration);
+	// SetOpen에서 정한 이번 이동 시간 사용
+	const float Duration = ActiveDuration;
 	const float Step = Duration > KINDA_SMALL_NUMBER ? DeltaTime / Duration : 1.f;
 	const float TargetProgress = bTargetOpen ? 1.f : 0.f;
 	Progress = FMath::FInterpConstantTo(Progress, TargetProgress, 1.f, Step);

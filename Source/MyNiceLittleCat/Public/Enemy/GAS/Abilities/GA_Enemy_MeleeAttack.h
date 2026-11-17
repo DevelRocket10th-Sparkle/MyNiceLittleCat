@@ -1,65 +1,79 @@
+/*
+* 작성자: 전선현
+* 수정 일자: 2026.11.17. (몸 점유 자원 기본 지정: 동시 실행 시 다른 몸 사용 패턴과 겹치지 않음)
+* 패턴 설ㅈ어의 몽타주를 재생하고 Notify 구간 동안 소켓 판정으로 피해를 주는 근접 공격
+* - 판정 구간: AnimNotifyState_EnemyMeleeTrace -> GameplayEvent(Begin/End) -> UEnemyMeleeTraceComponent
+* - 원거리, 아레나 공격은 UEnemyPatternAbility를 직접 상속한 별도 GA로 구현
+*/
+
 #pragma once
+
 #include "CoreMinimal.h"
-#include "Abilities/GameplayAbility.h"
-#include "Enemy/Datas/EnemyPatternSetData.h"
-#include "Enemy/Datas/EnemyMeleePatternSettings.h"
+#include "Enemy/GAS/Abilities/EnemyPatternAbility.h"
 #include "GA_Enemy_MeleeAttack.generated.h"
 
-class AEnemyCharacter;
-class UEnemyPatternComponent;
+class UEnemyMeleePatternSettings;
 class UEnemyMeleeTraceComponent;
+struct FGameplayEventData;
 
-// 패턴 데이터의 몽타주를 사용하는 기본 근접 공격: 원거리 및 아레나 공격은 별도 GA로 확장
 UCLASS()
-class MYNICELITTLECAT_API UGA_Enemy_MeleeAttack : public UGameplayAbility
+class MYNICELITTLECAT_API UGA_Enemy_MeleeAttack : public UEnemyPatternAbility
 {
 	GENERATED_BODY()
+
 public :
-	// 서버 실행 및 Enemy별 인스턴스 설정
+
+	// 몽타주와 회전을 쓰므로 몸 점유 자원(Resource.Body) 기본 지정
 	UGA_Enemy_MeleeAttack();
-	// 요청 컨텍스트를 복사하고 판정 이벤트 및 몽타주 실행
-	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
-	// 정상 완료와 취소 모두 이 능력이 획득한 제한 및 참조 정리
-	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
+
 protected :
-	// 몽타주가 끝났을 때 정상 종료
+	
+	/* UEnemyPatternAbility */
+
+	// 근접 설정과 몽타주가 있는지 검사
+	virtual bool CanStartPattern() const override;
+	
+	// 판정 준비, 이동/회전 잠금, 판정 이벤트 구독, 몽타주 재생
+	virtual bool StartPattern() override;
+
+	// 판정 종료와 구독 해제
+	virtual void StopPattern(bool bWasCancelled) override;
+
+	/* 파생 근접 GA 확장 지점 */
+
+	// 몽타주 재생이 시작된 직후 호출 (돌진 등 추가 동작 시작)
+	virtual void OnMontageStarted() {}
+
+	// 판정에 맞은 대상 처리: 같은 실행에서 대상마다 한 번만 피해
+	virtual void HandleTargetHit(const FHitResult& Hit);
+
+	/* 몽타주 및 판정 이벤트 */
+
 	UFUNCTION()
 	void HandleMontageCompleted();
-	// 몽타주 중단 또는 취소 시 취소 결과로 종료
+
 	UFUNCTION()
 	void HandleMontageCancelled();
+
 	UFUNCTION()
 	void HandleWindowBegin(FGameplayEventData Payload);
+
 	UFUNCTION()
 	void HandleWindowEnd(FGameplayEventData Payload);
-	virtual void HandlePlayerHit(const FHitResult& Hit);
-	virtual float GetDamageMultiplier() const;
-	// 이번 실행의 모든 타격 경로와 판정 구간에서 공유한다.
-	TSet<TWeakObjectPtr<AActor>> DamagedActors;
-	// 파생 패턴은 실행 확정 전에 설정을 검사하고 몽타주 활성화 후 동작을 시작한다.
-	virtual bool ValidatePattern() const { return true; }
-	virtual void OnMontageStarted() {}
-	// 현재 실행용으로 복사한 불변 패턴 설정
-	UPROPERTY(BlueprintReadOnly, Category = "Pattern")
-	FEnemyPatternDefinition ExecutionPattern;
-	// 실행 시작 시 타깃: Blackboard 변경과 독립적으로 유지
-	UPROPERTY(BlueprintReadOnly, Category = "Pattern")
-	TObjectPtr<AActor> ExecutionTarget;
-	// 이 GA만 해석하는 근접 실행 설정; 공통 패턴 선택 정보와 분리
+
+protected :
+
+	// 이 GA만 해석하는 근접 실행 설정
 	UPROPERTY(Transient)
 	TObjectPtr<UEnemyMeleePatternSettings> MeleeSettings;
-	// 공격 주체: 사망 또는 제거 여부 검사에 사용
-	TWeakObjectPtr<AEnemyCharacter> Enemy;
-	// 현재 요청의 유효성을 확인할 컴포넌트
-	TWeakObjectPtr<UEnemyPatternComponent> PatternComponent;
+
+	// 소켓 판정 컴포넌트
 	TWeakObjectPtr<UEnemyMeleeTraceComponent> MeleeTraceComponent;
-	FDelegateHandle PlayerHitDelegateHandle;
-	// 이번 GA가 실행하는 요청 번호
-	int64 RequestId = 0;
-	// 이 GA가 획득한 이동 제한만 해제하기 위한 상태
-	bool bOwnsMovementLock = false;
-	// 이 GA가 획득한 회전 제한만 해제하기 위한 상태
-	bool bOwnsRotationLock = false;
+
+	// 판정 결과 구독 핸들
+	FDelegateHandle TargetHitHandle;
+
+	// 이번 실행에서 이미 피해를 준 대상: 모든 판정 경로와 구간에서 공유
+	TSet<TWeakObjectPtr<AActor>> DamagedActors;
+
 };

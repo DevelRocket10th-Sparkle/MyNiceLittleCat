@@ -3,24 +3,24 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Abilities/GameplayAbility.h"
+#include "Enemy/GAS/Abilities/EnemyPatternAbility.h"
 #include "GA_Enemy_TurretRain.generated.h"
 
 class AEnemyCharacter;
 class ATurret;
-class UEnemyPatternComponent;
 class UTurretRainPatternSettings;
 
 UCLASS()
-class MYNICELITTLECAT_API UGA_Enemy_TurretRain : public UGameplayAbility
+class MYNICELITTLECAT_API UGA_Enemy_TurretRain : public UEnemyPatternAbility
 {
 	GENERATED_BODY()
-public:
-	UGA_Enemy_TurretRain();
-	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
-	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
+protected:
+	// 설정 값, 타깃, 실행 제한 시간 검사 (CommitAbility 전, 실패하면 부모가 취소 종료)
+	virtual bool CanStartPattern() const override;
+	// 백그라운드 포탑 확인, 회전 잠금, 정리 바인딩, 취소 감시 타이머, 첫 주기 시작
+	virtual bool StartPattern() override;
+	// 타이머와 남은 포탑, 실행 참조 정리 (잠금 해제와 요청 정리는 부모가 처리)
+	virtual void StopPattern(bool bWasCancelled) override;
 
 private:
 	void StartCycle();
@@ -54,8 +54,7 @@ private:
 
 	FTimerHandle BackgroundDestroyTimer;
 
-	TWeakObjectPtr<AEnemyCharacter> Enemy;
-	TWeakObjectPtr<UEnemyPatternComponent> PatternComponent;
+	// 부모 ExecutionTarget의 약한 참조 사본: 기존 취소 확인·바닥 검사가 그대로 사용
 	TWeakObjectPtr<AActor> Target;
 
 	FTimerHandle StepTimer;
@@ -64,7 +63,5 @@ private:
 	float AngleOffset = 0.f;
 	int32 DroppedThisCycle = 0;
 	int32 CyclesDone = 0;
-	int64 RequestId = 0;
-	bool bOwnsRotationLock = false;
 	bool bCleanupBound = false;
 };
