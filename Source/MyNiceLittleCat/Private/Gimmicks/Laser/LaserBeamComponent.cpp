@@ -348,6 +348,27 @@ float ULaserBeamComponent::GetHazardPulse() const
 	return FMath::Lerp(HazardMinBrightness, 1.f, Wave);
 }
 
+void ULaserBeamComponent::ApplyBeamEffectParameters(UNiagaraComponent* Effect, const FLaserBeamVisualSettings& Settings,
+	const FVector& Start, const FVector& End, float Width, const FLinearColor& Color)
+{
+	if (!IsValid(Effect))
+	{
+		return;
+	}
+
+	UNiagaraSystem* System = Effect->GetAsset();
+
+	// 이펙트를 구간 시작점으로 옮김: 시작점 파라미터 없이 시스템 위치를 빔 시작으로 쓰는 이펙트(NS_Laser_Basic 등)도
+	// 반사 구간이 반사 지점에서 시작하도록 (붙인 채로 두면 모든 구간이 발사 위치에서 시작해 보임)
+	Effect->SetWorldLocationAndRotation(Start, (End - Start).GetSafeNormal().Rotation());
+
+	// 엔진 Beam Emitter Setup 입력이 Vector 타입이라 월드 좌표를 Vector로 넘김 (Absolute Beam Start/End 켬)
+	Effect->SetVariableVec3(Settings.BeamStartParam, Start);
+	Effect->SetVariableVec3(ResolveBeamEndParam(System, Settings.BeamEndParam), End);
+	Effect->SetVariableFloat(Settings.BeamWidthParam, Width);
+	Effect->SetVariableLinearColor(ResolveBeamColorParam(System, Settings.BeamColorParam), Color);
+}
+
 void ULaserBeamComponent::UpdateBeamEffects()
 {
 	const float WidthScale = bHazardDisplay ? HazardWidthScale : 1.f;
@@ -380,15 +401,7 @@ void ULaserBeamComponent::UpdateBeamEffects()
 			Color.G *= Pulse;
 			Color.B *= Pulse;
 
-			// 이펙트를 구간 시작점으로 옮김: 시작점 파라미터 없이 시스템 위치를 빔 시작으로 쓰는 이펙트(NS_Laser_Basic 등)도
-			// 반사 구간이 반사 지점에서 시작하도록 (붙인 채로 두면 모든 구간이 발사 위치에서 시작해 보임)
-			Effect->SetWorldLocationAndRotation(Segment.Start, Segment.Direction.Rotation());
-
-			// 엔진 Beam Emitter Setup 입력이 Vector 타입이라 월드 좌표를 Vector로 넘김 (Absolute Beam Start/End 켬)
-			Effect->SetVariableVec3(VisualSettings.BeamStartParam, Segment.Start);
-			Effect->SetVariableVec3(ResolveBeamEndParam(VisualSettings.BeamEffect, VisualSettings.BeamEndParam), Segment.End);
-			Effect->SetVariableFloat(VisualSettings.BeamWidthParam, BeamWidth);
-			Effect->SetVariableLinearColor(ResolveBeamColorParam(VisualSettings.BeamEffect, VisualSettings.BeamColorParam), Color);
+			ApplyBeamEffectParameters(Effect, VisualSettings, Segment.Start, Segment.End, BeamWidth, Color);
 
 			if (!Effect->IsActive())
 			{

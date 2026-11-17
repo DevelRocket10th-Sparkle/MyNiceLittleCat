@@ -5,6 +5,9 @@
 /// 보스가 직접 쏘지 않는 패턴이라 경기장 중앙에 배치하는 액터로 두고, 보스 페이즈가 StartPattern/StopPattern만 호출합니다.
 /// 공격 1회(줄 하나): 줄 전체에 사각형 경고 데칼(AAttackWarningDecal) 표시 → WarningTime 뒤 줄 한쪽 끝에서 반대쪽 끝으로
 /// FireDuration 동안 레이저 발사(ULaserBeamComponent, 빔 굵기 = 줄 폭). 경고 진행도는 레이저가 나오는 쪽에서 차오릅니다.
+/// 예고 프리뷰 (2026-11-11): 예고 동안 실제 레이저와 같은 경로·높이(BeamHeight)에 판정 없는 반투명 빔(PreviewVisualSettings)을 띄움.
+/// 슬롯마다 Niagara 하나라 트레이스·피해·반사판 파괴가 없고, 굵기·불투명도(PreviewOpacity)를 일정하게 유지하다 발사 순간 꺼집니다.
+/// 데칼과 함께 쓰거나 데칼을 비워 프리뷰만 씀 (테스트 격자 BP는 프리뷰만).
 /// 축: X = 레이저가 X 방향으로 지나감(줄은 Y 위치로 구분), Y = 레이저가 Y 방향으로 지나감. 모두 이 액터의 로컬 축 기준입니다.
 /// 줄 고르기(TargetMode): TargetPlayer(플레이어가 서 있는 줄, CrossChance 확률로 가로·세로 동시) / Random / Sweep(끝에서부터 차례로) / Cross(항상 가로·세로)
 /// StrikeInterval마다 다음 공격을 시작하므로 앞 공격이 끝나기 전에 다음 예고가 겹칠 수 있습니다 (동시 공격 수는 MaxConcurrentStrikes).
@@ -33,6 +36,7 @@ class UBoxComponent;
 class ULaserBeamComponent;
 class AAttackWarningDecal;
 class ULaserGridSequenceData;
+class UNiagaraComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLaserGridStrike, ELaserGridAxis, Axis, int32, LaneIndex);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLaserGridSequenceFinished, ULaserGridSequenceData*, Sequence);
@@ -48,6 +52,10 @@ struct FLaserGridSlot
 
 	UPROPERTY()
 	TObjectPtr<AAttackWarningDecal> Warning;
+
+	// 예고 프리뷰 빔 (판정 없는 Niagara만, 레이저와 같은 경로)
+	UPROPERTY()
+	TObjectPtr<UNiagaraComponent> Preview;
 
 	bool bBusy = false;
 
@@ -173,6 +181,20 @@ protected:
 	// 줄 중심(바닥, 월드)과 레이저 진행 방향(월드)
 	void GetLaneGeometry(ELaserGridAxis Axis, int32 LaneIndex, bool bReversed, FVector& OutCenter, FVector& OutDirection) const;
 
+	// 실제 빔 시작·끝점 (BeamHeight 높이, 월드). 발사와 예고 프리뷰가 같이 사용
+	void GetBeamPoints(ELaserGridAxis Axis, int32 LaneIndex, bool bReversed, FVector& OutStart, FVector& OutEnd) const;
+
+	// 예고 프리뷰 켜기·끄기
+	void ShowPreview(int32 SlotIndex);
+
+	void HidePreview(int32 SlotIndex);
+
+	// 실제 레이저의 보이는 굵기 (줄 판정 굵기 × LaserVisualSettings.BeamWidthScale)
+	float GetVisibleBeamWidth() const;
+
+	// 프리뷰 빔 굵기 (PreviewBeamWidth, 0이면 보이는 굵기 × PreviewVisualSettings.BeamWidthScale)
+	float GetPreviewWidth() const;
+
 	APawn* GetTargetPawn() const;
 
 	static ELaserGridAxis OtherAxis(ELaserGridAxis Axis) { return Axis == ELaserGridAxis::X ? ELaserGridAxis::Y : ELaserGridAxis::X; }
@@ -280,6 +302,26 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Warning")
 	FLinearColor WarningColor = FLinearColor(1.f, 0.05f, 0.f);
+
+	// 예고 동안 실제 레이저와 같은 경로·높이에 판정 없는 반투명 빔을 표시 (쿼터뷰에서 바닥 데칼과 빔 위치가 어긋나 보이는 문제 대응)
+	// 바닥 데칼 없이 프리뷰만 쓰려면 WarningDecalClass를 비움
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Preview")
+	bool bShowBeamPreview = true;
+
+	// 프리뷰 빔 연출. BeamEffect가 비면 프리뷰 없음 (불꽃 없는 반투명 빔 이펙트 권장)
+	// 굵기는 PreviewBeamWidth (0일 때만 여기의 BeamWidthScale 비율), ImpactEffect·ReflectedBeamColor는 사용 안 함
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Preview", meta = (EditCondition = "bShowBeamPreview"))
+	FLaserBeamVisualSettings PreviewVisualSettings;
+
+	// 프리뷰 굵기 (cm). 실제 레이저와 구분되게 가는 선으로 고정 (레퍼런스: 니어 오토마타 오페라 보스 예고선)
+	// 0이면 실제 레이저의 보이는 굵기 × PreviewVisualSettings.BeamWidthScale
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Preview", meta = (ClampMin = "0.0", Units = "cm", EditCondition = "bShowBeamPreview"))
+	float PreviewBeamWidth = 10.f;
+
+	// 프리뷰 불투명도 (0~1, 빔 색 알파로 전달 → 이펙트 머티리얼 Opacity = 입자 색 알파 × 빔 모양)
+	// 예고 동안 굵기·불투명도는 바뀌지 않음 (실제 레이저와 구분되게 일정하게 유지)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Preview", meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "bShowBeamPreview"))
+	float PreviewOpacity = 0.35f;
 
 private:
 	UPROPERTY(Transient)

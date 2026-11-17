@@ -14,6 +14,10 @@
 #include "GameFramework/Pawn.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
+#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
@@ -58,6 +62,18 @@ ALaserGridPattern::ALaserGridPattern()
 	BossBeamPoint->SetRelativeLocation(FVector(-600.f, 0.f, 0.f));
 	BossBeamPoint->ArrowColor = FColor::Cyan;
 	BossBeamPoint->ArrowSize = 2.f;
+
+	// 프리뷰 기본: 실제 레이저보다 가늘고 흐린 빨강 (불꽃 없는 리본 빔)
+	// 기본 이펙트를 생성자에서 지정 → 이미 배치된 격자 패턴(보스 맵 등)도 맵 수정 없이 프리뷰가 나옴
+	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> PreviewEffectFinder(
+		TEXT("/Game/Game/VFX/Niagara/Laser/NS_LaserGrid_Preview_v1.NS_LaserGrid_Preview_v1"));
+	if (PreviewEffectFinder.Succeeded())
+	{
+		PreviewVisualSettings.BeamEffect = PreviewEffectFinder.Object;
+	}
+	// 연한 분홍빛 흰색 (실제 레이저의 진한 빨강과 구분)
+	PreviewVisualSettings.BeamColor = FLinearColor(1.f, 0.45f, 0.4f, 1.f);
+	PreviewVisualSettings.BeamWidthScale = 0.35f;
 }
 
 FTransform ALaserGridPattern::GetBossStandTransform() const
@@ -99,6 +115,14 @@ void ALaserGridPattern::BeginPlay()
 		}
 		Laser->RegisterComponent();
 		Slots[Index].Laser = Laser;
+
+		// 예고 프리뷰: 레이저 컴포넌트를 쓰지 않음 (트레이스·피해·반사판 파괴 없이 모양만)
+		if (bShowBeamPreview && PreviewVisualSettings.BeamEffect)
+		{
+			Slots[Index].Preview = UNiagaraFunctionLibrary::SpawnSystemAttached(PreviewVisualSettings.BeamEffect, Root, NAME_None,
+				FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset,
+				/*bAutoDestroy*/ false, /*bAutoActivate*/ false, ENCPoolMethod::None, /*bPreCullCheck*/ false);
+		}
 	}
 
 	if (!Slots.IsEmpty() && IsValid(Slots[0].Laser))
@@ -497,6 +521,11 @@ bool ALaserGridPattern::StartStrike(ELaserGridAxis Axis, int32 LaneIndex, bool b
 		}
 	}
 
+	if (InWarningTime > 0.f)
+	{
+		ShowPreview(SlotIndex);
+	}
+
 	OnStrikeWarned.Broadcast(Axis, LaneIndex);
 
 	if (InWarningTime > 0.f)
@@ -524,14 +553,12 @@ void ALaserGridPattern::FireSlot(int32 SlotIndex)
 		Slot.Warning->HideWarning();
 	}
 	Slot.Warning = nullptr;
+	HidePreview(SlotIndex);
 
-	FVector Center;
-	FVector Direction;
-	GetLaneGeometry(Slot.Axis, Slot.LaneIndex, Slot.bReversed, Center, Direction);
-
+	FVector Start;
+	FVector End;
+	GetBeamPoints(Slot.Axis, Slot.LaneIndex, Slot.bReversed, Start, End);
 	const float AlongHalf = GetAlongHalfSize(Slot.Axis);
-	const FVector Start = Center - Direction * AlongHalf + FVector::UpVector * BeamHeight;
-	const FVector End = Start + Direction * AlongHalf * 2.f;
 
 	if (IsValid(Slot.Laser))
 	{
@@ -561,6 +588,7 @@ void ALaserGridPattern::ReleaseSlot(int32 SlotIndex)
 		Slot.Warning->HideWarning();
 	}
 	Slot.Warning = nullptr;
+	HidePreview(SlotIndex);
 
 	if (IsValid(Slot.Laser))
 	{
@@ -648,6 +676,72 @@ void ALaserGridPattern::GetLaneGeometry(ELaserGridAxis Axis, int32 LaneIndex, bo
 
 	OutCenter = GetActorTransform().TransformPosition(LocalCenter);
 	OutDirection = GetActorTransform().TransformVectorNoScale(LocalDirection);
+}
+
+void ALaserGridPattern::GetBeamPoints(ELaserGridAxis Axis, int32 LaneIndex, bool bReversed, FVector& OutStart, FVector& OutEnd) const
+{
+	FVector Center;
+	FVector Direction;
+	GetLaneGeometry(Axis, LaneIndex, bReversed, Center, Direction);
+
+	const float AlongHalf = GetAlongHalfSize(Axis);
+	OutStart = Center - Direction * AlongHalf + FVector::UpVector * BeamHeight;
+	OutEnd = OutStart + Direction * AlongHalf * 2.f;
+}
+
+float ALaserGridPattern::GetVisibleBeamWidth() const
+{
+	return FMath::Max(GetEffectiveBeamWidth() * LaserVisualSettings.BeamWidthScale, LaserVisualSettings.MinBeamWidth);
+}
+
+float ALaserGridPattern::GetPreviewWidth() const
+{
+	if (PreviewBeamWidth > 0.f)
+	{
+		return PreviewBeamWidth;
+	}
+	return FMath::Max(GetVisibleBeamWidth() * PreviewVisualSettings.BeamWidthScale, PreviewVisualSettings.MinBeamWidth);
+}
+
+void ALaserGridPattern::ShowPreview(int32 SlotIndex)
+{
+	if (!bShowBeamPreview || !Slots.IsValidIndex(SlotIndex))
+	{
+		return;
+	}
+
+	FLaserGridSlot& Slot = Slots[SlotIndex];
+	if (!IsValid(Slot.Preview))
+	{
+		return;
+	}
+
+	// 경로·굵기·색은 예고 동안 바뀌지 않으므로 켤 때 한 번만 넣음
+	FVector Start;
+	FVector End;
+	GetBeamPoints(Slot.Axis, Slot.LaneIndex, Slot.bReversed, Start, End);
+
+	// 불투명도는 색 알파로 (이펙트 머티리얼 Opacity가 입자 색 알파를 곱함)
+	FLinearColor Color = PreviewVisualSettings.BeamColor;
+	Color.A = PreviewOpacity;
+
+	ULaserBeamComponent::ApplyBeamEffectParameters(Slot.Preview, PreviewVisualSettings, Start, End, GetPreviewWidth(), Color);
+	Slot.Preview->Activate(true);
+}
+
+void ALaserGridPattern::HidePreview(int32 SlotIndex)
+{
+	if (!Slots.IsValidIndex(SlotIndex))
+	{
+		return;
+	}
+
+	// 입자가 남지 않게 즉시 끔 (발사 레이저가 바로 그 자리를 덮음)
+	UNiagaraComponent* Preview = Slots[SlotIndex].Preview;
+	if (IsValid(Preview) && Preview->IsActive())
+	{
+		Preview->DeactivateImmediate();
+	}
 }
 
 APawn* ALaserGridPattern::GetTargetPawn() const
