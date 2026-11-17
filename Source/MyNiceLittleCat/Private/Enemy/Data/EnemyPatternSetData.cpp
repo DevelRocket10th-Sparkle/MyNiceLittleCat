@@ -80,6 +80,20 @@ bool FEnemyPatternConcurrency::Validate(FString& OutError) const
 	return true;
 }
 
+bool FEnemyPersistentPatternEntry::Validate(FString& OutError) const
+{
+	if (PatternId.IsNone()
+		|| !FMath::IsFinite(StartDelay) || StartDelay < 0.f
+		|| !FMath::IsFinite(RestartInterval) || RestartInterval < 0.f)
+	{
+		OutError = FString::Printf(TEXT("Invalid persistent pattern '%s' (StartDelay >= 0, RestartInterval >= 0)."),
+			*PatternId.ToString());
+		return false;
+	}
+
+	return true;
+}
+
 /* UEnemyPatternSetDat */
 
 void UEnemyPatternSetData::Serialize(FArchive& Ar)

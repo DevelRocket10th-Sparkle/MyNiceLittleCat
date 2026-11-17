@@ -186,6 +186,23 @@ void AEnemyAIController::ClearCombatTarget()
 	ClearFocus(EAIFocusPriority::Gameplay);
 }
 
+AActor* AEnemyAIController::GetCombatTarget() const
+{
+	const UBlackboardComponent* BlackboardComp = GetBlackboardComponent();
+	if (!BlackboardComp)
+	{
+		return nullptr;
+	}
+
+	const FBlackboard::FKey Key = TargetActorKey != FBlackboard::InvalidKey
+		? TargetActorKey
+		: BlackboardComp->GetKeyID(EnemyBlackboardKeys::TargetActor);
+
+	return Key != FBlackboard::InvalidKey
+		? Cast<AActor>(BlackboardComp->GetValue<UBlackboardKeyType_Object>(Key))
+		: nullptr;
+}
+
 // 잡몹의 발견 및 시야 상실을 타깃 변경에 반영
 void AEnemyAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 {

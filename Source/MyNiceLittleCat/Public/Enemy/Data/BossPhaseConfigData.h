@@ -61,6 +61,12 @@ struct FBossPhaseDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Patterns")
 	FEnemyPatternConcurrency Concurrency;
 
+	// 상시 패턴: 위 랜덤 선택과 별개로 페이즈 내내 따로 굴러가는 패턴
+	// - Patterns 목록에 넣지 않아도 됨 (넣으면 랜덤 선택에도 함께 나옴)
+	// - 패턴의 Can Run As Companion이 켜져 있어야 실행 (근접, 돌진, 레이저 빔 불가)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Patterns", meta = (TitleProperty = "PatternId"))
+	TArray<FEnemyPersistentPatternEntry> PersistentPatterns;
+
 	// 이전 형식: 저장된 이름 그대로 읽은 뒤 PostLoad에서 Patterns로 옮기고 비움 (편집 불가, 에셋을 다시 저장한 뒤 삭제)
 	// - 리다이렉트로 _DEPRECATED에 옮기는 방식은 이 구조체 배열에서 값이 들어오지 않아 이름을 유지
 	UPROPERTY()

@@ -17,6 +17,7 @@
 * - 위험 태그(Enemy.Pattern.Hazard.*)와 위험도: 슬롯 + GA가 등록한 생성물이 남아 있는 동안 점유
 * - 몸(Resource.Body)을 쓰는 패턴은 주 패턴으로만 실행: BT가 방향 정렬과 이동을 맡기 때문
 * - 다음 공격 간격은 주 패턴이 끝날 때만 추첨 (보조 패턴은 간격에 영향 없음)
+* - 상시 패턴(보스 페이즈): 랜덤 선택과 별개 트랙. 동시 실행 수에 세지 않고 자원·위험 태그·위험도만 점유
 */
 
 #pragma once
@@ -72,6 +73,9 @@ struct FEnemyPatternSlot
 	// 후딜 중인지
 	bool bRecovering = false;
 
+	// 상시 패턴 슬롯인지: 동시 실행 수에 세지 않음 (자원, 위험 태그, 위험도는 점유)
+	bool bPersistent = false;
+
 	// 시작 지연, 종료 누락 감시, 후딜 타이머
 	FTimerHandle StartDelayTimer;
 	FTimerHandle TimeoutTimer;
@@ -86,6 +90,18 @@ struct FEnemyPatternLingeringHazard
 	TWeakObjectPtr<AActor> Actor;
 	FGameplayTagContainer Hazards;
 	int32 Threat = 0;
+};
+
+// 상시 패턴 하나의 진행 상태: 시작 대기 → 실행 → (재시작 대기)
+struct FEnemyPersistentPatternState
+{
+	FEnemyPersistentPatternEntry Entry;
+
+	// 실행 중인 요청 번호 (0이면 대기 중)
+	int64 RequestId = 0;
+
+	// 시작 지연, 재시작, 재시도 타이머
+	FTimerHandle StartTimer;
 };
 
 UCLASS(ClassGroup = (Enemy), meta = (BlueprintSpawnableComponent))
@@ -154,8 +170,18 @@ public :
 	// 주 패턴만 취소 (보조 패턴은 계속 실행)
 	void CancelActiveRequest();
 
-	// 주 패턴, 보조 패턴, 시작 지연 예약을 모두 취소 (페이즈 전환)
+	// 주 패턴, 보조 패턴, 시작 지연 예약, 상시 패턴을 모두 취소 (페이즈 전환)
 	void CancelAllRequests();
+
+	/* 상시 패턴 (보스 페이즈) */
+
+	// 상시 패턴 목록 교체: 이전 상시 패턴은 취소하고 새 목록을 각자의 시작 지연 뒤 실행
+	// - 랜덤 선택, 가중치, 동시 실행 수, 공격 간격과 별개로 동작
+	// - 보조 실행 규칙을 따름: Can Run As Companion이 꺼져 있거나 GA가 몸을 쓰면 경고 후 건너뜀
+	void SetPersistentPatterns(const TArray<FEnemyPersistentPatternEntry>& Entries);
+
+	// 상시 패턴 정지: 실행 중인 상시 패턴 취소, 시작·재시작 예약 해제
+	void StopPersistentPatterns();
 
 	// 주 패턴 요청 해제: 실행 중이면 먼저 취소하고 결과와 타깃 해제
 	void ReleaseRequest(int64 RequestId);
@@ -192,7 +218,7 @@ public :
 	// Getter: 후딜용 이동 잠금을 이 컴포넌트가 가지고 있는지
 	bool OwnsRecoveryMovementLock() const { return bOwnsRecoveryMovementLock; }
 
-	// 지금 동시 실행 수에 들어가는 슬롯 수 (디버그 표시용)
+	// 지금 동시 실행 수에 들어가는 슬롯 수 (상시 패턴 제외)
 	int32 GetRunningSlotCount() const;
 
 	/* 남은 위험 생성물 (GA용) */
@@ -261,6 +287,9 @@ private :
 	// 패턴이 몸(Resource.Body)을 쓰는지
 	bool UsesBody(FName PatternId) const;
 
+	// 이 패턴이 이미 어떤 슬롯(주, 보조, 상시)에서 실행 중인지: 패턴마다 GA Spec이 하나라 중복 실행 불가
+	bool IsPatternRunning(FName PatternId) const;
+
 	// 가중치 추첨: 후보 중 하나 (후보가 없으면 nullptr)
 	const FEnemyPatternDefinition* PickWeighted(TConstArrayView<const FEnemyPatternDefinition*> Candidates) const;
 
@@ -294,6 +323,20 @@ private :
 
 	// 사라진 생성물 기록 정리
 	void PruneLingeringHazards();
+
+	/* 상시 패턴 */
+
+	// 상시 패턴 시작 예약 (Delay초 뒤 StartPersistentPattern)
+	void SchedulePersistentStart(int32 StateIndex, float Delay);
+
+	// 상시 패턴 시작: 조건(차단, 타깃, 거리·시야, 위험 태그)이 안 맞으면 잠시 뒤 다시 시도
+	void StartPersistentPattern(int32 StateIndex);
+
+	// 상시 패턴 슬롯 종료: 완료면 재시작 간격 뒤, 실패·취소면 잠시 뒤 다시 실행 (정지 후에는 무시)
+	void HandlePersistentSlotFinished(int64 RequestId, EEnemyPatternResult Result);
+
+	// 상시 패턴 타깃: AI 컨트롤러의 현재 전투 타깃
+	AActor* ResolvePersistentTarget() const;
 
 	/* GAS와 타이머 콜백 */
 
@@ -357,6 +400,9 @@ private :
 
 	// GA가 끝난 뒤에도 남은 위험 생성물
 	TArray<FEnemyPatternLingeringHazard> LingeringHazards;
+
+	// 현재 페이즈의 상시 패턴 진행 상태
+	TArray<FEnemyPersistentPatternState> PersistentStates;
 
 	// 새 요청 번호 발급용: 이전 번호를 재사용하지 않음
 	int64 NextRequestId = 0;

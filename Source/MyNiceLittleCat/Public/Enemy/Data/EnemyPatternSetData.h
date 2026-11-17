@@ -206,6 +206,32 @@ struct FEnemyPatternConcurrency
 	bool Validate(FString& OutError) const;
 };
 
+// 상시 패턴: 랜덤 선택과 별개로 페이즈 내내 따로 굴러가는 패턴 (보스 페이즈에서 사용)
+// - 가중치, 동시 실행 수, 공격 간격과 무관. 페이즈 전환, 전투 초기화, 사망 때 자동 정지
+// - 보조 실행과 같은 규칙: 패턴의 Can Run As Companion이 켜져 있어야 하고 몸 설정은 쓰지 않음
+// - 위험 태그와 위험도는 점유: 같은 위험 태그의 랜덤 패턴은 그동안 뽑히지 않음
+USTRUCT(BlueprintType)
+struct FEnemyPersistentPatternEntry
+{
+	GENERATED_BODY()
+
+	// 실행할 패턴 ID (PatternSet에 있어야 함)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern")
+	FName PatternId;
+
+	// 페이즈가 시작된 뒤 첫 실행까지 대기
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern", meta = (ClampMin = "0.0", Units = "s"))
+	float StartDelay = 0.f;
+
+	// 패턴이 끝난 뒤 다시 실행할 때까지 대기: 0이면 한 번만 실행 (포탑처럼 생성물이 계속 남는 패턴)
+	// - 거리, 시야, 위험 태그 때문에 시작하지 못하면 이 값과 무관하게 잠시 뒤 다시 시도
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pattern", meta = (ClampMin = "0.0", Units = "s"))
+	float RestartInterval = 0.f;
+
+	// 값 범위 검사
+	bool Validate(FString& OutError) const;
+};
+
 /**
  * 
  */

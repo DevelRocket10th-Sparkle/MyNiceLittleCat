@@ -320,6 +320,9 @@ bool ABossCharacter::HandlePhaseEntered(const FBossPhaseDefinition& Phase)
 	// 패턴 목록, 가중치 재정의, 동시 실행 설정을 한 번에 교체
 	GetPatternComponent()->SetPatternSelection(Phase.Patterns, Phase.Concurrency);
 
+	// 랜덤 선택과 별개로 페이즈 내내 굴러가는 상시 패턴 (전환 요청 때 CancelAllRequests로 정지)
+	GetPatternComponent()->SetPersistentPatterns(Phase.PersistentPatterns);
+
 	if (IsValid(PhaseGimmickComponent))
 	{
 		return IBossPhaseGimmickInterface::Execute_EnterBossPhase(PhaseGimmickComponent,
@@ -397,6 +400,17 @@ bool ABossCharacter::ValidatePhasePatterns() const
 			if (!Patterns->HasPattern(Entry.PatternId))
 			{
 				UE_LOG(LogTemp, Error, TEXT("[Boss] %s: phase '%s' uses unknown pattern '%s'"),
+					*GetName(), *Phase.PhaseId.ToString(), *Entry.PatternId.ToString());
+				return false;
+			}
+		}
+
+		// 상시 패턴도 PatternSet에 있어야 함
+		for (const FEnemyPersistentPatternEntry& Entry : Phase.PersistentPatterns)
+		{
+			if (!Patterns->HasPattern(Entry.PatternId))
+			{
+				UE_LOG(LogTemp, Error, TEXT("[Boss] %s: phase '%s' uses unknown persistent pattern '%s'"),
 					*GetName(), *Phase.PhaseId.ToString(), *Entry.PatternId.ToString());
 				return false;
 			}

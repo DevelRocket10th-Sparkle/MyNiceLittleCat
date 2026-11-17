@@ -11,10 +11,20 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 
+#include "Enemy/AI/EnemyAIController.h"
 #include "Enemy/Combat/EnemyTargetUtils.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/GAS/EnemyCombatTags.h"
 #include "Enemy/GAS/Abilities/EnemyPatternAbility.h"
+
+namespace
+{
+	// 상시 패턴이 조건(차단, 타깃, 거리·시야, 위험 태그) 때문에 시작하지 못했을 때 다시 시도하는 간격
+	constexpr float PersistentRetrySeconds = 0.5f;
+
+	// 시작 지연 0인 상시 패턴의 첫 시도 (타이머는 0초를 받지 않음)
+	constexpr float PersistentMinDelaySeconds = 0.01f;
+}
 
 UEnemyPatternComponent::UEnemyPatternComponent()
 {
@@ -334,9 +344,12 @@ void UEnemyPatternComponent::CancelActiveRequest()
 	CancelRequest(PrimaryRequestId);
 }
 
-// 주 패턴, 보조 패턴, 시작 지연 예약을 모두 취소 (남은 생성물은 각 GA의 정리 규칙을 따름)
+// 주 패턴, 보조 패턴, 시작 지연 예약, 상시 패턴을 모두 취소 (남은 생성물은 각 GA의 정리 규칙을 따름)
 void UEnemyPatternComponent::CancelAllRequests()
 {
+	// 상시 패턴은 재시작 예약까지 먼저 해제: 아래 취소로 들어오는 종료가 다시 시작하지 않도록
+	StopPersistentPatterns();
+
 	TArray<int64, TInlineAllocator<4>> RunningIds;
 	for (const FEnemyPatternSlot& Slot : Slots)
 	{
@@ -368,6 +381,7 @@ void UEnemyPatternComponent::ReleaseRequest(int64 RequestId)
 // 모든 요청을 무효화한 뒤 타이머, 남은 생성물 기록, 능력 실행 정리
 void UEnemyPatternComponent::StopAndInvalidate()
 {
+	StopPersistentPatterns();
 	ReleaseRecoveryMovementLock();
 	ResetAttackInterval();
 
@@ -464,7 +478,14 @@ bool UEnemyPatternComponent::GetActiveMovement(FEnemyPatternMovementSettings& Ou
 // 관리 중인 GA와 예약이 모두 끝났는지
 bool UEnemyPatternComponent::IsIdle() const
 {
-	if (GetRunningSlotCount() > 0)
+	// 상시 패턴을 포함한 모든 실행 중 슬롯
+	const bool bAnyRunning = Slots.ContainsByPredicate(
+		[](const FEnemyPatternSlot& Slot)
+		{
+			return Slot.Result == EEnemyPatternResult::Running;
+		});
+
+	if (bAnyRunning)
 	{
 		return false;
 	}
@@ -534,7 +555,8 @@ int32 UEnemyPatternComponent::GetRunningSlotCount() const
 	int32 Count = 0;
 	for (const FEnemyPatternSlot& Slot : Slots)
 	{
-		Count += Slot.Result == EEnemyPatternResult::Running ? 1 : 0;
+		// 상시 패턴은 별도 트랙이라 동시 실행 수에 세지 않음
+		Count += Slot.Result == EEnemyPatternResult::Running && !Slot.bPersistent ? 1 : 0;
 	}
 	return Count;
 }
@@ -728,6 +750,12 @@ void UEnemyPatternComponent::CollectCandidates(AActor* Target, bool bCompanion, 
 			continue;
 		}
 
+		// 이미 다른 슬롯(상시 패턴 포함)에서 실행 중인 패턴: GA Spec이 하나라 다시 실행할 수 없음
+		if (IsPatternRunning(Pattern.PatternId))
+		{
+			continue;
+		}
+
 		if (CanExecutePattern(Pattern, Target) && CanJoin(Pattern, Occupied, OccupiedThreat, bCompanion))
 		{
 			OutCandidates.Add(&Pattern);
@@ -800,6 +828,15 @@ bool UEnemyPatternComponent::CanJoin(const FEnemyPatternDefinition& Pattern, con
 	}
 
 	return true;
+}
+
+bool UEnemyPatternComponent::IsPatternRunning(FName PatternId) const
+{
+	return Slots.ContainsByPredicate(
+		[PatternId](const FEnemyPatternSlot& Slot)
+		{
+			return Slot.Result == EEnemyPatternResult::Running && Slot.Pattern.PatternId == PatternId;
+		});
 }
 
 bool UEnemyPatternComponent::UsesBody(FName PatternId) const
@@ -1016,9 +1053,17 @@ void UEnemyPatternComponent::FinishSlot(int64 RequestId, EEnemyPatternResult Res
 	Slot->bRecovering = false;
 	Slot->Result = Result;
 
+	const bool bPersistent = Slot->bPersistent;
+
 	if (!Slot->bPrimary)
 	{
 		RemoveSlot(RequestId);
+	}
+
+	// 상시 패턴: 다음 실행 예약 (슬롯을 지운 뒤 처리해야 같은 패턴을 다시 시작할 수 있음)
+	if (bPersistent)
+	{
+		HandlePersistentSlotFinished(RequestId, Result);
 	}
 }
 
@@ -1056,6 +1101,172 @@ void UEnemyPatternComponent::PruneLingeringHazards()
 		{
 			return !Hazard.Actor.IsValid();
 		});
+}
+
+/* 상시 패턴 */
+
+void UEnemyPatternComponent::SetPersistentPatterns(const TArray<FEnemyPersistentPatternEntry>& Entries)
+{
+	StopPersistentPatterns();
+
+	if (bStopped)
+	{
+		return;
+	}
+
+	for (const FEnemyPersistentPatternEntry& Entry : Entries)
+	{
+		FString Error;
+		if (!Entry.Validate(Error) || !HasPattern(Entry.PatternId))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[EnemyPattern] %s: skipped persistent pattern '%s' (unknown or invalid)"),
+				*GetNameSafe(GetOwner()), *Entry.PatternId.ToString());
+			continue;
+		}
+
+		// 보조 실행 규칙: 몸은 랜덤 선택 패턴이 쓰므로 몸을 쓰지 않는 패턴만
+		if (!CompanionResources.Contains(Entry.PatternId))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[EnemyPattern] %s: persistent pattern '%s' needs Can Run As Companion (and an ability class that does not use the body)"),
+				*GetNameSafe(GetOwner()), *Entry.PatternId.ToString());
+			continue;
+		}
+
+		FEnemyPersistentPatternState& State = PersistentStates.AddDefaulted_GetRef();
+		State.Entry = Entry;
+	}
+
+	// 배열을 다 채운 뒤 예약: 예약 중 배열이 재할당되지 않도록
+	for (int32 Index = 0; Index < PersistentStates.Num(); ++Index)
+	{
+		SchedulePersistentStart(Index, PersistentStates[Index].Entry.StartDelay);
+	}
+}
+
+void UEnemyPatternComponent::StopPersistentPatterns()
+{
+	TArray<int64, TInlineAllocator<4>> RunningIds;
+
+	UWorld* World = GetWorld();
+	for (FEnemyPersistentPatternState& State : PersistentStates)
+	{
+		if (World)
+		{
+			World->GetTimerManager().ClearTimer(State.StartTimer);
+		}
+
+		if (State.RequestId != 0)
+		{
+			RunningIds.Add(State.RequestId);
+		}
+	}
+
+	// 상태를 먼저 비움: 아래 취소로 들어오는 종료 처리가 다시 시작을 예약하지 않음
+	PersistentStates.Reset();
+
+	for (const int64 RequestId : RunningIds)
+	{
+		CancelRequest(RequestId);
+	}
+}
+
+void UEnemyPatternComponent::SchedulePersistentStart(int32 StateIndex, float Delay)
+{
+	UWorld* World = GetWorld();
+	if (!World || !PersistentStates.IsValidIndex(StateIndex))
+	{
+		return;
+	}
+
+	World->GetTimerManager().SetTimer(PersistentStates[StateIndex].StartTimer,
+		FTimerDelegate::CreateUObject(this, &UEnemyPatternComponent::StartPersistentPattern, StateIndex),
+		FMath::Max(Delay, PersistentMinDelaySeconds), false);
+}
+
+void UEnemyPatternComponent::StartPersistentPattern(int32 StateIndex)
+{
+	if (bStopped || !PersistentStates.IsValidIndex(StateIndex) || PersistentStates[StateIndex].RequestId != 0)
+	{
+		return;
+	}
+
+	const FName PatternId = PersistentStates[StateIndex].Entry.PatternId;
+	const FEnemyPatternDefinition* Pattern = FindPattern(PatternId);
+	const AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner());
+	AActor* Target = ResolvePersistentTarget();
+
+	// 전환 중 차단, AI 정지, 같은 패턴 실행 중, 거리·시야·GA 조건
+	bool bReady = Pattern && IsValid(Enemy) && Enemy->CanRunEnemyAI() && !bRequestsBlocked && ASC.IsValid()
+		&& !IsPatternRunning(PatternId) && CanExecutePattern(*Pattern, Target);
+
+	// 실행 중인 패턴과 위험 태그·위험도가 겹치지 않을 때만 (보조 실행 자원 기준)
+	if (bReady)
+	{
+		FGameplayTagContainer Occupied;
+		int32 OccupiedThreat = 0;
+		CollectOccupied(Occupied, OccupiedThreat);
+		bReady = CanJoin(*Pattern, Occupied, OccupiedThreat, true);
+	}
+
+	if (!bReady)
+	{
+		SchedulePersistentStart(StateIndex, PersistentRetrySeconds);
+		return;
+	}
+
+	// 보조 슬롯으로 만들되 상시 표시: 몸 설정은 끄고, 동시 실행 수에는 세지 않음
+	FEnemyPatternSlot& Slot = AddSlot(*Pattern, Target, false);
+	Slot.bPersistent = true;
+	const int64 RequestId = Slot.RequestId;
+	PersistentStates[StateIndex].RequestId = RequestId;
+
+	if (!ActivateSlot(RequestId))
+	{
+		// 활성화 실패는 슬롯이 이미 지워졌으므로 상태만 되돌리고 다시 시도
+		if (PersistentStates.IsValidIndex(StateIndex) && PersistentStates[StateIndex].RequestId == RequestId)
+		{
+			PersistentStates[StateIndex].RequestId = 0;
+			SchedulePersistentStart(StateIndex, PersistentRetrySeconds);
+		}
+	}
+}
+
+void UEnemyPatternComponent::HandlePersistentSlotFinished(int64 RequestId, EEnemyPatternResult Result)
+{
+	const int32 StateIndex = PersistentStates.IndexOfByPredicate(
+		[RequestId](const FEnemyPersistentPatternState& State)
+		{
+			return State.RequestId == RequestId;
+		});
+
+	// 정지(StopPersistentPatterns)로 이미 비운 상태면 무시
+	if (StateIndex == INDEX_NONE || bStopped)
+	{
+		return;
+	}
+
+	PersistentStates[StateIndex].RequestId = 0;
+
+	// 정상 완료: 재시작 간격이 있으면 다시 실행, 0이면 이번 페이즈에서 끝
+	if (Result == EEnemyPatternResult::Completed)
+	{
+		const float RestartInterval = PersistentStates[StateIndex].Entry.RestartInterval;
+		if (RestartInterval > 0.f)
+		{
+			SchedulePersistentStart(StateIndex, RestartInterval);
+		}
+		return;
+	}
+
+	// 실패, 시간 초과, 외부 취소: 페이즈 동안 계속 굴러가야 하므로 잠시 뒤 다시 시도
+	SchedulePersistentStart(StateIndex, PersistentRetrySeconds);
+}
+
+AActor* UEnemyPatternComponent::ResolvePersistentTarget() const
+{
+	const APawn* Pawn = Cast<APawn>(GetOwner());
+	const AEnemyAIController* AI = Pawn ? Cast<AEnemyAIController>(Pawn->GetController()) : nullptr;
+	return AI ? AI->GetCombatTarget() : nullptr;
 }
 
 /* GAS와 타이머 콜백 */

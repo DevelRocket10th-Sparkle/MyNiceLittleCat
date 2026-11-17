@@ -150,6 +150,20 @@ bool UBossPhaseConfigData::ValidateConfiguration(FString& OutError) const
 			return false;
 		}
 
+		// 상시 패턴: 값 범위와 중복 (같은 패턴은 하나의 GA Spec이라 동시에 두 번 실행할 수 없음)
+		TSet<FName> PersistentIds;
+		for (const FEnemyPersistentPatternEntry& Entry : Phase.PersistentPatterns)
+		{
+			FString EntryError;
+			if (!Entry.Validate(EntryError) || PersistentIds.Contains(Entry.PatternId))
+			{
+				OutError = FString::Printf(TEXT("Phase '%s': %s"), *PhaseName,
+					EntryError.IsEmpty() ? *FString::Printf(TEXT("duplicate persistent pattern '%s'."), *Entry.PatternId.ToString()) : *EntryError);
+				return false;
+			}
+			PersistentIds.Add(Entry.PatternId);
+		}
+
 		// 패턴별 이동 예외: 중복 없이 이 페이즈에서 허용한 패턴만
 		TSet<FName> OverrideIds;
 		for (const FBossPatternMovementOverride& Override : Phase.PatternMovementOverrides)

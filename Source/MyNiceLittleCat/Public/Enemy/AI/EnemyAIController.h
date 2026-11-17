@@ -51,6 +51,10 @@ public :
 	UFUNCTION(BlueprintCallable, Category = "Enemy|AI")
 	void ClearCombatTarget();
 
+	// Getter: 현재 전투 타깃 (Blackboard TargetActor, 없으면 nullptr): 상시 패턴 등 BT 밖의 실행에서 사용
+	UFUNCTION(BlueprintPure, Category = "Enemy|AI")
+	AActor* GetCombatTarget() const;
+
 protected :
 
 	// 이동 의도(애니메이션용) 갱신
