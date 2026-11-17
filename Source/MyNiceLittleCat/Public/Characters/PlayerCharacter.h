@@ -47,6 +47,9 @@ public:
 	void SetDodgeInvincible(bool bNewDodgeInvincible);
 	bool GetbIsDodgeInvincible() const { return bIsDodgeInvincible; }
 	bool GetbIsRunning() const { return bIsRunning; }
+	// 쉬움 모드
+	bool IsEasyMode() const { return bEasyMode; }
+	float GetAttackSpeedMultiplier() const { return bEasyMode ? EasyAttackSpeedMultiplier : 1.f; }
 	bool GetbIsDeflected() const { return bIsDeflected; }
 	bool GetbIsHealing() const { return bIsHealing; }
 	int32 GetPotionCount() const { return CurrentPotions; }
@@ -174,6 +177,39 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Hit Reaction")
 	float KnockbackUpwardStrength = 150.f;
+
+	/* 쉬움 모드: 넉백 없음, 최대 체력 EasyMaxHealth, 항상 달리기 속도 + 대시 키 누르는 즉시 구르기,
+	   피격 무적 EasyInvincibilityDuration, 공격 속도 EasyAttackSpeedMultiplier배 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Easy Mode")
+	bool bEasyMode = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Easy Mode", meta = (ClampMin = "1", EditCondition = "bEasyMode"))
+	float EasyMaxHealth = 10.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Easy Mode", meta = (ClampMin = "0", Units = "s", EditCondition = "bEasyMode"))
+	float EasyInvincibilityDuration = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Easy Mode", meta = (ClampMin = "0.1", EditCondition = "bEasyMode"))
+	float EasyAttackSpeedMultiplier = 1.5f;
+
+	// 쉬움 모드일 때 입에 무는 쪽쪽이 (Character_Mouth_Socket)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Easy Mode", meta = (EditCondition = "bEasyMode"))
+	TObjectPtr<class UStaticMesh> EasyModePacifierMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Easy Mode", meta = (EditCondition = "bEasyMode"))
+	FName EasyModePacifierSocket = TEXT("Character_Mouth_Socket");
+
+	// 소켓 기준 위치·회전·크기 보정
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Easy Mode", meta = (EditCondition = "bEasyMode"))
+	FTransform EasyModePacifierOffset;
+
+	// 쉬움 모드일 때 포션 대신 드는 젖병 (원래 포션과 높이가 같도록 자동으로 크기 맞춤)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Easy Mode", meta = (EditCondition = "bEasyMode"))
+	TObjectPtr<class UStaticMesh> EasyModePotionMesh;
+
+	// 자동으로 맞춘 젖병 크기에 곱할 배율
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Easy Mode", meta = (ClampMin = "0.1", EditCondition = "bEasyMode"))
+	float EasyModePotionScale = 1.f;
 
 	// 해당 시간 보다 오래 홀드 시 달리기 시작 짧으면 구르기
 	UPROPERTY(EditDefaultsOnly, Category = "Movement|Run", meta = (ClampMin = "0.05"))

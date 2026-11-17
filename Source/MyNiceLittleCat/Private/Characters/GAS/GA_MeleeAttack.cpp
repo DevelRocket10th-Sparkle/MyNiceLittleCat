@@ -53,7 +53,8 @@ void UGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
         UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
             this,
             NAME_None,
-            CurrentAttackMontage
+            CurrentAttackMontage,
+            Player ? Player->GetAttackSpeedMultiplier() : 1.f
         );
 
     if (!MontageTask)
@@ -123,7 +124,7 @@ void UGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
         this, &UGA_MeleeAttack::HandleComboInput);
 
     ComboInputTask->ReadyForActivation();
-    StartAttackForwardMove(500.0f, 0.5f);
+    StartAttackForwardMove(500.0f, 0.5f / (Player ? Player->GetAttackSpeedMultiplier() : 1.f));
     MontageTask->ReadyForActivation();
 
 }
@@ -181,7 +182,8 @@ void UGA_MeleeAttack::AdvanceCombo()
 
     if (Character)
     {
-        StartAttackForwardMove(500.0f, 0.5f);
+        const APlayerCharacter* Player = Cast<APlayerCharacter>(Character);
+        StartAttackForwardMove(500.0f, 0.5f / (Player ? Player->GetAttackSpeedMultiplier() : 1.f));
     }
 
     if (UAnimInstance* AnimInstance =

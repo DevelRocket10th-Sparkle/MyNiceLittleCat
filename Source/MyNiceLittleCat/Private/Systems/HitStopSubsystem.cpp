@@ -2,85 +2,137 @@
 
 #include "Systems/HitStopSubsystem.h"
 #include "Engine/World.h"
-#include "TimerManager.h"
+#include "Kismet/GameplayStatics.h"
+#include "EngineUtils.h"
 #include "GameFramework/Character.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Animation/AnimInstance.h"
-#include "Animation/AnimMontage.h"
+#include "GameFramework/PlayerController.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Camera/CameraModifier_CameraShake.h"
 
-void UHitStopSubsystem::ApplyHitStop(AActor* Actor, float Duration)
+void UHitStopSubsystem::ApplyHitStop(float Duration)
 {
 	UWorld* World = GetWorld();
-	if (!IsValid(Actor) || !World || Duration <= 0.f) return;
+	if (!World || World->bIsTearingDown || Duration <= 0.f) return;
 
-	FTimerManager& TimerManager = World->GetTimerManager();
-	const FTimerDelegate EndDelegate = FTimerDelegate::CreateUObject(
-		this, &UHitStopSubsystem::EndHitStop, TWeakObjectPtr<AActor>(Actor));
-
-	// 이미 히트스톱 중이면 다시 멈추지 않고 시간만 연장
-	if (FHitStopState* Existing = ActiveHitStops.Find(Actor))
+	if (!bActive)
 	{
-		if (TimerManager.GetTimerRemaining(Existing->TimerHandle) < Duration)
+		bActive = true;
+		SavedTimeDilation = UGameplayStatics::GetGlobalTimeDilation(World);
+		UGameplayStatics::SetGlobalTimeDilation(World, FrozenTimeDilation);
+		FreezeMeshes();
+	}
+
+	// 연타가 겹치면 끊기지 않고 연장
+	RemainingSeconds = FMath::Max(RemainingSeconds, Duration);
+
+	// 게임 시간은 멈춰 있으므로 실제 시간으로 셈
+	if (!TickHandle.IsValid())
+	{
+		TickHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &UHitStopSubsystem::TickHitStop));
+	}
+}
+
+bool UHitStopSubsystem::TickHitStop(float DeltaTime)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		TickHandle.Reset();
+		RemainingSeconds = 0.f;
+		bActive = false;
+		FrozenMeshes.Reset();
+		return false;
+	}
+
+	// 일시정지 메뉴가 열려 있는 동안은 남은 시간을 쓰지 않음
+	if (World->IsPaused())
+	{
+		return true;
+	}
+
+	// 카메라 셰이크는 게임 시간으로 돌아서 같이 멈춰 버림 → 멈춘 동안 빠진 시간만큼 직접 진행
+	const float MissingTime = DeltaTime * FMath::Max(1.f - FrozenTimeDilation, 0.f);
+	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* PC = It->Get();
+		APlayerCameraManager* CameraManager = PC ? PC->PlayerCameraManager.Get() : nullptr;
+		if (!CameraManager) continue;
+
+		if (UCameraModifier_CameraShake* ShakeModifier = Cast<UCameraModifier_CameraShake>(
+			CameraManager->FindCameraModifierByClass(UCameraModifier_CameraShake::StaticClass())))
 		{
-			TimerManager.SetTimer(Existing->TimerHandle, EndDelegate, Duration, false);
+			FMinimalViewInfo Scratch = CameraManager->GetCameraCacheView();
+			ShakeModifier->ModifyCamera(MissingTime, Scratch);
 		}
-		return;
 	}
 
-	ACharacter* Character = Cast<ACharacter>(Actor);
-	UAnimInstance* AnimInstance =
-		(Character && Character->GetMesh()) ? Character->GetMesh()->GetAnimInstance() : nullptr;
-	if (!AnimInstance) return;
-
-	UAnimMontage* Montage = AnimInstance->GetCurrentActiveMontage();
-	if (!Montage) return;   // 재생 중인 몽타주가 없으면 멈출 것이 없음
-
-	// 몽타주만 정지 → AnimBP(꼬리 물리 등)는 정상 시간으로 계속 동작
-	AnimInstance->Montage_Pause(Montage);
-
-	// 정지 중엔 루트모션이 끊겨 일반 이동으로 처리되므로 남은 속도 제거
-	if (UCharacterMovementComponent* MoveComp = Character->GetCharacterMovement())
+	RemainingSeconds -= DeltaTime;
+	if (RemainingSeconds > 0.f)
 	{
-		MoveComp->StopMovementImmediately();
+		return true;
 	}
 
-	FHitStopState& State = ActiveHitStops.Add(Actor);
-	State.AnimInstance = AnimInstance;
-	State.PausedMontage = Montage;
-
-	TimerManager.SetTimer(State.TimerHandle, EndDelegate, Duration, false);
+	TickHandle.Reset();
+	CancelHitStop();
+	return false;
 }
 
-void UHitStopSubsystem::EndHitStop(TWeakObjectPtr<AActor> WeakActor)
+void UHitStopSubsystem::CancelHitStop()
 {
-	if (const FHitStopState* State = ActiveHitStops.Find(WeakActor))
+	if (TickHandle.IsValid())
 	{
-		ResumeMontage(*State);
+		FTSTicker::GetCoreTicker().RemoveTicker(TickHandle);
+		TickHandle.Reset();
 	}
 
-	ActiveHitStops.Remove(WeakActor);
+	const bool bWasActive = bActive;
+	bActive = false;
+	RemainingSeconds = 0.f;
+
+	UWorld* World = GetWorld();
+	if (bWasActive && World && !World->bIsTearingDown)
+	{
+		UGameplayStatics::SetGlobalTimeDilation(World, SavedTimeDilation);
+	}
+	UnfreezeMeshes();
 }
 
-void UHitStopSubsystem::ResumeMontage(const FHitStopState& State)
+void UHitStopSubsystem::FreezeMeshes()
 {
-	UAnimInstance* AnimInstance = State.AnimInstance.Get();
-	UAnimMontage* Montage = State.PausedMontage.Get();
+	UWorld* World = GetWorld();
+	if (!World) return;
 
-	// 정지 중에 다른 몽타주로 바뀌었으면(피격 리액션 등) 건드리지 않음
-	if (AnimInstance && Montage && AnimInstance->Montage_IsActive(Montage))
+	// 애님 그래프(꼬리 RigidBody 등)를 통째로 멈춰서 포즈 고정
+	for (TActorIterator<ACharacter> It(World); It; ++It)
 	{
-		AnimInstance->Montage_Resume(Montage);
+		TArray<USkeletalMeshComponent*> Meshes;
+		It->GetComponents<USkeletalMeshComponent>(Meshes);
+		for (USkeletalMeshComponent* Mesh : Meshes)
+		{
+			if (Mesh && Mesh->IsComponentTickEnabled())
+			{
+				Mesh->SetComponentTickEnabled(false);
+				FrozenMeshes.Add(Mesh);
+			}
+		}
 	}
+}
+
+void UHitStopSubsystem::UnfreezeMeshes()
+{
+	for (const TWeakObjectPtr<USkeletalMeshComponent>& Mesh : FrozenMeshes)
+	{
+		if (Mesh.IsValid())
+		{
+			Mesh->SetComponentTickEnabled(true);
+		}
+	}
+	FrozenMeshes.Reset();
 }
 
 void UHitStopSubsystem::Deinitialize()
 {
-	for (const TPair<TWeakObjectPtr<AActor>, FHitStopState>& Pair : ActiveHitStops)
-	{
-		ResumeMontage(Pair.Value);
-	}
-	ActiveHitStops.Empty();
-
+	CancelHitStop();
 	Super::Deinitialize();
 }

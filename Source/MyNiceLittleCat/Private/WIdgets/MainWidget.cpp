@@ -9,6 +9,8 @@
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
+#include "Engine/GameInstance.h"
+#include "Frameworks/Save/GameProgressSubsystem.h"
 
 #include "Characters/PlayerCharacter.h"
 #include "Characters/GAS/PlayerAttributeSet.h"
@@ -49,6 +51,18 @@ void UMainWidget::BindToPlayer()
 	if (!Player.IsValid()) return;
 
 	PotionHandle = Player->OnPotionCountChanged.AddUObject(this, &UMainWidget::RefreshPotions);
+
+	// 쉬움 모드: 포션 아이콘을 젖병으로 (크기는 WBP 설정 그대로)
+	// HUD가 플레이어 BeginPlay보다 먼저 묶일 수 있어 진행 플래그도 같이 확인
+	const UGameProgressSubsystem* Progress = GetGameInstance() ? GetGameInstance()->GetSubsystem<UGameProgressSubsystem>() : nullptr;
+	const bool bEasy = Player->IsEasyMode() || (Progress && Progress->HasProgressFlag(TEXT("EasyMode")));
+	if (PotionIcon && bEasy)
+	{
+		if (UTexture2D* BottleTexture = EasyModePotionTexture.LoadSynchronous())
+		{
+			PotionIcon->SetBrushResourceObject(BottleTexture);
+		}
+	}
 	RefreshPotions(Player->GetPotionCount(), Player->GetMaxPotions());
 
 	UAbilitySystemComponent* ASC = Player->GetAbilitySystemComponent();
