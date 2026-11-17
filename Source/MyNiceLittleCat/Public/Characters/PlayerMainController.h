@@ -56,6 +56,9 @@ private:
 	void HandlePetSpecialAction();
 	void HandleModeUseCanceled();
 
+	// 컷신 스킵 입력: 재생 중인 컷신이 스킵 가능하면 마지막 장면으로 넘김
+	void HandleSkipCinematic();
+
 	// 마우스 위치를 다이얼 UI와 같은 좌표 단위로 가져오는 함수 
 	bool TryGetDialPointerPosition(FVector2D& _outPosition) const;
 
@@ -79,6 +82,12 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pet|Input")
 	TObjectPtr<class UInputAction> IA_PetSpecialAction;
+
+	// 컷신 스킵 입력
+	// - IA 에셋에 Hold 트리거(One Shot)를 달아 길게 눌러야 스킵: 상호작용 연타로 컷이 넘어가는 것 방지
+	// - 키 매핑은 플레이어 IMC에서 지정 (상호작용과 같은 키여도 됨)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cinematic|Input")
+	TObjectPtr<class UInputAction> IA_SkipCinematic;
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<class APetCharacter> PartnerPet;

@@ -106,11 +106,13 @@ void UInteractionComponent::HandleInteractKey()
 
 bool UInteractionComponent::TryInteract()
 {
-	// 스킵 가능한 컷신 중에는 상호작용 키를 스킵으로 사용 (어느 시스템이 재생한 컷신이든 동일)
-	if (UCinematicSubsystem* Cinematics = GetWorld()->GetSubsystem<UCinematicSubsystem>();
-		Cinematics && Cinematics->TrySkipActiveCutscene())
+	// 컷신 중에는 상호작용하지 않음
+	// - 같은 키를 길게 누르면 컷신 스킵 (APlayerMainController::HandleSkipCinematic)
+	// - 짧게 누른 키가 컷신 뒤의 기믹을 건드리지 않도록 여기서 차단
+	if (const UCinematicSubsystem* Cinematics = GetWorld()->GetSubsystem<UCinematicSubsystem>();
+		Cinematics && Cinematics->IsCutscenePlaying())
 	{
-		return true;
+		return false;
 	}
 
 	if (IsAligning())
