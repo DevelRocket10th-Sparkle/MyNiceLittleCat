@@ -6,6 +6,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Kismet/GameplayStatics.h"
 
 #include "Characters/PlayerCharacter.h"
@@ -158,13 +159,19 @@ void UCheckpointMenuWidget::BuildTravelList()
 		Label->SetText(Data.DisplayName.IsEmpty() ? FText::FromName(Data.CheckpointId) : Data.DisplayName);
 		Button->AddChild(Label);
 
-		TravelList->AddChild(Button);
+		if (UScrollBoxSlot* ListSlot = Cast<UScrollBoxSlot>(TravelList->AddChild(Button)))
+		{
+			// 스크롤 박스는 영역 밖을 잘라내므로, 마우스를 올려 커지고 흔들리는 버튼이 들어갈 여유를 둠
+			ListSlot->SetPadding(FMargin(24.f, 8.f, 24.f, 8.f));
+			ListSlot->SetHorizontalAlignment(HAlign_Fill);
+		}
 	}
 
 	if (Destinations.IsEmpty())
 	{
 		UTextBlock* Empty = WidgetTree->ConstructWidget<UTextBlock>();
 		Empty->SetText(NSLOCTEXT("Checkpoint", "NoDestinations", "No other checkpoints discovered"));
+		Empty->SetColorAndOpacity(FSlateColor(FLinearColor::FromSRGBColor(FColor(110, 70, 45))));
 		TravelList->AddChild(Empty);
 	}
 }

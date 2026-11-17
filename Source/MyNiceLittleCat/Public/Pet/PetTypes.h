@@ -13,7 +13,8 @@ enum class EPetBehavior : uint8
     Follow UMETA(DisplayName = "Follow"),
     MoveTo UMETA(DisplayName = "MoveTo"),
     AbilityMoveTo UMETA(DisplayName = "AbilityMoveTo"), // 능력이 요청하고 결과를 기다리는 이동..
-    RecoverFollow UMETA(DisplayName = "Recover Follow")
+    RecoverFollow UMETA(DisplayName = "Recover Follow"),
+    MournPlayer UMETA(DisplayName = "Mourn Player")
 };
 
 // 플레이어가 선택한 펫 능력 모드

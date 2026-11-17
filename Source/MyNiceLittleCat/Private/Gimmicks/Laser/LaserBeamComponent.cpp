@@ -16,6 +16,7 @@
 #include "Gimmicks/Reflection/ReflectionMath.h"
 #include "Gimmicks/Stage/Laser/GimmickMirror.h"
 #include "Gimmicks/Boss/BossGimmickComponent.h"
+#include "Characters/Camera/RoomMaskVolume.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
@@ -36,6 +37,11 @@ namespace
 		if (!Component)
 		{
 			return false;
+		}
+
+		if (Cast<ARoomMaskVolume>(Component->GetOwner()))
+		{
+			return true;
 		}
 
 		const FCollisionResponseContainer& Responses = Component->GetCollisionResponseToChannels();

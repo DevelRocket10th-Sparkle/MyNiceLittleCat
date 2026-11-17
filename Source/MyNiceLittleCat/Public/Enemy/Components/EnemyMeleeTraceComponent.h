@@ -7,6 +7,7 @@
 
 class UMeshComponent;
 class USkeletalMeshComponent;
+struct FHitResult;
 DECLARE_MULTICAST_DELEGATE_OneParam(FEnemyMeleePlayerHit, const FHitResult&);
 
 // 메시 검색과 피해 적용을 분리한 캐릭터별 근접 판정 실행 상태
@@ -16,7 +17,7 @@ class MYNICELITTLECAT_API UEnemyMeleeTraceComponent : public UActorComponent
 	GENERATED_BODY()
 public:
 	UEnemyMeleeTraceComponent();
-	// Body는 캐릭터 메시로 자동 등록. 장비 장착 후 Weapon 등의 이름으로 등록
+	// Body는 자동 등록. Weapon은 등록된 메시를 우선 사용하고, 없으면 공격 시 부착 메시에서 찾는다.
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Melee")
 	void RegisterHitSource(FName SourceName, UMeshComponent* Mesh);
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Melee")
@@ -45,6 +46,7 @@ private:
 		FName Socket;
 		FVector PreviousPosition = FVector::ZeroVector;
 		float Radius = 0.f;
+		bool bRequireBodyAttachment = false;
 	};
 	struct FPoseSetting
 	{

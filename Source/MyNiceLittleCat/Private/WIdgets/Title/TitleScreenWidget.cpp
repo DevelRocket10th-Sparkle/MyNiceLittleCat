@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Widgets/Title/TitleScreenWidget.h"
@@ -6,6 +6,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Frameworks/Save/GameProgressSubsystem.h"
+#include "Widgets/Title/DifficultySelectWidget.h"
 
 void UTitleScreenWidget::NativeOnInitialized()
 {
@@ -39,13 +40,48 @@ void UTitleScreenWidget::NativeConstruct()
 	(bHasSave ? ContinueButton : NewGameButton)->SetKeyboardFocus();
 }
 
-void UTitleScreenWidget::StartNewGame()
+void UTitleScreenWidget::StartNewGame(bool bEasyMode)
 {
 	if (UGameProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UGameProgressSubsystem>())
 	{
 		Progress->ResetProgress();
+		// 쉬움 모드는 진행 플래그로 기록 (첫 체크포인트 저장 때 세이브에 같이 들어감)
+		Progress->SetProgressFlag(TEXT("EasyMode"), bEasyMode);
 	}
 	UGameplayStatics::OpenLevel(this, NewGameLevel);
+}
+
+void UTitleScreenWidget::ShowDifficultySelect()
+{
+	ConfirmPanel->SetVisibility(ESlateVisibility::Collapsed);
+
+	if (!DifficultySelect)
+	{
+		// WBP_DifficultySelect가 지정 안 돼 있으면 보통 모드로 바로 시작
+		DifficultySelect = DifficultySelectClass ? CreateWidget<UDifficultySelectWidget>(GetOwningPlayer(), DifficultySelectClass) : nullptr;
+		if (!DifficultySelect)
+		{
+			StartNewGame(false);
+			return;
+		}
+		DifficultySelect->OnChosen.BindUObject(this, &UTitleScreenWidget::StartNewGame);
+		DifficultySelect->OnCancelled.BindUObject(this, &UTitleScreenWidget::CloseDifficultySelect);
+	}
+
+	if (!DifficultySelect->IsInViewport())
+	{
+		DifficultySelect->AddToViewport(10);
+	}
+	DifficultySelect->FocusDefault();
+}
+
+void UTitleScreenWidget::CloseDifficultySelect()
+{
+	if (DifficultySelect)
+	{
+		DifficultySelect->RemoveFromParent();
+	}
+	NewGameButton->SetKeyboardFocus();
 }
 
 void UTitleScreenWidget::HandleNewGame()
@@ -58,7 +94,7 @@ void UTitleScreenWidget::HandleNewGame()
 		return;
 	}
 
-	StartNewGame();
+	ShowDifficultySelect();
 }
 
 void UTitleScreenWidget::HandleContinue()
@@ -78,7 +114,7 @@ void UTitleScreenWidget::HandleExit()
 
 void UTitleScreenWidget::HandleConfirmYes()
 {
-	StartNewGame();
+	ShowDifficultySelect();
 }
 
 void UTitleScreenWidget::HandleConfirmNo()

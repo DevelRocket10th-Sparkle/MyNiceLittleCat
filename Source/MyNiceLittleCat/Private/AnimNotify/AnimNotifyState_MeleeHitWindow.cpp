@@ -18,6 +18,7 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "TimerManager.h"
+#include "Systems/HitStopSubsystem.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "Camera/PlayerCameraManager.h"
@@ -232,8 +233,17 @@ void UAnimNotifyState_MeleeHitWindow::NotifyTick(USkeletalMeshComponent* MeshCom
         const bool bKillingBlow = bHasHealth && HealthBefore > 0.f
             && TargetASC->GetNumericAttribute(HealthAttr) <= 0.f;
 
-        ApplyMontageHitStop(Attacker, bKillingBlow ? KillHitStopDuration : HitStopDuration);
-        ApplyMontageHitStop(Target, bKillingBlow ? KillHitStopDuration : HitStopDuration);
+        // 월드 전체를 멈춤 (주변 적도 같이 멈춰서 플레이어만 손해 보지 않음)
+        const APlayerCharacter* AttackerPlayer = Cast<APlayerCharacter>(Attacker);
+        const APlayerCharacter* TargetPlayer = Cast<APlayerCharacter>(Target);
+        const bool bDeflected = (AttackerPlayer && AttackerPlayer->GetbIsDeflected()) || (TargetPlayer && TargetPlayer->GetbIsDeflected());
+        if (!bDeflected)
+        {
+            if (UHitStopSubsystem* HitStop = World->GetSubsystem<UHitStopSubsystem>())
+            {
+                HitStop->ApplyHitStop(bKillingBlow ? KillHitStopDuration : HitStopDuration);
+            }
+        }
         //ApplyMontageHitStop(Target, 0.1f);
     }
 }

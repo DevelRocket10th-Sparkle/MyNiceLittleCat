@@ -16,6 +16,7 @@
 #include "GameplayTagContainer.h"
 #include "Components/CapsuleComponent.h"
 #include "Frameworks/Save/GameProgressSubsystem.h"
+#include "Engine/GameInstance.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraComponent.h"
 
@@ -23,6 +24,9 @@
 #include "Characters/GAS/PlayerAttributeSet.h"
 #include "Characters/GAS/GA_MeleeAttack.h"
 #include "Characters/PlayerComponents/LockOnComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "UObject/ConstructorHelpers.h"
 #include "Systems/CameraOcclusionComponent.h"
 
 #include "Enemy/EnemyCharacter.h"
@@ -32,6 +36,20 @@
 // Sets default values
 APlayerCharacter::APlayerCharacter()
 {
+    // 쉬움 모드 쪽쪽이 기본 메시
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> PacifierFinder(TEXT("/Game/_ExternalAssets/pacifierR18_c4d.pacifierR18_c4d"));
+    if (PacifierFinder.Succeeded())
+    {
+        EasyModePacifierMesh = PacifierFinder.Object;
+    }
+
+    // 쉬움 모드 포션 대신 젖병
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> BottleFinder(TEXT("/Game/_ExternalAssets/BabyBottle/SM_BabyBottle.SM_BabyBottle"));
+    if (BottleFinder.Succeeded())
+    {
+        EasyModePotionMesh = BottleFinder.Object;
+    }
+
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
@@ -141,6 +159,31 @@ void APlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+    // 타이틀에서 쉬움 모드로 시작했으면 켬 (진행 플래그 "EasyMode")
+    if (const UGameInstance* GI = GetGameInstance())
+    {
+        if (const UGameProgressSubsystem* Progress = GI->GetSubsystem<UGameProgressSubsystem>())
+        {
+            if (Progress->HasProgressFlag(TEXT("EasyMode")))
+            {
+                bEasyMode = true;
+            }
+        }
+    }
+
+    // 쉬움 모드: 입에 쪽쪽이
+    if (bEasyMode && EasyModePacifierMesh && GetMesh())
+    {
+        UStaticMeshComponent* Pacifier = NewObject<UStaticMeshComponent>(this, TEXT("EasyModePacifier"));
+        Pacifier->SetStaticMesh(EasyModePacifierMesh);
+        Pacifier->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        Pacifier->SetGenerateOverlapEvents(false);
+        Pacifier->SetCanEverAffectNavigation(false);
+        Pacifier->SetupAttachment(GetMesh(), EasyModePacifierSocket);
+        Pacifier->SetRelativeTransform(EasyModePacifierOffset);
+        Pacifier->RegisterComponent();
+    }
+
     if (AbilitySystemComponent)
     {
         AbilitySystemComponent->InitAbilityActorInfo(this, this);
@@ -173,8 +216,26 @@ void APlayerCharacter::BeginPlay()
     }
     if (PotionMesh)
     {
+        // 쉬움 모드: 포션을 젖병으로 교체 (원래 포션 높이에 맞춰 크기 조정)
+        if (bEasyMode && EasyModePotionMesh)
+        {
+            const UStaticMesh* OldMesh = PotionMesh->GetStaticMesh();
+            const float OldHeight = OldMesh ? OldMesh->GetBoundingBox().GetSize().Z : 0.f;
+            const float NewHeight = EasyModePotionMesh->GetBoundingBox().GetSize().Z;
+            PotionMesh->SetStaticMesh(EasyModePotionMesh);
+            if (OldHeight > KINDA_SMALL_NUMBER && NewHeight > KINDA_SMALL_NUMBER)
+            {
+                PotionMesh->SetRelativeScale3D(PotionMesh->GetRelativeScale3D() * (OldHeight / NewHeight) * EasyModePotionScale);
+            }
+        }
+
         PotionMesh->SetVisibility(true);
         PotionMesh->SetHiddenInGame(true);
+    }
+
+    if (UGameProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UGameProgressSubsystem>())
+    {
+        Progress->OnPlayerRested.AddUniqueDynamic(this, &APlayerCharacter::RefillPotions);
     }
 
     APlayerController* PC = Cast<APlayerController>(GetController());
@@ -189,15 +250,6 @@ void APlayerCharacter::BeginPlay()
     {
         Subsystem->AddMappingContext(IMC, 0);
     }
-
-
-    if (UGameProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UGameProgressSubsystem>())
-    {
-        Progress->OnPlayerRested.AddUniqueDynamic(this, &APlayerCharacter::RefillPotions);
-    }
-
-    
-
 }
 
 // Called every frame
@@ -381,7 +433,7 @@ void APlayerCharacter::ApplyPlayerHit(float Damage, FVector HitDirection)
         InvincibilityTimerHandle,
         this,
         &APlayerCharacter::EndInvincibility,
-        InvincibilityDuration,
+        bEasyMode ? EasyInvincibilityDuration : InvincibilityDuration,
         false);
     
     GetWorldTimerManager().SetTimer(
@@ -476,7 +528,7 @@ void APlayerCharacter::StartDodge()
     if (GetCharacterMovement()->IsFalling()) return;
     // 내부 쿨다운: 연속 회피를 다 쓴 뒤 잠김
     const float Now = GetWorld()->GetTimeSeconds();
-    if (Now < DodgeLockedUntil) return;
+    if (!bEasyMode && Now < DodgeLockedUntil) return;   // 쉬움 모드는 쿨다운 없음
     
        // 텀을 두고 회피하면 연속 횟수 초기화
        if (Now - LastDodgeEndTime > DodgeChainWindow)
@@ -570,11 +622,19 @@ void APlayerCharacter::EndDodge()
 void APlayerCharacter::OnDodgeInput(const FInputActionValue& Value)
 {
     if (bIsDeflected || bIsHealing) return;
+    // 쉬움 모드: 누르는 즉시 구르기 (달리기 홀드 없음)
+    if (bEasyMode)
+    {
+        StartDodge();
+        return;
+    }
     GetWorldTimerManager().SetTimer(RunHoldTimer, this, &APlayerCharacter::StartRun, RunHoldThreshold, false);
 }
 
 void APlayerCharacter::OnDodgeReleased(const FInputActionValue& Value)
 {
+    if (bEasyMode) return;
+
     // 달리기 전 버튼이 떼지면 구르기
     if (GetWorldTimerManager().IsTimerActive(RunHoldTimer))
     {
@@ -730,11 +790,13 @@ void APlayerCharacter::ApplyStatData()
 {
     if (!StatData || !AbilitySystemComponent) return;
 
-    AbilitySystemComponent->SetNumericAttributeBase(UPlayerAttributeSet::GetMaxHealthAttribute(), StatData->MaxHealth);
-    AbilitySystemComponent->SetNumericAttributeBase(UPlayerAttributeSet::GetHealthAttribute(), StatData->MaxHealth);
+    const float MaxHealth = bEasyMode ? EasyMaxHealth : StatData->MaxHealth;
+    AbilitySystemComponent->SetNumericAttributeBase(UPlayerAttributeSet::GetMaxHealthAttribute(), MaxHealth);
+    AbilitySystemComponent->SetNumericAttributeBase(UPlayerAttributeSet::GetHealthAttribute(), MaxHealth);
     AbilitySystemComponent->SetNumericAttributeBase(UPlayerAttributeSet::GetAttackPowerAttribute(), StatData->AttackPower);
 
-    GetCharacterMovement()->MaxWalkSpeed = StatData->MoveSpeed;
+    // 쉬움 모드: 항상 달리기 속도
+    GetCharacterMovement()->MaxWalkSpeed = StatData->MoveSpeed * (bEasyMode ? RunSpeedMultiplier : 1.f);
 }
 
 void APlayerCharacter::OnDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted)
@@ -789,7 +851,8 @@ void APlayerCharacter::StartHitReaction(FVector HitDirection)
 
     SetActorRotation(( - HitDirection).Rotation());
 
-    // 이동은 유지하면서 피격 방향으로 넉백
+    // 이동은 유지하면서 피격 방향으로 넉백 (쉬움 모드는 넉백 없음)
+    if (!bEasyMode)
     LaunchCharacter(
         HitDirection* KnockbackStrength
         + FVector(0.f, 0.f, KnockbackUpwardStrength),
@@ -893,8 +956,9 @@ void APlayerCharacter::OnHealMontageNotify(FName NotifyName, const FBranchingPoi
 
     const float Health = AbilitySystemComponent->GetNumericAttribute(UPlayerAttributeSet::GetHealthAttribute());
     const float MaxHealth = AbilitySystemComponent->GetNumericAttribute(UPlayerAttributeSet::GetMaxHealthAttribute());
+    // 쉬움 모드는 한 번에 전부 회복
     AbilitySystemComponent->SetNumericAttributeBase(UPlayerAttributeSet::GetHealthAttribute(),
-        FMath::Min(Health + HealAmount, MaxHealth));
+        bEasyMode ? MaxHealth : FMath::Min(Health + HealAmount, MaxHealth));
 }
 
 void APlayerCharacter::OnHealMontageEnded(UAnimMontage* Montage, bool bInterrupted)
