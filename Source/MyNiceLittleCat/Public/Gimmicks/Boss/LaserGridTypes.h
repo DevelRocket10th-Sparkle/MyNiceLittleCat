@@ -3,6 +3,8 @@
 ///
 /// 바닥 광역 레이저 패턴(ALaserGridPattern)과 공격 순서 데이터(ULaserGridSequenceData)가 함께 쓰는 타입입니다.
 /// FLaserGridStep 하나 = 줄 하나 공격(어느 축·어느 줄·어느 쪽에서 쏠지 + 다음 공격까지 시간)
+/// (2026-11-17) LaneSet으로 한 단계에 여러 줄: Range(연속 N줄)·Stride(N칸마다)·AllExceptGap(전부 + 안전 구멍만 비움),
+/// LaneMode PreviousOffset으로 앞 단계 기준 줄에서 칸 이동 → 움직이는 안전 구멍 (참고: 헬테이커 최종 보스전)
 
 #pragma once
 
@@ -45,6 +47,22 @@ enum class ELaserGridLaneMode : uint8
 	PlayerOffset	UMETA(DisplayName = "Player Offset"),
 	// 무작위 줄
 	Random			UMETA(DisplayName = "Random"),
+	// 바로 앞 단계(같은 축)의 기준 줄 + Lane 칸. 영역 끝에서 멈춤 (움직이는 안전 구멍용, 첫 단계면 플레이어 줄 기준)
+	PreviousOffset	UMETA(DisplayName = "Previous Offset"),
+};
+
+// 한 단계에서 공격할 줄 묶음 (기준 줄 = LaneMode로 정한 줄)
+UENUM(BlueprintType)
+enum class ELaserGridLaneSet : uint8
+{
+	// 기준 줄 하나
+	Single			UMETA(DisplayName = "Single"),
+	// 기준 줄을 가운데로 SetWidth개 (짝수면 + 쪽이 하나 더)
+	Range			UMETA(DisplayName = "Range"),
+	// 기준 줄부터 Stride 칸마다 (양쪽 끝까지, 예: Stride 2 = 한 칸 건너 하나)
+	Stride			UMETA(DisplayName = "Every N Lanes"),
+	// 전부 공격하고 기준 줄을 가운데로 SetWidth개만 비움 (안전 구멍)
+	AllExceptGap	UMETA(DisplayName = "All Except Gap"),
 };
 
 // 레이저가 나오는 쪽
@@ -70,9 +88,23 @@ struct FLaserGridStep
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserGrid")
 	ELaserGridLaneMode LaneMode = ELaserGridLaneMode::PlayerLane;
 
-	// Fixed: 줄 번호(음수면 끝에서부터), PlayerOffset: 플레이어 줄에서 떨어진 칸 수
+	// Fixed: 줄 번호(음수면 끝에서부터), PlayerOffset: 플레이어 줄에서 떨어진 칸 수, PreviousOffset: 앞 단계 기준 줄에서 움직일 칸 수
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserGrid")
 	int32 Lane = 0;
+
+	// 공격할 줄 묶음 (기본 Single = 줄 하나)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserGrid")
+	ELaserGridLaneSet LaneSet = ELaserGridLaneSet::Single;
+
+	// Range: 공격할 줄 수, All Except Gap: 비울 줄 수 (안전 구멍 폭)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserGrid", meta = (ClampMin = "1",
+		EditCondition = "LaneSet == ELaserGridLaneSet::Range || LaneSet == ELaserGridLaneSet::AllExceptGap", EditConditionHides))
+	int32 SetWidth = 2;
+
+	// Every N Lanes: 몇 칸마다 공격할지 (2 = 한 칸 건너 하나)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserGrid", meta = (ClampMin = "2",
+		EditCondition = "LaneSet == ELaserGridLaneSet::Stride", EditConditionHides))
+	int32 Stride = 2;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LaserGrid")
 	ELaserGridFireSide FireSide = ELaserGridFireSide::Negative;
