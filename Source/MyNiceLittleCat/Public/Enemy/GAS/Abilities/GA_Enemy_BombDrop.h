@@ -3,24 +3,24 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Abilities/GameplayAbility.h"
+#include "Enemy/GAS/Abilities/EnemyPatternAbility.h"
 #include "GA_Enemy_BombDrop.generated.h"
 
 class AEnemyCharacter;
 class ABombEnemy;
-class UEnemyPatternComponent;
 class UBombDropPatternSettings;
 
 UCLASS()
-class MYNICELITTLECAT_API UGA_Enemy_BombDrop : public UGameplayAbility
+class MYNICELITTLECAT_API UGA_Enemy_BombDrop : public UEnemyPatternAbility
 {
 	GENERATED_BODY()
-public:
-	UGA_Enemy_BombDrop();
-	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
-	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
+protected:
+	// 설정 값, 타깃, 실행 제한 시간 검사 (CommitAbility 전, 실패하면 부모가 취소 종료)
+	virtual bool CanStartPattern() const override;
+	// 폭탄 수 확인, 회전 잠금, 취소 감시 타이머, 첫 폭탄 낙하
+	virtual bool StartPattern() override;
+	// 타이머와 실행 참조 정리 (잠금 해제와 요청 정리는 부모가 처리)
+	virtual void StopPattern(bool bWasCancelled) override;
 
 private:
 	void DropNext();
@@ -42,14 +42,11 @@ private:
 	// 이 보스가 떨군 폭탄 (MaxAliveBombs 제한용). 인스턴스가 액터당 하나라 패턴이 끝나도 유지됨
 	TArray<TWeakObjectPtr<ABombEnemy>> AliveBombs;
 
-	TWeakObjectPtr<AEnemyCharacter> Enemy;
-	TWeakObjectPtr<UEnemyPatternComponent> PatternComponent;
+	// 부모 ExecutionTarget의 약한 참조 사본: 기존 조준·취소 코드가 그대로 사용
 	TWeakObjectPtr<AActor> Target;
 
 	FTimerHandle StepTimer;
 	FTimerHandle CancelCheckTimer;
 	int32 Dropped = 0;
-	int64 RequestId = 0;
-	bool bOwnsRotationLock = false;
 	bool bCleanupBound = false;
 };

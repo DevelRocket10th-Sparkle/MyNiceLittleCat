@@ -11,18 +11,8 @@
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/GAS/EnemyAttributeSet.h"
 #include "Enemy/Boss/BossCharacter.h"
-#include "Enemy/Components/EnemyPhaseComponent.h"
-#include "Enemy/Components/EnemyPatternComponent.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
-#include "AIController.h"
-#include "GameFramework/CharacterMovementComponent.h"
-
-UGA_BossLaserGrid::UGA_BossLaserGrid()
-{
-	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
-}
 
 bool UGA_BossLaserGrid::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
@@ -37,61 +27,46 @@ bool UGA_BossLaserGrid::CanActivateAbility(const FGameplayAbilitySpecHandle Hand
 	return !Gimmick || Gimmick->IsLaserTurnAllowed(EBossLaserTurn::Grid);
 }
 
-void UGA_BossLaserGrid::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
-	const FGameplayEventData* TriggerEventData)
+// 요청 수신, Enemy 생존 확인, CommitAbility는 부모 ActivateAbility가 처리 → 여기서는 실행 조건만 검사
+bool UGA_BossLaserGrid::CanStartPattern() const
 {
-	Enemy = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo());
-	PatternComponent = Enemy.IsValid() ? Enemy->GetPatternComponent() : nullptr;
-
-	AActor* Target = nullptr;
-	if (!Enemy.IsValid() || !Enemy->IsAlive() || !PatternComponent.IsValid()
-		|| !PatternComponent->GetActiveExecution(ExecutionPattern, Target, RequestId))
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
-
-	GridSettings = Cast<UBossLaserGridPatternSettings>(ExecutionPattern.ExecutionSettings);
-	ExecutionTarget = Target;
-	Grid = GridSettings ? FindGridPattern() : nullptr;
-	VolleysFired = 0;
-
-	if (!GridSettings || !Grid)
+	// 멤버 Grid는 StartPattern에서 채우므로 지역 변수 이름을 따로 씀 (이름 가림 방지)
+	ALaserGridPattern* FoundGrid = FindGridPattern();
+	if (!GetPatternSettings<UBossLaserGridPatternSettings>() || !FoundGrid)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BossLaserGrid] %s: 패턴 %s에 BossLaserGridPatternSettings가 없거나 격자 액터를 찾지 못했습니다. 매니저 PhaseGimmickActors를 확인하세요."),
 			*Enemy->GetName(), *ExecutionPattern.PatternId.ToString());
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
+		return false;
 	}
 
 	// 레벨에서 자동 시작 등으로 이미 돌고 있으면 겹치지 않게 실패 처리
-	if (Grid->IsPatternActive())
+	if (FoundGrid->IsPatternActive())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[BossLaserGrid] %s: 격자 %s가 이미 실행 중입니다."), *Enemy->GetName(), *Grid->GetName());
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
+		UE_LOG(LogTemp, Warning, TEXT("[BossLaserGrid] %s: 격자 %s가 이미 실행 중입니다."), *Enemy->GetName(), *FoundGrid->GetName());
+		return false;
 	}
 
-	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
+	return true;
+}
+
+bool UGA_BossLaserGrid::StartPattern()
+{
+	// CanStartPattern과 같은 설정·페이즈로 다시 찾으므로 같은 격자 액터 (사이에는 CommitAbility뿐)
+	GridSettings = GetPatternSettings<UBossLaserGridPatternSettings>();
+	Grid = FindGridPattern();
+	VolleysFired = 0;
 
 	UE_LOG(LogTemp, Log, TEXT("[BossLaserGrid] %s: 시작 (%d회, 피해 %.1f)"), *Enemy->GetName(), GridSettings->VolleyCount, GetDamagePerHitOverride());
+
+	// 몸을 쓰는 동작은 부모 도우미 사용: 보조·상시 실행에서는 이동 정지, 정렬, 잠금, 몽타주가 자동 생략 (주 패턴일 때만 설정대로)
 
 	// 보스를 지점으로 옮기지 않고 지금 자리에서 실행 (이동은 보스 쪽 이동 패턴 담당)
 	if (GridSettings->bLockMovement)
 	{
-		if (AAIController* AI = Cast<AAIController>(Enemy->GetController()))
-		{
-			AI->StopMovement();
-		}
-		Enemy->GetCharacterMovement()->StopMovementImmediately();
+		StopOwnerMovement();
 
-		Enemy->AcquireAttackMovementLock();
-		bOwnsMovementLock = true;
+		// 이동/회전 잠금 해제는 부모(UEnemyPatternAbility)가 EndAbility에서 처리
+		LockMovement();
 	}
 
 	if (ExecutionPattern.bFaceTargetOnStart)
@@ -101,14 +76,12 @@ void UGA_BossLaserGrid::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 
 	if (ExecutionPattern.bLockRotation)
 	{
-		Enemy->AcquireRotationLock();
-		bOwnsRotationLock = true;
+		LockRotation();
 	}
 
-	if (GridSettings->StartMontage)
+	// 보조·상시 실행이거나 몽타주가 없으면 nullptr
+	if (UAbilityTask_PlayMontageAndWait* MontageTask = CreatePatternMontageTask(GridSettings->StartMontage))
 	{
-		UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-			this, NAME_None, GridSettings->StartMontage, 1.f, NAME_None, true);
 		MontageTask->ReadyForActivation();
 	}
 
@@ -116,6 +89,7 @@ void UGA_BossLaserGrid::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	Grid->OnSequenceFinished.AddUniqueDynamic(this, &UGA_BossLaserGrid::HandleSequenceFinished);
 
 	StartNextVolley();
+	return true;
 }
 
 void UGA_BossLaserGrid::StartNextVolley()
@@ -180,7 +154,9 @@ void UGA_BossLaserGrid::HandleSequenceFinished(ULaserGridSequenceData* Sequence)
 
 ALaserGridPattern* UGA_BossLaserGrid::FindGridPattern() const
 {
-	if (!Enemy.IsValid() || !GridSettings)
+	// StartPattern 전(GridSettings가 비어 있을 때)에도 GridActorKey가 적용되도록 부모가 받은 설정 사용
+	const UBossLaserGridPatternSettings* Settings = GetPatternSettings<UBossLaserGridPatternSettings>();
+	if (!Enemy.IsValid() || !Settings)
 	{
 		return nullptr;
 	}
@@ -191,12 +167,11 @@ ALaserGridPattern* UGA_BossLaserGrid::FindGridPattern() const
 		return nullptr;
 	}
 
-	FName Key = GridSettings->GridActorKey;
+	FName Key = Settings->GridActorKey;
 	if (Key.IsNone())
 	{
 		const ABossCharacter* Boss = Cast<ABossCharacter>(Enemy.Get());
-		const UEnemyPhaseComponent* Phase = Boss ? Boss->GetPhaseComponent() : nullptr;
-		Key = Phase ? Phase->GetCurrentPhaseId() : NAME_None;
+		Key = Boss ? Boss->GetCurrentPhaseId() : NAME_None;
 	}
 
 	return Cast<ALaserGridPattern>(Gimmick->GetPhaseActor(Key));
@@ -249,23 +224,19 @@ float UGA_BossLaserGrid::GetDamagePerHitOverride() const
 
 void UGA_BossLaserGrid::FaceTarget()
 {
-	if (!Enemy.IsValid() || !IsValid(ExecutionTarget))
+	if (!IsValid(ExecutionTarget))
 	{
 		return;
 	}
 
-	FVector Direction = ExecutionTarget->GetActorLocation() - Enemy->GetActorLocation();
-	Direction.Z = 0.f;
-	if (!Direction.IsNearlyZero())
-	{
-		Enemy->SetActorRotation(Direction.Rotation());
-	}
+	// 보조·상시 실행에서는 도우미가 회전을 생략
+	FaceOwnerToward(ExecutionTarget->GetActorLocation());
 }
 
 bool UGA_BossLaserGrid::IsExecutionValid() const
 {
-	return IsActive() && Enemy.IsValid() && Enemy->IsAlive() && PatternComponent.IsValid()
-		&& PatternComponent->IsRequestRunning(RequestId) && IsValid(Grid) && GridSettings;
+	// 활성·생존·요청 진행 확인은 부모 도우미, 격자 고유 조건만 추가
+	return IsPatternExecutionValid() && IsValid(Grid) && GridSettings;
 }
 
 void UGA_BossLaserGrid::EndWithResult(bool bWasCancelled)
@@ -276,11 +247,10 @@ void UGA_BossLaserGrid::EndWithResult(bool bWasCancelled)
 	}
 }
 
-void UGA_BossLaserGrid::EndAbility(const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
-	bool bReplicateEndAbility, bool bWasCancelled)
+// 부모 EndAbility가 먼저 호출 → 이 정리 뒤에 부모가 이동/회전 잠금 해제, ExecutionTarget/RequestId 등 초기화, Super::EndAbility 진행
+void UGA_BossLaserGrid::StopPattern(bool bWasCancelled)
 {
-	// 구독을 먼저 풀어 StopPattern 중 완료 통지가 다시 들어오지 않게 함
+	// 구독을 먼저 풀어 Grid->StopPattern 중 완료 통지가 다시 들어오지 않게 함
 	if (IsValid(Grid))
 	{
 		Grid->OnSequenceFinished.RemoveDynamic(this, &UGA_BossLaserGrid::HandleSequenceFinished);
@@ -293,14 +263,6 @@ void UGA_BossLaserGrid::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	}
 	bStartedGrid = false;
 
-	if (Enemy.IsValid())
-	{
-		if (bOwnsRotationLock) Enemy->ReleaseRotationLock();
-		if (bOwnsMovementLock) Enemy->ReleaseAttackMovementLock();
-	}
-	bOwnsRotationLock = false;
-	bOwnsMovementLock = false;
-
 	if (bWasCancelled && IsActive() && Enemy.IsValid())
 	{
 		UE_LOG(LogTemp, Log, TEXT("[BossLaserGrid] %s: 취소"), *Enemy->GetName());
@@ -308,9 +270,5 @@ void UGA_BossLaserGrid::EndAbility(const FGameplayAbilitySpecHandle Handle,
 
 	Grid = nullptr;
 	GridSettings = nullptr;
-	ExecutionTarget = nullptr;
-	RequestId = 0;
 	VolleysFired = 0;
-
-	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

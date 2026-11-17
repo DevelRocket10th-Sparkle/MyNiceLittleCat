@@ -1,5 +1,6 @@
 #include "Characters/PlayerMainController.h"
 #include "Characters/PlayerComponents/PetModeDialComponent.h"
+#include "Cinematics/CinematicSubsystem.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubSystems.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
@@ -75,6 +76,13 @@ void APlayerMainController::SetupInputComponent()
 	}
 
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
+
+	// 컷신 스킵은 펫 입력 설정과 무관하게 바인딩 (아래 펫 입력 검사보다 먼저)
+	if (EnhancedInput && IA_SkipCinematic)
+	{
+		EnhancedInput->BindAction(IA_SkipCinematic, ETriggerEvent::Triggered, this, &APlayerMainController::HandleSkipCinematic);
+	}
+
 	if ((nullptr == EnhancedInput) || (nullptr == IA_PetModeDial) || (nullptr == IA_PetModeUse) || (nullptr == IA_PetSpecialAction)) return;
 
     EnhancedInput->BindAction(IA_PetModeDial, ETriggerEvent::Started, this, &APlayerMainController::HandleDialStarted);
@@ -353,6 +361,15 @@ void APlayerMainController::HandlePetSpecialAction()
 {
 	if (APetCharacter* Pet = PartnerPet.Get())
 		Pet->RequestSpecialAction();
+}
+
+void APlayerMainController::HandleSkipCinematic()
+{
+	// 재생 중인 컷신이 없거나 스킵할 수 없는 컷이면 아무 일도 없음
+	if (UCinematicSubsystem* Cinematics = GetWorld() ? GetWorld()->GetSubsystem<UCinematicSubsystem>() : nullptr)
+	{
+		Cinematics->TrySkipActiveCutscene();
+	}
 }
 
 

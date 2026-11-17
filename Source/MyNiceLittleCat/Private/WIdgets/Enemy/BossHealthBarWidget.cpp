@@ -19,7 +19,6 @@ void UBossHealthBarWidget::InitializeBossHealthBar(ABossCharacter* Boss)
 	ObservedStats = Stat;
 
 	Stat->OnHealthChange.AddUObject(HealthBar, &UResourceBarWidget::UpdateResourceBar);
-	//Stat->OnMaxHealthChange.AddUObject(HealthBar, &UResourceBarWidget::UpdateResourceBar);
 
 	// 구독 전에 이미 설정된 체력도 즉시 표시
 	HealthBar->UpdateResourceBar(Stat->GetHealth(), Stat->GetMaxHealth());

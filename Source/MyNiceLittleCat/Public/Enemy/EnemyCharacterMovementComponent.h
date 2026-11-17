@@ -2,8 +2,11 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.19.
-* 비행형 Enemy의 루트 모션 관련 회전 문제 처리를 위해
-* 캐릭터 무브먼트 컴포넌트를 상속하여 일부 함수 오버라이드 구현
+* 수정 일자: 2026.11.17. (기능별 섹션 구분, 함수 주석 정리)
+* Enemy 전용 캐릭터 무브먼트 컴포넌트
+* - 비행 높이: 지상 내비 경로를 따라 일정 높이로 비행 (bUseGroundPathForFlight)
+* - 루트 모션: 비행형 루트 모션의 추가 회전 제거와 공격 중 회전 제한
+* - 밀려나기: 플레이어의 직접 밀기와 주변 Enemy의 양보
 */
 
 #pragma once
@@ -12,9 +15,6 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "EnemyCharacterMovementComponent.generated.h"
 
-/**
- * 
- */
 UCLASS()
 class MYNICELITTLECAT_API UEnemyCharacterMovementComponent : public UCharacterMovementComponent
 {
@@ -22,28 +22,39 @@ class MYNICELITTLECAT_API UEnemyCharacterMovementComponent : public UCharacterMo
 
 public :
 
+	/* 경로 이동, 비행 높이 */
+
+	// 경로 이동 시작 가능 여부: 공격 이동 제한 중이면 false, 지상 경로 비행형은 공중에서도 허용
 	virtual bool CanStartPathFollowing() const override;
 
+	// 내비 기준 발 위치: 지상 경로 비행형은 실제 공중 위치 대신 바닥 높이를 사용
 	virtual FVector GetActorFeetLocation() const override;
-	
+
+	// 경로 이동 속도 요청: 밀려나는 중에는 무시, 지상 경로 비행형은 수직 성분 제거
 	virtual void RequestDirectMove(
 		const FVector& MoveVelocity,
 		bool bForceMaxSpeed
 	) override;
 
+	// 경로 이동 입력 요청: RequestDirectMove와 같은 규칙
 	virtual void RequestPathMove(const FVector& MoveInput) override;
 
+	// 배치 위치 기준으로 비행 높이(HoverHeight)와 내비 바닥 높이 기록: 지상 경로 비행형만
 	void InitializeHoverHeight();
 
+	/* 루트 모션, 회전 */
+
+	// 루트 모션 속도 제한: 밀려나는 중에는 수평 속도를 밀림 속도로 대체, 비행형은 몽타주 밖에서 수평 속도를 경로 이동으로 보정
 	virtual FVector ConstrainAnimRootMotionVelocity(
 		const FVector& RootMotionVelocity,
 		const FVector& CurrentVelocity
 	) const override;
 
+	// 지상 경로 비행형은 비행 중에도 캡슐을 세운 채 유지
 	virtual bool ShouldRemainVertical() const override;
 
 	// 공격 회전 제한을 실제 이동 처리에 적용하여 루트 모션 회전도 차단
-	// 위치 이동과 충돌 해결을 유지하면서 공격 중 회전만 제한
+	// - 위치 이동과 충돌 해결은 유지하고 회전만 제한
 	virtual bool MoveUpdatedComponentImpl(const FVector& Delta, const FQuat& NewRotation,
 		bool bSweep, FHitResult* OutHit = nullptr, ETeleportType Teleport = ETeleportType::None) override;
 
@@ -53,15 +64,18 @@ public :
 	void RequestPlayerPush(const FVector& PushVelocity, bool bDirectPush);
 
 	// 직접 밀림 또는 양보로 일반 수평 이동을 억제 중인지
-	// 밀림 요청이 끊긴 뒤에 짧은 대기 시간도 포함
+	// - 밀림 요청이 끊긴 뒤의 짧은 대기 시간도 포함
 	bool IsYieldingToPush() const;
 
-protected:
+protected :
 
+	// 비행 루트 모션 필터 연결
 	virtual void BeginPlay() override;
 
+	// 쌓인 밀림 요청을 이번 밀림 속도로 정리한 뒤 이동 처리, 이후 비행 높이 보정
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-	
+
+	// 밀려나는 중에는 일반 가속·제동 대신 밀림 속도를 수평 속도로 사용
 	virtual void CalcVelocity(float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration) override;
 
 	// 실제 발 위치와 내비게이션 기준 위치 표시
@@ -70,10 +84,13 @@ protected:
 
 private :
 
+	/* 비행 */
+
+	// 비행형 루트 모션의 추가 회전을 월드 변환 전에 제거 (BeginPlay에서 ProcessRootMotionPreConvertToWorld에 연결)
 	FTransform FilterFlightRootMotion(const FTransform& LocalRootMotion,
 		UCharacterMovementComponent* MovementComponent, float DeltaSeconds);
 
-	// 높이 보정
+	// 바닥 기준 목표 높이(HoverHeight)로 천천히 복귀
 	void UpdateFlightHeight(float DeltaTime);
 
 	/* 밀려나기 */

@@ -5,7 +5,6 @@
 
 #include "Gimmicks/Boss/BossGimmickComponent.h"
 #include "Enemy/Boss/BossCharacter.h"
-#include "Enemy/Components/EnemyPhaseComponent.h"
 #include "Gimmicks/Boss/Barrier.h"
 #include "Gimmicks/Boss/MagneticCoinPatternComponent.h"
 #include "AbilitySystemComponent.h"
@@ -43,8 +42,7 @@ bool UBossGimmickComponent::EnterBossPhase_Implementation(FName PhaseId, int64 P
 
 	// 진입 중인 페이즈 종류는 보스 페이즈 컴포넌트에서 확인 (전투 페이즈도 진입 호출이 옴)
 	const ABossCharacter* Boss = Cast<ABossCharacter>(GetOwner());
-	const UEnemyPhaseComponent* PhaseComponent = Boss ? Boss->GetPhaseComponent() : nullptr;
-	const FBossPhaseDefinition* Phase = PhaseComponent ? PhaseComponent->GetCurrentPhase() : nullptr;
+	const FBossPhaseDefinition* Phase = Boss ? Boss->GetCurrentPhaseDefinition() : nullptr;
 	const bool bBarrierPhase = Phase && Phase->PhaseId == PhaseId && Phase->Kind == EBossPhaseKind::Barrier;
 
 	if (bBarrierPhase)
@@ -165,8 +163,7 @@ void UBossGimmickComponent::StopAll()
 bool UBossGimmickComponent::IsLaserAlternationPhase() const
 {
 	const ABossCharacter* Boss = Cast<ABossCharacter>(GetOwner());
-	const UEnemyPhaseComponent* PhaseComponent = Boss ? Boss->GetPhaseComponent() : nullptr;
-	return PhaseComponent && LaserAlternationPhaseIds.Contains(PhaseComponent->GetCurrentPhaseId());
+	return Boss && LaserAlternationPhaseIds.Contains(Boss->GetCurrentPhaseId());
 }
 
 bool UBossGimmickComponent::IsLaserTurnAllowed(EBossLaserTurn Turn) const
@@ -212,8 +209,7 @@ bool UBossGimmickComponent::CanReceiveCounterDamage(EBossCounterDamageType Type)
 		return false;
 	}
 
-	const UEnemyPhaseComponent* PhaseComponent = Boss->GetPhaseComponent();
-	const FName PhaseId = PhaseComponent ? PhaseComponent->GetCurrentPhaseId() : NAME_None;
+	const FName PhaseId = Boss->GetCurrentPhaseId();
 	const TArray<FName>& AllowedPhases = Type == EBossCounterDamageType::MagneticCoin ? CoinDamagePhaseIds : ReflectedLaserDamagePhaseIds;
 	if (!AllowedPhases.Contains(PhaseId))
 	{
