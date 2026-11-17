@@ -7,6 +7,8 @@
 #include "Rendering/SlateRenderer.h"
 #include "Styling/CoreStyle.h"
 #include "Fonts/FontMeasure.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 
 #include "Widgets/Pet/PetUIDraw.h"
 
@@ -46,7 +48,11 @@ void UPetModeDialWidget::UpdateSelectionFromOffset(const FVector2D& _pointerOffs
 
 	// 중앙(유지) 영역에서는 모드 선택을 안 해요
 	const float DeadZoneRadius = FMath::Max(0.f, DialData->DeadZoneRadius);
-	if (FMath::Square(DeadZoneRadius) >= _pointerOffset.SizeSquared()) return;
+	if (FMath::Square(DeadZoneRadius) >= _pointerOffset.SizeSquared())
+	{
+		HoveredIndex = INDEX_NONE; // 가운데로 돌아오면 호버 해제 → 다시 같은 칸에 들어가도 소리가 나게
+		return;
+	}
 
 	// 마우스 방향을 각도로 변경하는 과정
 	// Atan2를 이용해 마우스 방향의 각도를 구해요
@@ -63,13 +69,23 @@ void UPetModeDialWidget::UpdateSelectionFromOffset(const FVector2D& _pointerOffs
 
 	const int32 Index = FMath::FloorToInt(AdjustedAngle / SectorAngle) % EntrySize;
 
+	const bool bLocked = LockedModes.Contains(DialData->Entries[Index].Mode);
+
+	// 칸이 바뀐 순간에만 소리 (매 프레임 호출되니까 같은 칸에서는 안 울리게)
+	if (Index != HoveredIndex)
+	{
+		HoveredIndex = Index;
+		PlayDialSound(bLocked ? DialData->LockedSound : DialData->HoverSound);
+	}
+
 	// 잠긴 칸은 선택 안 됨 → 그 위에서 놓아도 "유지"와 같은 처리
-	SelectedIndex = LockedModes.Contains(DialData->Entries[Index].Mode) ? INDEX_NONE : Index;
+	SelectedIndex = bLocked ? INDEX_NONE : Index;
 }
 
 void UPetModeDialWidget::ResetSelection()
 {
 	SelectedIndex = INDEX_NONE;
+	HoveredIndex = INDEX_NONE; // 다시 열었을 때 첫 칸 호버에도 소리가 나게
     InvalidateLayoutAndVolatility();  // 렌더링 다시 진행
 }
 
@@ -99,6 +115,31 @@ bool UPetModeDialWidget::TryGetSelectedMode(EPetMode& _outMode) const
 float UPetModeDialWidget::GetDialDiameter() const
 {
     return (true == IsValid(DialData.Get())) ? FMath::Max(1.f, DialData->Diameter) : 300.f; //! 300은 그냥 기본값
+}
+
+void UPetModeDialWidget::PlayOpenSound() const
+{
+    if (true == IsValid(DialData.Get()))
+        PlayDialSound(DialData->OpenSound);
+}
+
+void UPetModeDialWidget::PlayCloseSound() const
+{
+    if (false == IsValid(DialData.Get())) return;
+
+    // 닫히는 순간 잠긴 칸 위였다면 = 잠긴 모드를 고르려다 실패한 것
+    const bool bOnLockedEntry = DialData->Entries.IsValidIndex(HoveredIndex)
+        && LockedModes.Contains(DialData->Entries[HoveredIndex].Mode);
+
+    PlayDialSound(bOnLockedEntry ? DialData->LockedSound : DialData->CloseSound);
+}
+
+void UPetModeDialWidget::PlayDialSound(USoundBase* _sound) const
+{
+    // 슬롯이 비어 있으면 조용히 무시
+    if (false == IsValid(_sound)) return;
+
+    UGameplayStatics::PlaySound2D(this, _sound);
 }
 
 int32 UPetModeDialWidget::NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect,
