@@ -45,6 +45,9 @@ public:
 	// 튜토리얼처럼 펫 조작을 막아야 하는 곳에서 사용
 	void SetPetInputEnabled(bool _bEnable);
 
+	// 일시정지 메뉴 열기/닫기 (Esc / 패드 Start)
+	void TogglePauseMenu();
+
 private:
 	// 펫 입력 관련 콜백 함수들
 	void HandleDialStarted();
@@ -82,4 +85,11 @@ protected:
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<class APetCharacter> PartnerPet;
+
+	// 일시정지 메뉴 위젯 (WBP_PauseMenu)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI|Pause")
+	TSubclassOf<class UPauseMenuWidget> PauseMenuClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UPauseMenuWidget> PauseMenu;
 };

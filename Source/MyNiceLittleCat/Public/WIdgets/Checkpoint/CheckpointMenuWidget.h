@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/Button.h"
+#include "Widgets/Title/CozyMenuButton.h"
 #include "Frameworks/Save/GameProgressSaveGame.h"
 #include "CheckpointMenuWidget.generated.h"
 
@@ -16,7 +17,7 @@ class UCheckpointMenuWidget;
  * 
  */
 UCLASS()
-class MYNICELITTLECAT_API UCheckpointTravelButton : public UButton
+class MYNICELITTLECAT_API UCheckpointTravelButton : public UCozyMenuButton
 {
 	GENERATED_BODY()
 

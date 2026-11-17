@@ -4,6 +4,7 @@
 #include "EnhancedInputSubSystems.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Pet/PetCharacter.h"
+#include "Widgets/Pause/PauseMenuWidget.h"
 
 APlayerMainController::APlayerMainController()
 {
@@ -65,6 +66,13 @@ void APlayerMainController::BeginPlay()
 void APlayerMainController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+
+	// 일시정지 메뉴 (펫 입력 에셋이 없어도 동작하도록 먼저 바인딩)
+	if (InputComponent)
+	{
+		InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &APlayerMainController::TogglePauseMenu);
+		InputComponent->BindKey(EKeys::Gamepad_Special_Right, IE_Pressed, this, &APlayerMainController::TogglePauseMenu);
+	}
 
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
 	if ((nullptr == EnhancedInput) || (nullptr == IA_PetModeDial) || (nullptr == IA_PetModeUse) || (nullptr == IA_PetSpecialAction)) return;
@@ -352,4 +360,30 @@ bool APlayerMainController::TryGetDialPointerPosition(FVector2D& _outPosition) c
 {
 	// 마우스 위치를 UI 좌표와 같은 단위로 계산해 _outPosiion에 담아요
 	return UWidgetLayoutLibrary::GetMousePositionScaledByDPI(this, _outPosition.X, _outPosition.Y);
+}
+
+void APlayerMainController::TogglePauseMenu()
+{
+	if (PauseMenu && PauseMenu->IsOpen())
+	{
+		PauseMenu->Close();
+		return;
+	}
+
+	// 다른 이유로 이미 멈춰 있거나 위젯이 지정되지 않았으면 무시
+	if (IsPaused() || !PauseMenuClass)
+	{
+		return;
+	}
+
+	if (!PauseMenu)
+	{
+		PauseMenu = CreateWidget<UPauseMenuWidget>(this, PauseMenuClass);
+	}
+	if (PauseMenu)
+	{
+		HandleDialCanceled();
+		HandleModeUseCanceled();
+		PauseMenu->Open();
+	}
 }
