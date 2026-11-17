@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.27.
-* 수정 일자: 2026.11.17. (주석 정리)
+* 수정 일자: 2026.11.17. (주석 정리, 등장/장전/발사/퇴장 연출 재생)
 * 보스 MoneyGun 패턴이 소환하는 총 액터
 * - 등장(크기 커짐) → 장전(지폐가 모여듦) → 발사(간격마다 탄환) → 사라짐 순서로 Tick에서 진행
 * - 실행 GA는 HasFinished/HasFailed로 결과만 확인
@@ -131,6 +131,7 @@ private :
 
 	bool bLoadingCreated = false;	// 장전 연출 메시를 만들었는지
 	bool bLoadFinished = false;		// 장전이 끝났는지 (발사 단계 진입)
+	bool bDisappearStarted = false;	// 퇴장 연출을 재생했는지
 	bool bFinished = false;			// 정상 종료
 	bool bFailed = false;			// 실패 종료
 };

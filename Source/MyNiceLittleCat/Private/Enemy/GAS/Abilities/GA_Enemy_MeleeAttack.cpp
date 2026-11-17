@@ -6,7 +6,9 @@
 #include "Animation/AnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
 
+#include "Enemy/Combat/EnemyFeedback.h"
 #include "Enemy/Combat/EnemyTargetUtils.h"
+#include "Enemy/Data/EnemyMeleePatternSettings.h"
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
 #include "Enemy/EnemyCharacter.h"
@@ -134,6 +136,15 @@ void UGA_Enemy_MeleeAttack::HandleTargetHit(const FHitResult& Hit)
 
 	// 피해 콜백의 재진입(사망 -> GA 취소)에 대비해 피해 적용 전에 기록
 	DamagedActors.Add(Target);
+
+	// 타격 연출: 피해 콜백에서 GA가 정리되며 MeleeSettings가 비워질 수 있으므로 피해 적용 전에 재생
+	// - Sweep 시작부터 겹친 경우 ImpactPoint가 비어 있으므로 대상 위치 사용
+	if (MeleeSettings)
+	{
+		const FVector ImpactPoint = Hit.bStartPenetrating || Hit.ImpactPoint.IsZero() ? Target->GetActorLocation() : FVector(Hit.ImpactPoint);
+		EnemyFeedback::PlayAtLocation(Enemy.Get(), MeleeSettings->HitCue, ImpactPoint, (-Direction).Rotation());
+	}
+
 	EnemyTargetUtils::ApplyAttackHit(Target, CalculatePatternDamage(), Direction, Enemy.Get());
 }
 

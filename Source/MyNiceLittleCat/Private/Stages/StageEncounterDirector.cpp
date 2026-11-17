@@ -16,6 +16,7 @@
 #include "Enemy/Boss/BossEncounterManager.h"
 #include "Gimmicks/Stage/GimmickDoor.h"
 #include "Interfaces/ActivatableInterface.h"
+#include "NiagaraComponent.h"
 
 namespace
 {
@@ -64,6 +65,7 @@ void AStageEncounterDirector::BeginPlay()
 void AStageEncounterDirector::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	CancelActiveCut();
+	StopCinematicCues();
 	GetWorldTimerManager().ClearAllTimersForObject(this);
 
 	Super::EndPlay(EndPlayReason);
@@ -102,6 +104,7 @@ void AStageEncounterDirector::OnEncounterReset()
 {
 	CancelActiveCut();
 	ClearActiveTransition();
+	StopCinematicCues();
 
 	// 플레이어에게 넘겼던 문을 원래 설정으로 복원 (열림 상태도 되돌린 뒤 아래에서 강제를 풀어 그 위치로 이동)
 	for (const TPair<TWeakObjectPtr<AGimmickDoor>, FStageDoorDefaultState>& Pair : FreedDoorDefaults)
@@ -129,6 +132,8 @@ void AStageEncounterDirector::OnEncounterReset()
 
 void AStageEncounterDirector::OnEncounterCleared()
 {
+	StopCinematicCues();
+
 	// 처치 후 모든 문을 열고 연출 통제에서 돌려줌
 	// - 문 자체 상태(신호)를 열림으로 바꾼 뒤 강제를 풀면, 열린 채로 이후에는 신호·플레이어 조작을 따름
 	//   (예: 옥상 문은 다시 플레이어가 여닫을 수 있음)
@@ -368,6 +373,12 @@ void AStageEncounterDirector::HandleCutMarker(FCinematicHandle Handle, const FCi
 		return;
 	}
 
+	if (Args.IsCommand(TEXT("Cue")))
+	{
+		HandleCueMarker(Args, Marker.bReachedByPlayback);
+		return;
+	}
+
 	// 공통 마커가 아니면 스테이지에 맡김 (처리하지 않은 마커는 무시: 데칼 구간 마커 등)
 	HandleStageMarker(Marker);
 }
@@ -582,4 +593,104 @@ void AStageEncounterDirector::HandleEventMarker(const FCinematicMarkerArgs& Args
 	{
 		IActivatableInterface::Execute_Activate(Receiver, this);
 	}
+}
+
+void AStageEncounterDirector::HandleCueMarker(const FCinematicMarkerArgs& Args, bool bReachedByPlayback)
+{
+	const FName CueName(*Args.GetArg(0));
+	const FStageCinematicCue* Cue = CinematicCues.Find(CueName);
+
+	// 등록하지 않은 이름: 자리만 만들어 둔 마커이므로 조용히 무시
+	if (!Cue || !Cue->Feedback.IsSet())
+	{
+		return;
+	}
+
+	// 스킵으로 지나간 연출은 기본적으로 재생하지 않음 (스킵 직후 소리가 몰려 나는 것 방지)
+	if (!bReachedByPlayback && !Cue->bPlayWhenSkipped)
+	{
+		return;
+	}
+
+	/* 기준 컴포넌트 */
+
+	USceneComponent* Anchor = nullptr;
+	switch (Cue->Target)
+	{
+	case EStageCueTarget::Boss:
+		if (ABossCharacter* Boss = GetCurrentBoss())
+		{
+			Anchor = Boss->GetMesh();
+		}
+		break;
+
+	case EStageCueTarget::Player:
+		if (APlayerCharacter* Player = GetAlivePlayer())
+		{
+			Anchor = Player->GetMesh();
+		}
+		break;
+
+	case EStageCueTarget::Actor:
+		if (IsValid(Cue->TargetActor))
+		{
+			Anchor = Cue->TargetActor->GetRootComponent();
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	/* Stage 기준: 스테이지 로컬 좌표 → 월드 */
+
+	if (Cue->Target == EStageCueTarget::Stage)
+	{
+		const FTransform Stage = GetStageTransform();
+		EnemyFeedback::PlayAtLocation(this, Cue->Feedback, Stage.TransformPosition(Cue->Offset), Stage.Rotator());
+		return;
+	}
+
+	if (!Anchor)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[StageDirector] Cinematic cue '%s' has no target"), *CueName.ToString());
+		return;
+	}
+
+	/* 붙여서 재생: 기준을 따라 움직임, 반복 연출은 시간 또는 초기화로 정지 */
+
+	if (Cue->bAttach)
+	{
+		FEnemyFeedbackInstance Instance = EnemyFeedback::PlayAttached(Cue->Feedback, Anchor, Cue->Socket);
+		if (UNiagaraComponent* Effect = Instance.Effect.Get())
+		{
+			Effect->SetRelativeLocation(Cue->Offset);
+		}
+
+		if (Cue->StopAfterSeconds > 0.f)
+		{
+			FTimerHandle StopTimer;
+			GetWorldTimerManager().SetTimer(StopTimer, FTimerDelegate::CreateWeakLambda(this, [Instance]() mutable
+			{
+				Instance.Stop();
+			}), Cue->StopAfterSeconds, false);
+		}
+
+		ActiveCueInstances.Add(Instance);
+		return;
+	}
+
+	/* 그 자리에서 한 번 재생 */
+
+	const FTransform Base = Cue->Socket.IsNone() ? Anchor->GetComponentTransform() : Anchor->GetSocketTransform(Cue->Socket);
+	EnemyFeedback::PlayAtLocation(this, Cue->Feedback, Base.TransformPosition(Cue->Offset), Base.Rotator());
+}
+
+void AStageEncounterDirector::StopCinematicCues()
+{
+	for (FEnemyFeedbackInstance& Instance : ActiveCueInstances)
+	{
+		Instance.Stop();
+	}
+	ActiveCueInstances.Reset();
 }

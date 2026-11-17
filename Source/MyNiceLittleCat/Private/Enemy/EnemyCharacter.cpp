@@ -210,6 +210,9 @@ void AEnemyCharacter::BeginDeath()
 		PC->ClientStartCameraShake(DeathCameraShakeClass, DeathShakeScale);
 	}
 
+	// 사망 소리와 이펙트: 몸 중심(캡슐 중심)에서 재생
+	EnemyFeedback::PlayAtLocation(this, DeathCue, GetActorLocation(), GetActorRotation());
+
 	// 사망 연출
 	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
 
@@ -276,8 +279,26 @@ void AEnemyCharacter::FinishDeath()
 
 	UE_LOG(LogTemp, Log, TEXT("[%s] FinishDeath"), *GetName());
 
-	// 시체 제거 유예 (초단위)
-	SetLifeSpan(3.f);
+	// 시체 제거 유예 (초단위): 끝나면 LifeSpanExpired에서 사라짐 연출 후 제거
+	// - SetLifeSpan(0)은 "무기한"이므로 0 이하는 바로 제거
+	if (CorpseLifeSeconds > 0.f)
+	{
+		SetLifeSpan(CorpseLifeSeconds);
+	}
+	else
+	{
+		LifeSpanExpired();
+	}
+}
+
+void AEnemyCharacter::LifeSpanExpired()
+{
+	// 래그돌로 떨어진 시체 위치(메시)에서 재생: 액터 위치는 사망 지점에 남아 있음
+	const USkeletalMeshComponent* MeshComp = GetMesh();
+	const FVector Location = IsValid(MeshComp) ? MeshComp->Bounds.Origin : GetActorLocation();
+	EnemyFeedback::PlayAtLocation(this, CorpseVanishCue, Location);
+
+	Super::LifeSpanExpired();
 }
 
 // 체력 변경 시 사망 판정을 먼저 수행한 뒤 추가 상태 처리

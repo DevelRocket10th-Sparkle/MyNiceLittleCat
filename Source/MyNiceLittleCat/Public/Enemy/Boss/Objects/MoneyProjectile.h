@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.27.
-* 수정 일자: 2026.11.17. (주석 정리)
+* 수정 일자: 2026.11.17. (주석 정리, 비행/충돌 연출 슬롯 추가)
 * MoneyGun이 쏘는 지폐 탄환
 * - 충돌은 ProjectileMovement 직선 궤도, 메시만 Roll 흔들림 (Tick)
 * - 첫 유효 충돌에서 1회만 피해를 주고 제거
@@ -12,6 +12,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Enemy/Combat/EnemyFeedback.h"
 #include "MoneyProjectile.generated.h"
 
 class USphereComponent;
@@ -60,6 +61,16 @@ protected :
 	// 초당 흔들림 횟수
 	UPROPERTY(EditDefaultsOnly, Category="MoneyProjectile|Flutter", meta=(ClampMin="0"))
 	float FlutterFrequency = 6.f;
+
+	/* 연출 */
+
+	// 발사 후 날아가는 동안 메시에 붙어 반복 재생 (반짝이 꼬리, 펄럭이는 소리): 탄환이 사라지면 함께 제거
+	UPROPERTY(EditDefaultsOnly, Category="MoneyProjectile|Feedback")
+	FEnemyFeedbackCue TrailCue;
+
+	// 무언가에 맞아 사라지는 순간 충돌 지점에서 재생 (플레이어 피격 여부와 무관)
+	UPROPERTY(EditDefaultsOnly, Category="MoneyProjectile|Feedback")
+	FEnemyFeedbackCue ImpactCue;
 
 	// 충돌: 발사자는 무시하고, 첫 유효 충돌에만 피해를 준 뒤 제거
 	UFUNCTION()
