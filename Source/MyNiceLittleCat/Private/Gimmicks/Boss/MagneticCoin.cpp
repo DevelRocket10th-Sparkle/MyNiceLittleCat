@@ -12,6 +12,7 @@
 #include "Gimmicks/Warning/AttackWarningDecal.h"
 #include "Characters/PlayerCharacter.h"
 #include "Components/StaticMeshComponent.h"
+#include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 
@@ -54,6 +55,11 @@ void AMagneticCoin::BeginPlay()
 	if (bFallOnBeginPlay)
 	{
 		StartFall(EMagneticPolarity::None);
+	}
+	else
+	{
+		// 레벨에 놓인 코인은 Landed로 시작 (SetCoinState를 거치지 않으므로 직접 적용)
+		ApplyPawnCollisionForState();
 	}
 }
 
@@ -135,10 +141,22 @@ void AMagneticCoin::StartFall(EMagneticPolarity NewPolarity)
 
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(MagneticCoinGround), false, this);
 
-	FHitResult Hit;
-	if (GetWorld()->LineTraceSingleByObjectType(Hit, Start, LandLocation, ObjectParams, QueryParams))
+	// 오브젝트 타입 트레이스는 트리거 박스(방 마스크·연출 상호작용 범위 등 QueryOnly)에도 맞음
+	// → 물리 충돌이 있는 면(코인이 실제로 놓일 수 있는 바닥)만 착지 지점으로 인정, 다른 코인·폰도 제외
+	TArray<FHitResult> Hits;
+	GetWorld()->LineTraceMultiByObjectType(Hits, Start, LandLocation, ObjectParams, QueryParams);
+	Hits.Sort([](const FHitResult& A, const FHitResult& B) { return A.Distance < B.Distance; });
+	for (const FHitResult& Hit : Hits)
 	{
+		const UPrimitiveComponent* HitComponent = Hit.GetComponent();
+		if (!HitComponent || !CollisionEnabledHasPhysics(HitComponent->GetCollisionEnabled()) || Hit.GetActor() == this
+			|| Cast<AMagneticCoin>(Hit.GetActor()) || Cast<APawn>(Hit.GetActor()))
+		{
+			continue;
+		}
+
 		LandLocation = Hit.ImpactPoint;
+		break;
 	}
 
 	StartFallTo(NewPolarity, LandLocation);
@@ -261,7 +279,21 @@ void AMagneticCoin::SetCoinState(EMagneticCoinState NewState)
 	}
 
 	CoinState = NewState;
+	ApplyPawnCollisionForState();
 	OnCoinStateChanged.Broadcast(this, NewState);
+}
+
+void AMagneticCoin::ApplyPawnCollisionForState()
+{
+	// 경고·낙하 중에는 낙하 전용 프로필(FallingCollisionProfile)을 그대로 씀
+	if (!bIgnorePawnWhenLanded || !Mesh || CoinState == EMagneticCoinState::Warning || CoinState == EMagneticCoinState::Falling)
+	{
+		return;
+	}
+
+	// 던져진 코인만 Pawn을 막음 (보스 반격 피해는 Hit 이벤트로 판정)
+	const ECollisionResponse PawnResponse = CoinState == EMagneticCoinState::Thrown ? ECR_Block : ECR_Ignore;
+	Mesh->SetCollisionResponseToChannel(ECC_Pawn, PawnResponse);
 }
 
 float AMagneticCoin::GetFallProgress() const

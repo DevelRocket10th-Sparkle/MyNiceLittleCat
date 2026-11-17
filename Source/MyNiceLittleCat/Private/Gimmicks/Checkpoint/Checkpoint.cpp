@@ -8,6 +8,7 @@
 #include "Frameworks/Transition/ScreenTransitionSubsystem.h"
 #include "Components/ArrowComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/CollisionProfile.h"
 #include "Components/LightComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Particles/ParticleSystemComponent.h"
@@ -38,6 +39,21 @@ ACheckpoint::ACheckpoint()
 	RespawnPoint->SetupAttachment(Mesh);
 	RespawnPoint->SetRelativeLocation(FVector(150.f, 0.f, 0.f));
 	RespawnPoint->ArrowColor = FColor::Green;
+
+	// 빛 구슬·빛기둥: 보이기만 하고 판정·그림자 없음 (메시를 지정해야 보임)
+	BeaconOrb = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BeaconOrb"));
+	BeaconOrb->SetupAttachment(Mesh);
+	BeaconOrb->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BeaconOrb->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+	BeaconOrb->SetCastShadow(false);
+	BeaconOrb->SetCanEverAffectNavigation(false);
+
+	BeaconBeam = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BeaconBeam"));
+	BeaconBeam->SetupAttachment(Mesh);
+	BeaconBeam->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BeaconBeam->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+	BeaconBeam->SetCastShadow(false);
+	BeaconBeam->SetCanEverAffectNavigation(false);
 }
 
 void ACheckpoint::BeginPlay()
@@ -55,25 +71,93 @@ void ACheckpoint::BeginPlay()
 		SetActivated(Progress->IsCurrentCheckpoint(this, GetCheckpointId()), this);
 	}
 
+	if (BeaconOrb)
+	{
+		OrbBaseLocation = BeaconOrb->GetRelativeLocation();
+		OrbBaseRotation = BeaconOrb->GetRelativeRotation();
+		// 체크포인트마다 움직임이 겹치지 않게 시작 시점을 섞음
+		FloatTime = FMath::FRandRange(0.f, FloatPeriod);
+	}
+
 	// 시작 상태는 페이드 없이 바로
 	StateBlendTarget = IsActivated() ? 1.f : 0.f;
 	StateBlend = StateBlendTarget;
 	ApplyStateBlend();
-	SetActorTickEnabled(false);
+	SetActorTickEnabled(NeedsTick());
 }
 
 void ACheckpoint::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	const float Step = StateBlendTime > 0.f ? DeltaSeconds / StateBlendTime : 1.f;
-	StateBlend = FMath::FInterpConstantTo(StateBlend, StateBlendTarget, Step, 1.f);
-	ApplyStateBlend();
+	const bool bBlending = !FMath::IsNearlyEqual(StateBlend, StateBlendTarget) || !FMath::IsNearlyEqual(FocusBlend, FocusBlendTarget);
+	if (bBlending)
+	{
+		const float StateStep = StateBlendTime > 0.f ? DeltaSeconds / StateBlendTime : 1.f;
+		StateBlend = FMath::FInterpConstantTo(StateBlend, StateBlendTarget, StateStep, 1.f);
 
-	if (FMath::IsNearlyEqual(StateBlend, StateBlendTarget))
+		const float FocusStep = FocusBlendTime > 0.f ? DeltaSeconds / FocusBlendTime : 1.f;
+		FocusBlend = FMath::FInterpConstantTo(FocusBlend, FocusBlendTarget, FocusStep, 1.f);
+
+		ApplyStateBlend();
+	}
+
+	UpdateBeaconFloat(DeltaSeconds);
+
+	if (!NeedsTick())
 	{
 		SetActorTickEnabled(false);
 	}
+}
+
+bool ACheckpoint::HasFloatingOrb() const
+{
+	return BeaconOrb && BeaconOrb->GetStaticMesh() && (FloatAmplitude > 0.f || !FMath::IsNearlyZero(FloatSpinSpeed));
+}
+
+bool ACheckpoint::NeedsTick() const
+{
+	return HasFloatingOrb()
+		|| !FMath::IsNearlyEqual(StateBlend, StateBlendTarget)
+		|| !FMath::IsNearlyEqual(FocusBlend, FocusBlendTarget);
+}
+
+void ACheckpoint::UpdateBeaconFloat(float DeltaSeconds)
+{
+	if (!HasFloatingOrb())
+	{
+		return;
+	}
+
+	// 화면에 안 보이면 계산 생략 (시간만 흐름)
+	FloatTime += DeltaSeconds;
+	if (!BeaconOrb->WasRecentlyRendered(0.5f))
+	{
+		return;
+	}
+
+	const float Period = FMath::Max(FloatPeriod, 0.1f);
+	const float Offset = FloatAmplitude * FMath::Sin(FloatTime * UE_TWO_PI / Period);
+	FRotator Rotation = OrbBaseRotation;
+	Rotation.Yaw = FRotator::NormalizeAxis(OrbBaseRotation.Yaw + FloatSpinSpeed * FloatTime);
+
+	BeaconOrb->SetRelativeLocationAndRotation(OrbBaseLocation + FVector(0.f, 0.f, Offset), Rotation);
+}
+
+void ACheckpoint::OnFocusBegin_Implementation(AActor* InteractInstigator)
+{
+	Super::OnFocusBegin_Implementation(InteractInstigator);
+
+	FocusBlendTarget = 1.f;
+	SetActorTickEnabled(true);
+}
+
+void ACheckpoint::OnFocusEnd_Implementation(AActor* InteractInstigator)
+{
+	Super::OnFocusEnd_Implementation(InteractInstigator);
+
+	FocusBlendTarget = 0.f;
+	SetActorTickEnabled(true);
 }
 
 void ACheckpoint::HandleStateVisualActivation(AGimmickActorBase* Gimmick, bool bNewActivated, AActor* ChangeInstigator)
@@ -119,7 +203,9 @@ void ACheckpoint::CacheStateVisuals()
 			StateOffComponents.Add(Component);
 		}
 
-		if (!StateGlowTag.IsNone() && !StateGlowParameterName.IsNone() && Component->ComponentHasTag(StateGlowTag))
+		// 빛 구슬·빛기둥은 태그 없이도 발광 값을 받음
+		const bool bBeaconMesh = (Component == BeaconOrb || Component == BeaconBeam);
+		if (!StateGlowParameterName.IsNone() && (bBeaconMesh || (!StateGlowTag.IsNone() && Component->ComponentHasTag(StateGlowTag))))
 		{
 			if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Component))
 			{
@@ -146,7 +232,9 @@ void ACheckpoint::ApplyStateBlend()
 		{
 			continue;
 		}
-		Component->SetVisibility(bShowOn);
+		// 꺼짐 상태 밝기 비율이 있으면 라이트는 계속 보임
+		const bool bAlwaysVisibleLight = Component->IsA<ULightComponent>() && StateOffLightScale > 0.f;
+		Component->SetVisibility(bShowOn || bAlwaysVisibleLight);
 
 		// 이펙트(나이아가라 등)는 켜짐 목표일 때만 재생
 		if (UFXSystemComponent* Effect = Cast<UFXSystemComponent>(Component))
@@ -171,19 +259,22 @@ void ACheckpoint::ApplyStateBlend()
 		}
 	}
 
+	// 꺼짐 상태 최소값 → 켜짐 1, 포커스 중이면 추가로 밝게
+	const float LightScale = FMath::Lerp(StateOffLightScale, 1.f, StateBlend) * (1.f + FocusLightBoost * FocusBlend);
 	for (int32 Index = 0; Index < StateLights.Num(); ++Index)
 	{
 		if (IsValid(StateLights[Index]))
 		{
-			StateLights[Index]->SetIntensity(StateLightBaseIntensities[Index] * StateBlend);
+			StateLights[Index]->SetIntensity(StateLightBaseIntensities[Index] * LightScale);
 		}
 	}
 
+	const float Glow = FMath::Lerp(StateOffGlow, 1.f, StateBlend) + FocusGlowBoost * FocusBlend;
 	for (UMaterialInstanceDynamic* MID : StateGlowMaterials)
 	{
 		if (IsValid(MID))
 		{
-			MID->SetScalarParameterValue(StateGlowParameterName, StateBlend);
+			MID->SetScalarParameterValue(StateGlowParameterName, Glow);
 		}
 	}
 }
