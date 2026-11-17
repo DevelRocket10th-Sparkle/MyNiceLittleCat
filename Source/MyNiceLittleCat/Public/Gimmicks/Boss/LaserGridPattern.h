@@ -163,6 +163,15 @@ protected:
 	// 단계의 줄 고르기 규칙으로 줄 번호를 구함 (영역 밖이면 INDEX_NONE)
 	int32 ResolveStepLane(const FLaserGridStep& Step) const;
 
+	// 기준 줄과 LaneSet으로 실제 공격할 줄 목록 (영역 안 줄만)
+	void ExpandLaneSet(const FLaserGridStep& Step, int32 BaseLane, TArray<int32>& OutLanes) const;
+
+	// 슬롯 하나 만들기 (레이저 컴포넌트 + 프리뷰)
+	void CreateSlot(int32 SlotIndex);
+
+	// 빈 슬롯이 없으면 MaxSlotCount까지 새로 만듦
+	int32 FindOrAddFreeSlot();
+
 	void FireSlot(int32 SlotIndex);
 
 	void ReleaseSlot(int32 SlotIndex);
@@ -276,6 +285,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Laser", meta = (ClampMin = "1", ClampMax = "16"))
 	int32 MaxConcurrentStrikes = 10;
 
+	// 여러 줄 단계(All Except Gap 등)로 레이저가 모자라면 이 수까지 자동으로 늘림
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Laser", meta = (ClampMin = "1", ClampMax = "128"))
+	int32 MaxSlotCount = 64;
+
 	// 빔 중심 높이 (바닥 기준). 빔 반지름(줄 폭 절반)보다 높아야 바닥에 막히지 않음
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Laser", meta = (ClampMin = "0.0"))
 	float BeamHeight = 110.f;
@@ -342,6 +355,9 @@ private:
 	int32 SequenceIndex = INDEX_NONE;
 
 	int32 StepIndex = 0;
+
+	// 축별 마지막 기준 줄 (PreviousOffset용, 시퀀스 시작마다 초기화)
+	int32 LastBaseLane[2] = { INDEX_NONE, INDEX_NONE };
 
 	// PlaySequenceOnce로 실행 중
 	bool bPlayingOnce = false;
