@@ -1,6 +1,5 @@
 #include "Enemy/GAS/Abilities/GA_Enemy_TurretRain.h"
-#include "Enemy/Datas/TurretRainPatternSettings.h"
-#include "Enemy/Components/EnemyPatternComponent.h"
+#include "Enemy/Data/TurretRainPatternSettings.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Gimmicks/Turret/Turret.h"
 #include "Characters/PlayerCharacter.h"
@@ -48,52 +47,39 @@ namespace
 	}
 }
 
-UGA_Enemy_TurretRain::UGA_Enemy_TurretRain()
+// 요청 수신, Enemy 생존 확인, CommitAbility는 부모 ActivateAbility가 처리 → 여기서는 설정만 검사
+bool UGA_Enemy_TurretRain::CanStartPattern() const
 {
-	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
-}
-
-void UGA_Enemy_TurretRain::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
-	const FGameplayEventData* TriggerEventData)
-{
-	Enemy = Cast<AEnemyCharacter>(GetAvatarActorFromActorInfo());
-	PatternComponent = Enemy.IsValid() ? Enemy->GetPatternComponent() : nullptr;
-
-	FEnemyPatternDefinition Definition;
-	AActor* ExecutionTarget = nullptr;
-	if (!Enemy.IsValid() || !Enemy->IsAlive() || !PatternComponent.IsValid()
-		|| !PatternComponent->GetActiveExecution(Definition, ExecutionTarget, RequestId))
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
-
-	Settings = Cast<UTurretRainPatternSettings>(Definition.ExecutionSettings);
-	Target = ExecutionTarget;
-	if (!Settings || !Settings->IsValidConfiguration() || !Target.IsValid()
-		|| Settings->GetExecutionSeconds() + 0.5f >= Definition.MaxExecutionSeconds
-		|| !CommitAbility(Handle, ActorInfo, ActivationInfo))
+	// 멤버 Settings는 StartPattern에서 채우므로 지역 변수 이름을 따로 씀 (이름 가림 방지)
+	const UTurretRainPatternSettings* RainSettings = GetPatternSettings<UTurretRainPatternSettings>();
+	if (!RainSettings || !RainSettings->IsValidConfiguration() || !IsValid(ExecutionTarget)
+		|| RainSettings->GetExecutionSeconds() + 0.5f >= ExecutionPattern.MaxExecutionSeconds)
 	{
 		UE_LOG(LogTemp, Error, TEXT("TurretRain: invalid settings or MaxExecutionSeconds too short (needs > %.1f) on %s"),
-			Settings ? Settings->GetExecutionSeconds() + 0.5f : 0.f, *GetNameSafe(Enemy.Get()));
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
+			RainSettings ? RainSettings->GetExecutionSeconds() + 0.5f : 0.f, *GetNameSafe(Enemy.Get()));
+		return false;
 	}
+	return true;
+}
+
+bool UGA_Enemy_TurretRain::StartPattern()
+{
+	Settings = GetPatternSettings<UTurretRainPatternSettings>();
+	Target = ExecutionTarget.Get();
 
 	// 백그라운드 모드: 이전 포탑이 남아 있으면 이번엔 실행하지 않음 (다른 공격이 선택되도록)
 	BackgroundTurrets.RemoveAll([](const TObjectPtr<ATurret>& T) { return !IsValid(T); });
 	if (Settings->bRunInBackground && BackgroundTurrets.Num() > 0)
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
-		return;
+		// 기존과 같이 정상 종료(취소 아님): 이미 종료됐으므로 true 반환
+		FinishPattern();
+		return true;
 	}
 
-	if (Definition.bLockRotation)
+	// 회전 잠금 해제는 부모(UEnemyPatternAbility)가 EndAbility에서 처리
+	if (ExecutionPattern.bLockRotation)
 	{
-		Enemy->AcquireRotationLock();
-		bOwnsRotationLock = true;
+		LockRotation();
 	}
 
 	BindOwnerCleanup(Enemy.Get());
@@ -101,6 +87,7 @@ void UGA_Enemy_TurretRain::ActivateAbility(const FGameplayAbilitySpecHandle Hand
 	CyclesDone = 0;
 	GetWorld()->GetTimerManager().SetTimer(CancelCheckTimer, this, &UGA_Enemy_TurretRain::CheckCancel, 0.1f, true);
 	StartCycle();
+	return true;
 }
 
 void UGA_Enemy_TurretRain::StartCycle()
@@ -187,7 +174,7 @@ void UGA_Enemy_TurretRain::DropNext()
 			if (WeakThis.IsValid()) WeakThis->DestroyBackgroundTurrets();
 		}), Settings->ActiveSeconds, false);
 
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+		FinishPattern();
 	}
 	else
 	{
@@ -209,7 +196,7 @@ void UGA_Enemy_TurretRain::DestroyTurrets()
 	++CyclesDone;
 	if (!Settings || CyclesDone >= Settings->Cycles)
 	{
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+		FinishPattern();
 		return;
 	}
 	GetWorld()->GetTimerManager().SetTimer(StepTimer, this, &UGA_Enemy_TurretRain::StartCycle, FMath::Max(Settings->CycleGapSeconds, 0.01f), false);
@@ -276,15 +263,15 @@ void UGA_Enemy_TurretRain::DestroyWithFX(ATurret* Turret) const
 
 void UGA_Enemy_TurretRain::CheckCancel()
 {
-	bool bCancel = !Enemy.IsValid() || !Enemy->IsAlive() || !Target.IsValid()
-		|| !PatternComponent.IsValid() || !PatternComponent->IsRequestRunning(RequestId);
+	// 활성·생존·요청 진행 확인은 부모 도우미로 대체, 타깃 확인만 이 GA의 조건
+	bool bCancel = !IsPatternExecutionValid() || !Target.IsValid();
 	if (const APlayerCharacter* Player = Cast<APlayerCharacter>(Target.Get()))
 	{
 		bCancel |= Player->GetbIsDead();
 	}
 	if (bCancel)
 	{
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		CancelPattern();
 	}
 }
 
@@ -342,9 +329,8 @@ bool UGA_Enemy_TurretRain::FindGround(const FVector& Around, FVector& OutGround)
 	return true;
 }
 
-void UGA_Enemy_TurretRain::EndAbility(const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo,
-	bool bReplicateEndAbility, bool bWasCancelled)
+// 부모 EndAbility가 먼저 호출 → 이 정리 뒤에 부모가 회전 잠금 해제, Enemy/PatternComponent/RequestId 초기화, Super::EndAbility 진행
+void UGA_Enemy_TurretRain::StopPattern(bool bWasCancelled)
 {
 	if (UWorld* World = GetWorld())
 	{
@@ -358,15 +344,6 @@ void UGA_Enemy_TurretRain::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	}
 	Turrets.Reset();
 
-	if (Enemy.IsValid() && bOwnsRotationLock)
-	{
-		Enemy->ReleaseRotationLock();
-	}
-	bOwnsRotationLock = false;
 	Settings = nullptr;
 	Target.Reset();
-	PatternComponent.Reset();
-	Enemy.Reset();
-	RequestId = 0;
-	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

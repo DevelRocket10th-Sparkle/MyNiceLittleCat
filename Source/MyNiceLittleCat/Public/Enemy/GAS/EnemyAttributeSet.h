@@ -2,6 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.14.
+* 수정 일자: 2026.11.17. (미사용 OnMaxHealthChange 삭제, 주석 정리)
 * Enemy/보스에 연결된 AttributeSet
 * - 각 Attribute 관리
 */
@@ -16,10 +17,9 @@
 
 #include "EnemyAttributeSet.generated.h"
 
-/**
- * 
- */
-DECLARE_MULTICAST_DELEGATE_TwoParams(FOnStatChange, float, float);
+// Health 변경 알림: (새 Health, MaxHealth)
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnStatChange, float /*NewHealth*/, float /*MaxHealth*/);
+
 UCLASS()
 class MYNICELITTLECAT_API UEnemyAttributeSet : public UAttributeSet
 {
@@ -50,9 +50,8 @@ public :
 
 	/* Stat 변경 델리게이트 */
 
+	// Health 또는 MaxHealth가 바뀌면 (Health, MaxHealth)로 방송: 체력바, 사망 판정이 구독
 	FOnStatChange OnHealthChange;
-
-	FOnStatChange OnMaxHealthChange;	// 일단 만들어두긴 하는데 거의 안 쓸듯
 
 	/* Attribute 타입 */
 	

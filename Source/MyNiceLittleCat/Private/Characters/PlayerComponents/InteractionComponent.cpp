@@ -8,8 +8,7 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
 #include "Components/InputComponent.h"
-#include "Enemy/Boss/Stage3BossCinematics.h"
-#include "EngineUtils.h"
+#include "Cinematics/CinematicSubsystem.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "Gimmicks/InteractionVolumeComponent.h"
 #include "WIdgets/Interaction/InteractionPromptWidget.h"
@@ -107,10 +106,13 @@ void UInteractionComponent::HandleInteractKey()
 
 bool UInteractionComponent::TryInteract()
 {
-	for (TActorIterator<AStage3BossCinematics> It(GetWorld()); It; ++It)
+	// 컷신 중에는 상호작용하지 않음
+	// - 같은 키를 길게 누르면 컷신 스킵 (APlayerMainController::HandleSkipCinematic)
+	// - 짧게 누른 키가 컷신 뒤의 기믹을 건드리지 않도록 여기서 차단
+	if (const UCinematicSubsystem* Cinematics = GetWorld()->GetSubsystem<UCinematicSubsystem>();
+		Cinematics && Cinematics->IsCutscenePlaying())
 	{
-		if (It->TrySkipActiveCut(GetOwner()))
-			return true;
+		return false;
 	}
 
 	if (IsAligning())

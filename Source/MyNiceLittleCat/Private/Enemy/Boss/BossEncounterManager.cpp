@@ -1,250 +1,185 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
+
 #include "Enemy/Boss/BossEncounterManager.h"
-#include "Enemy/Boss/BossCharacter.h"
-#include "Enemy/Boss/Stage3BossCinematics.h"
-#include "Enemy/Components/EnemyPhaseComponent.h"
-#include "Enemy/AI/EnemyAIController.h"
-#include "Characters/PlayerCharacter.h"
-#include "Components/SceneComponent.h"
+
 #include "BrainComponent.h"
+#include "Components/SceneComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
+#include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 
-#include "GameFramework/PlayerController.h"
+#include "Characters/PlayerCharacter.h"
+#include "Enemy/AI/EnemyAIController.h"
+#include "Enemy/Boss/BossCharacter.h"
+#include "Enemy/Interfaces/BossEncounterDirector.h"
+#include "Enemy/Interfaces/BossPhaseTransitionHandler.h"
+#include "Frameworks/GameMode/MainGameMode.h"
 #include "Widgets/MainHUD.h"
 
-#include "Kismet/GameplayStatics.h"
+namespace
+{
+	// 전투 중 플레이어 생존 확인 간격 (사망 이벤트 누락 대비)
+	constexpr float PlayerCheckInterval = 0.5f;
+}
 
 ABossEncounterManager::ABossEncounterManager()
 {
 	PrimaryActorTick.bCanEverTick = false;
+
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
 }
 
-// 컴포넌트 초기화 후 실행 준비
 void ABossEncounterManager::BeginPlay()
 {
 	Super::BeginPlay();
 	ResetEncounter();
 }
 
-// 레벨 기믹 참조를 먼저 전달한 뒤 보스 생성과 초기화 확인
-bool ABossEncounterManager::SpawnBoss()
+void ABossEncounterManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (!BossClass)
-	{
-		return false;
-	}
-	// 보스의 초기 위치는 재시도 때마다 같은 설정 사용
-	const FTransform SpawnTransform = GetActorTransform();
-	ABossCharacter* Boss = GetWorld()->SpawnActorDeferred<ABossCharacter>(BossClass, SpawnTransform,
-		this, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
-	if (!Boss)
-	{
-		return false;
-	}
-	CurrentBoss = Boss;
-	Boss->GetPhaseComponent()->SetStageCinematics(StageCinematics);
-	Boss->OnDefeated.AddUniqueDynamic(this, &ABossEncounterManager::HandleBossDefeated);
-	Boss->OnDeathFinished.AddUniqueDynamic(this, &ABossEncounterManager::TryOpenLevelAfterDefeat);
-	Boss->OnEncounterFailed.AddUniqueDynamic(this, &ABossEncounterManager::HandleBossFailed);
-	// 보스에 페이즈에서 사용하는 기믹 관련 요소 설정
-	Boss->SetLevelGimmickReferences(PhaseGimmickActors, GimmickAreaCenter);
-	// 보스에 페이즈별 이동 경로 설정
-	Boss->SetLevelMovementRoutes(MovementRoutes);
-	// 보스 스폰 완료 처리
-	Boss->FinishSpawning(SpawnTransform);
-
-	if (!Boss->GetController())
-	{
-		Boss->SpawnDefaultController();
-	}
-	if (!Boss->IsEnemyInitialized() || !Cast<AEnemyAIController>(Boss->GetController()))
-	{
-		RemoveCurrentBoss();
-		return false;
-	}
-	return true;
-}
-
-// 이벤트 해제 및 전투 정리 후 현재 보스 제거
-void ABossEncounterManager::RemoveCurrentBoss()
-{
-	if (!IsValid(CurrentBoss))
-	{
-		CurrentBoss = nullptr;
-		return;
-	}
-	CurrentBoss->OnDefeated.RemoveDynamic(this, &ABossEncounterManager::HandleBossDefeated);
-	CurrentBoss->OnDeathFinished.RemoveDynamic(this, &ABossEncounterManager::TryOpenLevelAfterDefeat);
-	CurrentBoss->OnEncounterFailed.RemoveDynamic(this, &ABossEncounterManager::HandleBossFailed);
-	CurrentBoss->StopEncounter();
-	CurrentBoss->Destroy();
-	CurrentBoss = nullptr;
-}
-
-void ABossEncounterManager::ShowEncounterHealthBar()
-{
-	// 이전 전투의 UI가 남아 있으면 먼저 정리
-	HideEncounterHealthBar();
-
-	// 현재 전투에 플레이어와 보스가 유효한지 검사
-	if (!IsValid(EncounterPlayer) || !IsValid(CurrentBoss))
-		return;
-
-	// 플레이어 컨트롤러 받아오기
-	APlayerController* PC = Cast<APlayerController>(EncounterPlayer->GetController());
-	if (!PC || !PC->IsLocalController())
-		return;
-
-	// 플레이어 HUD 받아오기
-	AMainHUD* HUD = Cast<AMainHUD>(PC->GetHUD());
-	if (!IsValid(HUD))
-		return;
-
-	// HUD 기억 및 보스 체력 바 표시
-	EncounterHUD = HUD;
-	HUD->ShowBossHealthBar(CurrentBoss);
-}
-
-void ABossEncounterManager::HideEncounterHealthBar()
-{
-	// 저장해둔 HUD가 아직 유효하면 보스 체력바 숨김
-	if (AMainHUD* HUD = EncounterHUD.Get())
-	{
-		HUD->HideBossHealthBar();
-	}
-
-	EncounterHUD.Reset();	// 이번 전투에서 사용한 HUD 참조 초기화
-}
-
-// 보스와 기믹 정리 후 새 보스를 생성하여 체력 및 페이즈 초기화
-void ABossEncounterManager::ResetEncounter()
-{
-	if (StageCinematics)
-		StageCinematics->ResetStaging();
-	// 보스 체력 바 숨김
-	HideEncounterHealthBar();
-
 	++EncounterGeneration;
-	EncounterState = EBossEncounterState::Resetting;
-	GetWorld()->GetTimerManager().ClearTimer(PlayerCheckHandle);
-	GetWorld()->GetTimerManager().ClearTimer(ResetTimerHandle);
+	GetWorldTimerManager().ClearTimer(PlayerCheckHandle);
+	GetWorldTimerManager().ClearTimer(ResetTimerHandle);
+
+	StopWaitForRespawn();
 	ClearEncounterPlayer();
 	RemoveCurrentBoss();
-	if (SpawnBoss())
+	HideEncounterHealthBar();
+
+	EncounterDirector.Reset();
+
+	Super::EndPlay(EndPlayReason);
+}
+
+/* 전투 진행 */
+
+bool ABossEncounterManager::RequestEncounterStart(APlayerCharacter* Player)
+{
+	if (!HasAuthority() || EncounterState != EBossEncounterState::Ready
+		|| !IsValid(Player) || Player->GetbIsDead())
 	{
-		EncounterState = EBossEncounterState::Ready;
+		return false;
 	}
-	else
+
+	// 연출 담당자가 있으면 등장 연출이 끝난 뒤 담당자가 StartEncounter를 호출
+	if (IBossEncounterDirector* Director = GetDirector())
 	{
-		UE_LOG(LogTemp, Error, TEXT("Boss room initialization failed: %s"), *GetName());
+		return Director->TryBeginEncounterIntro(*this, Player);
 	}
+
+	return StartEncounter(Player);
 }
 
 // 준비된 보스방의 첫 페이즈와 타깃 선정 시작
 bool ABossEncounterManager::StartEncounter(APlayerCharacter* Player)
 {
-	if (StageCinematics && !StageCinematics->CanStartEncounter())
-		return false;
 	if (EncounterState != EBossEncounterState::Ready || !IsValid(CurrentBoss)
-		|| !IsValid(Player) || Player->GetbIsDead()) return false;
+		|| !IsValid(Player) || Player->GetbIsDead())
+	{
+		return false;
+	}
+
 	EncounterPlayer = Player;
 	EncounterPlayer->OnPlayerDied.AddUniqueDynamic(this, &ABossEncounterManager::HandlePlayerDied);
+
 	AEnemyAIController* AI = Cast<AEnemyAIController>(CurrentBoss->GetController());
 	if (!AI || !CurrentBoss->StartEncounter())
 	{
 		ResetEncounter();
 		return false;
 	}
+
+	// BT가 실제로 실행되지 않으면(필수 BB 키 누락 등) 전투를 진행할 수 없음
 	if (!AI->GetBrainComponent() || !AI->GetBrainComponent()->IsRunning())
 	{
+		UE_LOG(LogTemp, Error, TEXT("[BossEncounter] %s: boss AI did not start"), *GetName());
 		ResetEncounter();
 		return false;
 	}
 
 	EncounterState = EBossEncounterState::Running;
-
 	AI->SetCombatTarget(EncounterPlayer);
+
 	// 타이머가 만들어진 전투 번호를 저장하여 이전 전투의 호출 무시
 	const int64 StartedGeneration = EncounterGeneration;
-	FTimerDelegate CheckDelegate;
-	CheckDelegate.BindWeakLambda(this, [this, StartedGeneration]()
-	{
-		if (StartedGeneration == EncounterGeneration)
+	GetWorldTimerManager().SetTimer(PlayerCheckHandle,
+		FTimerDelegate::CreateWeakLambda(this, [this, StartedGeneration]()
 		{
-			CheckPlayer();
-		}
-	});
-	GetWorld()->GetTimerManager().SetTimer(PlayerCheckHandle, CheckDelegate, 0.5f, true);
-	
-	// 보스 준비 다 되면 체력 바 표시
+			if (StartedGeneration == EncounterGeneration)
+			{
+				CheckPlayer();
+			}
+		}),
+		PlayerCheckInterval, true);
+
 	ShowEncounterHealthBar();
 	return true;
 }
 
-// 레벨 트리거의 시작 요청: 연출이 연결되어 있으면 연출을 거쳐, 없으면 바로 전투 시작
-bool ABossEncounterManager::RequestEncounterStart(APlayerCharacter* Player)
+// 보스와 기믹 정리 후 새 보스를 생성하여 체력 및 페이즈 초기화
+void ABossEncounterManager::ResetEncounter()
 {
-	if (!HasAuthority() || EncounterState != EBossEncounterState::Ready
-		|| !IsValid(Player) || Player->GetbIsDead()) return false;
-
-	// 연출이 있는 보스방은 연출 종료 시점(FinishOpeningCut)에 StartEncounter가 호출됨
-	// - 여기서 StartEncounter를 직접 부르면 CanStartEncounter 검사에 막힘
-	if (StageCinematics)
-		return StageCinematics->StartPhaseOneCut(Player);
-
-	return StartEncounter(Player);
-}
-
-// 단일 플레이어의 생존 여부만 확인
-void ABossEncounterManager::CheckPlayer()
-{
-	if (EncounterState != EBossEncounterState::Running)
+	// 연출 담당자가 레벨 상태(문, 데칼 등)를 먼저 되돌림
+	if (IBossEncounterDirector* Director = GetDirector())
 	{
-		return;
+		Director->OnEncounterReset();
 	}
-	if (!IsValid(CurrentBoss))
-	{
-		ResetEncounter();
-		return;
-	}
-	if (IsValid(EncounterPlayer) && !EncounterPlayer->GetbIsDead())
-	{
-		return;
-	}
-	EnterWaitingState();
-}
 
-void ABossEncounterManager::HandlePlayerDied()
-{
-	if (EncounterState == EBossEncounterState::Running || EncounterState == EBossEncounterState::Resetting)
-		EnterWaitingState();
-}
-
-void ABossEncounterManager::ClearEncounterPlayer()
-{
-	if (IsValid(EncounterPlayer))
-		EncounterPlayer->OnPlayerDied.RemoveDynamic(this, &ABossEncounterManager::HandlePlayerDied);
-	EncounterPlayer = nullptr;
-}
-
-void ABossEncounterManager::EnterWaitingState()
-{
-	// 보스 체력 바 숨김
 	HideEncounterHealthBar();
 
-	// 사망 연출 중 보스를 삭제하거나 재배치하지 않고 현재 위치에서 전투만 종료
 	++EncounterGeneration;
-	GetWorld()->GetTimerManager().ClearTimer(PlayerCheckHandle);
-	GetWorld()->GetTimerManager().ClearTimer(ResetTimerHandle);
+	EncounterState = EBossEncounterState::Resetting;
+	GetWorldTimerManager().ClearTimer(PlayerCheckHandle);
+	GetWorldTimerManager().ClearTimer(ResetTimerHandle);
+
+	StopWaitForRespawn();
 	ClearEncounterPlayer();
-	EncounterState = EBossEncounterState::Waiting;
-	if (IsValid(CurrentBoss))
+	RemoveCurrentBoss();
+
+	if (SpawnBoss())
 	{
-		CurrentBoss->StopEncounter();
+		EncounterState = EBossEncounterState::Ready;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("[BossEncounter] %s: boss room initialization failed"), *GetName());
 	}
 }
+
+/* 연출 담당자 */
+
+void ABossEncounterManager::SetEncounterDirector(UObject* Director)
+{
+	if (Director && !Director->GetClass()->ImplementsInterface(UBossEncounterDirector::StaticClass()))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[BossEncounter] %s does not implement IBossEncounterDirector"), *GetNameSafe(Director));
+		return;
+	}
+
+	EncounterDirector = Director;
+
+	// 담당자보다 매니저 BeginPlay가 먼저 실행되어 보스가 이미 있는 경우에도 연결
+	if (IsValid(CurrentBoss))
+	{
+		CurrentBoss->SetPhaseTransitionHandler(
+			Director && Director->GetClass()->ImplementsInterface(UBossPhaseTransitionHandler::StaticClass()) ? Director : nullptr);
+
+		if (IBossEncounterDirector* NewDirector = GetDirector())
+		{
+			NewDirector->OnBossSpawned(CurrentBoss);
+		}
+	}
+}
+
+IBossEncounterDirector* ABossEncounterManager::GetDirector() const
+{
+	return Cast<IBossEncounterDirector>(EncounterDirector.Get());
+}
+
+/* 보스 이벤트 */
 
 void ABossEncounterManager::HandleBossDefeated(ABossCharacter* Boss)
 {
@@ -252,14 +187,17 @@ void ABossEncounterManager::HandleBossDefeated(ABossCharacter* Boss)
 	{
 		return;
 	}
+
 	++EncounterGeneration;
-	GetWorld()->GetTimerManager().ClearTimer(PlayerCheckHandle);
+	GetWorldTimerManager().ClearTimer(PlayerCheckHandle);
 	ClearEncounterPlayer();
 	EncounterState = EBossEncounterState::Cleared;
-	if (StageCinematics)
-		StageCinematics->OpenExit();
 
-	// 보스 체력 바 숨김
+	if (IBossEncounterDirector* Director = GetDirector())
+	{
+		Director->OnEncounterCleared();
+	}
+
 	HideEncounterHealthBar();
 }
 
@@ -281,6 +219,7 @@ void ABossEncounterManager::HandleBossFailed(ABossCharacter* Boss)
 	{
 		return;
 	}
+
 	// 서비스나 Task의 실패 통지보다 플레이어 사망을 우선 처리
 	if (!IsValid(EncounterPlayer) || EncounterPlayer->GetbIsDead())
 	{
@@ -288,42 +227,256 @@ void ABossEncounterManager::HandleBossFailed(ABossCharacter* Boss)
 		return;
 	}
 
-	// 보스 체력 바 숨김
 	HideEncounterHealthBar();
-
 	EncounterState = EBossEncounterState::Resetting;
-	GetWorld()->GetTimerManager().ClearTimer(PlayerCheckHandle);
-	// 다음 Tick까지 사망 구독을 유지하여 초기화 예약을 취소할 수 있게 함
+	GetWorldTimerManager().ClearTimer(PlayerCheckHandle);
+
 	// 실패 통지를 실행 중인 보스는 다음 Tick 이후 제거
-	const int64 ExpectedGeneration = ++EncounterGeneration;
-	ResetTimerHandle = GetWorld()->GetTimerManager().SetTimerForNextTick(
-		FTimerDelegate::CreateWeakLambda(this, [this, ExpectedGeneration]()
-			{
-				if (ExpectedGeneration != EncounterGeneration || EncounterState != EBossEncounterState::Resetting)
-				{
-					return;
-				}
-				if (!IsValid(EncounterPlayer) || EncounterPlayer->GetbIsDead())
-				{
-					EnterWaitingState();
-				}
-				else ResetEncounter();
-			}
-		)
-	);
+	ScheduleReset();
 }
 
-// 플레이 종료 시 실행, 구독 및 직접 소유한 자원 정리 후 부모 호출
-void ABossEncounterManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-	++EncounterGeneration;
-	GetWorld()->GetTimerManager().ClearTimer(PlayerCheckHandle);
-	GetWorld()->GetTimerManager().ClearTimer(ResetTimerHandle);
-	ClearEncounterPlayer();
-	RemoveCurrentBoss();
+/* 플레이어 이벤트 */
 
-	// 보스 체력 바 숨김
+void ABossEncounterManager::HandlePlayerDied()
+{
+	if (EncounterState == EBossEncounterState::Running || EncounterState == EBossEncounterState::Resetting)
+	{
+		EnterWaitingState();
+	}
+}
+
+void ABossEncounterManager::HandlePlayerRespawned(AController* Controller, APawn* NewPawn)
+{
+	if (EncounterState != EBossEncounterState::Waiting)
+	{
+		return;
+	}
+
+	// 살아 있는 플레이어 캐릭터로 부활했을 때만 초기화
+	const APlayerCharacter* Player = Cast<APlayerCharacter>(NewPawn);
+	if (!Player || Player->GetbIsDead())
+	{
+		return;
+	}
+
+	StopWaitForRespawn();
+	ScheduleReset();
+}
+
+/* 내부 처리 */
+
+// 레벨 참조를 먼저 전달한 뒤 보스 생성과 초기화 확인
+bool ABossEncounterManager::SpawnBoss()
+{
+	if (!BossClass)
+	{
+		return false;
+	}
+
+	// 보스의 초기 위치는 재시도 때마다 같은 설정 사용
+	const FTransform SpawnTransform = GetActorTransform();
+	ABossCharacter* Boss = GetWorld()->SpawnActorDeferred<ABossCharacter>(BossClass, SpawnTransform,
+		this, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+	if (!Boss)
+	{
+		return false;
+	}
+
+	CurrentBoss = Boss;
+	Boss->OnDefeated.AddUniqueDynamic(this, &ABossEncounterManager::HandleBossDefeated);
+	Boss->OnDeathFinished.AddUniqueDynamic(this, &ABossEncounterManager::TryOpenLevelAfterDefeat);
+	Boss->OnEncounterFailed.AddUniqueDynamic(this, &ABossEncounterManager::HandleBossFailed);
+
+	// FinishSpawning(BeginPlay) 전에 레벨 참조 전달: 보스 초기화 시 검사에 사용
+	Boss->SetLevelGimmickReferences(PhaseGimmickActors, GimmickAreaCenter);
+	Boss->SetLevelMovementRoutes(MovementRoutes);
+
+	// 연출 담당자가 전환 연출도 맡으면 보스에 연결
+	UObject* Director = EncounterDirector.Get();
+	const bool bDirectorHandlesTransitions = Director
+		&& Director->GetClass()->ImplementsInterface(UBossPhaseTransitionHandler::StaticClass());
+	Boss->SetPhaseTransitionHandler(bDirectorHandlesTransitions ? Director : nullptr);
+
+	Boss->FinishSpawning(SpawnTransform);
+
+	if (!Boss->GetController())
+	{
+		Boss->SpawnDefaultController();
+	}
+
+	if (!Boss->IsEnemyInitialized() || !Cast<AEnemyAIController>(Boss->GetController()))
+	{
+		RemoveCurrentBoss();
+		return false;
+	}
+
+	if (IBossEncounterDirector* EncounterDirectorInterface = GetDirector())
+	{
+		EncounterDirectorInterface->OnBossSpawned(Boss);
+	}
+
+	return true;
+}
+
+// 이벤트 해제 및 전투 정리 후 현재 보스 제거
+void ABossEncounterManager::RemoveCurrentBoss()
+{
+	if (!IsValid(CurrentBoss))
+	{
+		CurrentBoss = nullptr;
+		return;
+	}
+
+	CurrentBoss->OnDefeated.RemoveDynamic(this, &ABossEncounterManager::HandleBossDefeated);
+	CurrentBoss->OnDeathFinished.RemoveDynamic(this, &ABossEncounterManager::TryOpenLevelAfterDefeat);
+	CurrentBoss->OnEncounterFailed.RemoveDynamic(this, &ABossEncounterManager::HandleBossFailed);
+	CurrentBoss->StopEncounter();
+	CurrentBoss->Destroy();
+	CurrentBoss = nullptr;
+}
+
+// 단일 플레이어의 생존 여부만 확인
+void ABossEncounterManager::CheckPlayer()
+{
+	if (EncounterState != EBossEncounterState::Running)
+	{
+		return;
+	}
+
+	if (!IsValid(CurrentBoss))
+	{
+		ResetEncounter();
+		return;
+	}
+
+	if (!IsValid(EncounterPlayer) || EncounterPlayer->GetbIsDead())
+	{
+		EnterWaitingState();
+	}
+}
+
+void ABossEncounterManager::EnterWaitingState()
+{
 	HideEncounterHealthBar();
 
-	Super::EndPlay(EndPlayReason);
+	// 사망 연출 중 보스를 삭제하거나 재배치하지 않고 현재 위치에서 전투만 종료
+	++EncounterGeneration;
+	GetWorldTimerManager().ClearTimer(PlayerCheckHandle);
+	GetWorldTimerManager().ClearTimer(ResetTimerHandle);
+
+	ClearEncounterPlayer();
+	EncounterState = EBossEncounterState::Waiting;
+
+	if (IsValid(CurrentBoss))
+	{
+		CurrentBoss->StopEncounter();
+	}
+
+	BeginWaitForRespawn();
+}
+
+void ABossEncounterManager::ClearEncounterPlayer()
+{
+	if (IsValid(EncounterPlayer))
+	{
+		EncounterPlayer->OnPlayerDied.RemoveDynamic(this, &ABossEncounterManager::HandlePlayerDied);
+	}
+
+	EncounterPlayer = nullptr;
+}
+
+void ABossEncounterManager::BeginWaitForRespawn()
+{
+	StopWaitForRespawn();
+
+	if (!bResetWhenPlayerRespawns)
+	{
+		return;
+	}
+
+	// 부활은 게임모드가 담당하므로 게임모드의 부활 이벤트를 구독 (TutorialManager와 같은 방식, 매 Tick 확인 없음)
+	AMainGameMode* GameMode = GetWorld()->GetAuthGameMode<AMainGameMode>();
+	if (!GameMode)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BossEncounter] %s: GameMode is not AMainGameMode. Auto reset on respawn is disabled."), *GetName());
+		return;
+	}
+
+	RespawnGameMode = GameMode;
+	GameMode->OnPlayerRespawned.AddUniqueDynamic(this, &ABossEncounterManager::HandlePlayerRespawned);
+
+	// 이미 살아 있는 새 Pawn이 있다면(사망 이벤트보다 부활이 먼저 처리된 경우) 바로 초기화
+	const APlayerCharacter* Player = Cast<APlayerCharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (Player && !Player->GetbIsDead())
+	{
+		StopWaitForRespawn();
+		ScheduleReset();
+	}
+}
+
+void ABossEncounterManager::StopWaitForRespawn()
+{
+	if (AMainGameMode* GameMode = RespawnGameMode.Get())
+	{
+		GameMode->OnPlayerRespawned.RemoveDynamic(this, &ABossEncounterManager::HandlePlayerRespawned);
+	}
+
+	RespawnGameMode.Reset();
+}
+
+void ABossEncounterManager::ScheduleReset()
+{
+	const int64 ExpectedGeneration = ++EncounterGeneration;
+
+	ResetTimerHandle = GetWorldTimerManager().SetTimerForNextTick(
+		FTimerDelegate::CreateWeakLambda(this, [this, ExpectedGeneration]()
+		{
+			if (ExpectedGeneration != EncounterGeneration)
+			{
+				return;
+			}
+
+			// 초기화 직전에 플레이어가 다시 사망했다면 대기로 전환
+			if (EncounterState == EBossEncounterState::Resetting
+				&& IsValid(EncounterPlayer) && EncounterPlayer->GetbIsDead())
+			{
+				EnterWaitingState();
+				return;
+			}
+
+			ResetEncounter();
+		}));
+}
+
+/* 체력바 */
+
+void ABossEncounterManager::ShowEncounterHealthBar()
+{
+	// 이전 전투의 UI가 남아 있으면 먼저 정리
+	HideEncounterHealthBar();
+
+	if (!IsValid(EncounterPlayer) || !IsValid(CurrentBoss))
+	{
+		return;
+	}
+
+	APlayerController* PlayerController = Cast<APlayerController>(EncounterPlayer->GetController());
+	AMainHUD* HUD = PlayerController && PlayerController->IsLocalController() ? Cast<AMainHUD>(PlayerController->GetHUD()) : nullptr;
+	if (!IsValid(HUD))
+	{
+		return;
+	}
+
+	EncounterHUD = HUD;
+	HUD->ShowBossHealthBar(CurrentBoss);
+}
+
+void ABossEncounterManager::HideEncounterHealthBar()
+{
+	if (AMainHUD* HUD = EncounterHUD.Get())
+	{
+		HUD->HideBossHealthBar();
+	}
+
+	EncounterHUD.Reset();
 }

@@ -103,12 +103,16 @@ void ATest_Enemy_EffectsCauser::RemoveAllTag()
 	FGameplayTagContainer TargetAddedTags;
 	if (!AddedTags.RemoveAndCopyValue(Key, TargetAddedTags))
 		return;
+
+	// 이 액터가 추가한 Loose 태그만 제거 (다른 시스템이 붙인 태그는 유지)
+	TargetASC->RemoveLooseGameplayTags(TargetAddedTags);
 }
 
 void ATest_Enemy_EffectsCauser::ResetTarget()
 {
+	// 태그 지정 여부와 무관하게 초기화, ASC가 없는 대상은 무시
 	UAbilitySystemComponent* TargetASC = GetTestTargetASC();
-	if (!Target || !TagToTarget.IsValid())
+	if (!TargetASC)
 		return;
 
 	const UEnemyAttributeSet* Attributes = Target->GetAttributeSet();

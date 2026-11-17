@@ -18,6 +18,8 @@
 ///            던져진 코인이 보스(UBossGimmickComponent가 붙은 액터)에 부딪히면 보스 반격 피해(TryApplyCounterDamage)를 줍니다.
 ///            보스가 받을 수 없는 페이즈·배리어 중이면 코인은 남습니다 (bDamageBossWhenThrown)
 /// 레벨에 직접 배치하면 bFallOnBeginPlay가 false일 때 바로 Landed로 시작합니다.
+/// (2026-11-17) bIgnorePawnWhenLanded: 바닥·잡힌 코인은 Pawn 충돌을 무시 (캐릭터가 밟거나 밀다 끼이고 튕기는 문제),
+/// 던져진 동안만 Pawn을 막아 보스 반격 피해 판정 유지. 펫 자석은 오브젝트 타입으로 찾으므로 영향 없음
 /// TODO(합의): 보스 패턴이 스폰 후 StartFall(극성)을 호출하는 방식은 보스 담당과 확정 필요
 /// TODO: 소멸 상태는 다음 단계에서 추가
 
@@ -119,6 +121,9 @@ protected:
 	void Land();
 
 	void SetCoinState(EMagneticCoinState NewState);
+
+	// 상태에 맞게 Pawn 충돌 응답 적용 (Thrown만 막음, Landed·Held는 무시)
+	void ApplyPawnCollisionForState();
 
 	UFUNCTION()
 	void HandleMeshHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
@@ -227,6 +232,11 @@ protected:
 	// 잡혔다가 놓인 뒤 충돌 피해를 인정하는 시간 (초). 던져서 날아가는 시간보다 길게
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Damage", meta = (ClampMin = "0.0"))
 	float ThrowGraceTime = 1.5f;
+
+	// 바닥에 있거나 잡힌 코인은 Pawn(플레이어·몬스터·보스)과 부딪히지 않음. 던져진 동안(ThrowGraceTime)만 Pawn을 막음
+	// 캐릭터가 코인을 밟거나 밀다가 끼이고 튕겨 나가는 문제 방지. 펫 자석 대상 검색(오브젝트 타입)에는 영향 없음
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Collision")
+	bool bIgnorePawnWhenLanded = true;
 
 	// 피해 후 다시 피해를 줄 수 있을 때까지의 시간 (한 번 부딪힐 때 히트 이벤트가 여러 번 오는 것 방지)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MagneticCoin|Damage", meta = (ClampMin = "0.0"))

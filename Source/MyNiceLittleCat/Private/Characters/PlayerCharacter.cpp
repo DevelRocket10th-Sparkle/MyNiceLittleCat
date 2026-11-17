@@ -15,6 +15,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "GameplayTagContainer.h"
 #include "Components/CapsuleComponent.h"
+#include "Engine/DamageEvents.h"
 #include "Frameworks/Save/GameProgressSubsystem.h"
 #include "Engine/GameInstance.h"
 #include "NiagaraFunctionLibrary.h"
@@ -105,6 +106,29 @@ APlayerCharacter::APlayerCharacter()
 UAbilitySystemComponent* APlayerCharacter::GetAbilitySystemComponent() const
 {
     return AbilitySystemComponent;
+}
+
+float APlayerCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+{
+    // 엔진 기본 처리 (CanBeDamaged 확인, OnTakeAnyDamage 등 델리게이트)
+    const float AppliedDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+    if (AppliedDamage <= 0.f)
+        return 0.f;
+
+    // 피격 방향: 지점 피해면 맞은 방향, 아니면 피해를 준 액터 → 플레이어 방향
+    FVector HitDirection = FVector::ZeroVector;
+    if (DamageEvent.IsOfType(FPointDamageEvent::ClassID))
+    {
+        HitDirection = static_cast<const FPointDamageEvent&>(DamageEvent).ShotDirection;
+    }
+    else if (DamageCauser)
+    {
+        HitDirection = GetActorLocation() - DamageCauser->GetActorLocation();
+    }
+
+    ApplyPlayerHit(AppliedDamage, HitDirection.GetSafeNormal2D());
+    return AppliedDamage;
+
 }
 
 void APlayerCharacter::SetDodgeInvincible(bool bNewDodgeInvincible)

@@ -5,6 +5,7 @@
 #include "AIController.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Enemy/Components/EnemyPatternComponent.h"
 
@@ -52,8 +53,8 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeCompon
 		return EBTNodeResult::Failed;
 	}
 
-	// 타깃 설정
-	AActor* Target = Cast<AActor>(BlackboardComp->GetValueAsObject(BlackboardKey.SelectedKeyName));
+	// 타깃 설정: BTTask_BlackboardBase가 InitializeFromAsset에서 키 ID를 이미 해석해 두므로 이름 검색 없이 ID로 읽음
+	AActor* Target = Cast<AActor>(BlackboardComp->GetValue<UBlackboardKeyType_Object>(BlackboardKey.GetSelectedKeyID()));
 	CachedTarget = Target;
 
 	// PatternId는 BT 설정값으로 유지
@@ -91,7 +92,7 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeCompon
 	CachedPatternComp->SetReservedPattern(SelectedPatternId);
 	
 	// 실제 패턴 실행 전에 타깃 방향 회전을 기다려야 하는지 검사
-	const bool bNeedsFacing = !Definition.bLogOnly && Definition.bFaceTargetOnStart && IsValid(Target);
+	const bool bNeedsFacing = Definition.bFaceTargetOnStart && IsValid(Target);
 	if (!bNeedsFacing)
 	{
 		// 사전 방향 회전이 필요 없으면 선택한 패턴을 즉시 실행

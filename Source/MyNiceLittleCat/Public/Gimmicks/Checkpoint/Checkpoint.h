@@ -23,6 +23,14 @@
 /// - StateOffTag(기본 CheckpointOff): 꺼졌을 때만 보임 (예: 꺼진 장작)
 /// - StateGlowTag(기본 CheckpointGlow): 머티리얼 스칼라 파라미터 StateGlowParameterName을 0(꺼짐) → 1(켜짐)
 /// 전환은 StateBlendTime 동안 부드럽게, 게임 시작 시 상태는 바로 적용
+///
+/// [가시성 보완] (2026-11-17 추가)
+/// 배경 소품과 구분되도록 움직임·스스로 내는 빛·플레이어 반응을 줍니다.
+/// - BeaconOrb: 떠서 오르내리며 도는 빛 구슬 (FloatAmplitude·FloatPeriod·FloatSpinSpeed). 메시를 지정해야 보임
+/// - BeaconBeam: 멀리서도 보이는 빛기둥. 메시를 지정해야 보임
+/// - 두 메시는 CheckpointGlow 태그 메시처럼 StateGlowParameterName 발광 값을 받음
+/// - 꺼져 있어도 은은하게: StateOffGlow(발광)·StateOffLightScale(라이트, 0보다 크면 꺼짐 상태에도 라이트 보임)
+/// - 플레이어 포커스(상호작용 안내가 뜨는 거리) 동안 발광 +FocusGlowBoost, 라이트 ×(1 + FocusLightBoost)
 
 #pragma once
 
@@ -36,6 +44,7 @@ class UArrowComponent;
 class UCheckpointMenuWidget;
 class ULightComponent;
 class UMaterialInstanceDynamic;
+class UStaticMeshComponent;
 class AGimmickActorBase;
 
 UCLASS()
@@ -49,6 +58,8 @@ public:
 	// IInteractableInterface
 	virtual void Interact_Implementation(AActor* InteractInstigator) override;
 	virtual bool CanInteract_Implementation(AActor* InteractInstigator) const override;
+	virtual void OnFocusBegin_Implementation(AActor* InteractInstigator) override;
+	virtual void OnFocusEnd_Implementation(AActor* InteractInstigator) override;
 
 	// 저장에 쓰는 Id (비어 있으면 액터 이름)
 	UFUNCTION(BlueprintPure, Category = "Checkpoint")
@@ -82,8 +93,16 @@ protected:
 	// 태그 붙은 컴포넌트·라이트 기본 밝기·발광 MID 모으기 (BeginPlay 한 번)
 	void CacheStateVisuals();
 
-	// 현재 StateBlend 값을 컴포넌트에 반영
+	// 현재 StateBlend·FocusBlend 값을 컴포넌트에 반영
 	void ApplyStateBlend();
+
+	// 빛 구슬 오르내림·회전
+	void UpdateBeaconFloat(float DeltaSeconds);
+
+	// 상태 전환·포커스 전환·빛 구슬 움직임 중 하나라도 있으면 틱 필요
+	bool NeedsTick() const;
+
+	bool HasFloatingOrb() const;
 
 	// 서브시스템의 체크포인트가 바뀌면 활성 표시 갱신
 	UFUNCTION()
@@ -111,6 +130,14 @@ protected:
 	// 부활 지점. 화살표 위치를 바닥(발 위치)에, 방향을 부활 후 바라볼 방향으로 맞춤
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UArrowComponent> RespawnPoint;
+
+	// 떠서 오르내리며 도는 빛 구슬 (메시·머티리얼·위치는 BP에서 지정, 콜리전 없음)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> BeaconOrb;
+
+	// 멀리서도 보이는 빛기둥 (메시·머티리얼·크기는 BP에서 지정, 콜리전 없음)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> BeaconBeam;
 
 	// 맵 안에서 체크포인트를 구분하는 Id. 비워 두면 액터 이름 사용
 	// (액터 이름은 복제·재배치하면 바뀌므로 정식 맵에서는 지정 권장)
@@ -160,10 +187,51 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Visual", meta = (ClampMin = "0.0"))
 	float StateBlendTime = 0.8f;
 
+	// 꺼진(아직 안 쓴) 체크포인트의 발광 값 (0~1). 0이면 꺼지면 발광 없음
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Visual", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float StateOffGlow = 0.f;
+
+	// 꺼진 체크포인트의 라이트 밝기 비율. 0보다 크면 꺼짐 상태에도 CheckpointOn 라이트가 이 비율로 보임
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Visual", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float StateOffLightScale = 0.f;
+
+	// 포커스(상호작용 안내 표시) 중 발광에 더하는 값
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Focus", meta = (ClampMin = "0.0"))
+	float FocusGlowBoost = 0.6f;
+
+	// 포커스 중 라이트 밝기 배율 = 1 + FocusLightBoost
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Focus", meta = (ClampMin = "0.0"))
+	float FocusLightBoost = 1.f;
+
+	// 포커스 반응 전환 시간(초)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Focus", meta = (ClampMin = "0.0"))
+	float FocusBlendTime = 0.25f;
+
+	// 빛 구슬 오르내림 폭 (cm, 위아래 각각)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Beacon", meta = (ClampMin = "0.0", Units = "cm"))
+	float FloatAmplitude = 8.f;
+
+	// 빛 구슬 오르내림 한 번 주기 (초)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Beacon", meta = (ClampMin = "0.1", Units = "s"))
+	float FloatPeriod = 2.4f;
+
+	// 빛 구슬 회전 속도 (도/초, Yaw)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Checkpoint|Beacon")
+	float FloatSpinSpeed = 40.f;
+
 private:
 	// 0 = 꺼짐, 1 = 켜짐
 	float StateBlend = 0.f;
 	float StateBlendTarget = 0.f;
+
+	// 0 = 포커스 없음, 1 = 포커스 중
+	float FocusBlend = 0.f;
+	float FocusBlendTarget = 0.f;
+
+	// 빛 구슬 시작 위치·회전·경과 시간
+	FVector OrbBaseLocation = FVector::ZeroVector;
+	FRotator OrbBaseRotation = FRotator::ZeroRotator;
+	float FloatTime = 0.f;
 	bool bStateVisualsCached = false;
 
 	UPROPERTY(Transient)
