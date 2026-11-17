@@ -51,8 +51,9 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	// 열림/닫힘 위치로 이동 (bInstant면 바로 이동, 이벤트 없음). 움직이는 중에 반대로 바꾸면 그 자리에서 되돌아감
+	// DurationOverride가 0 이상이면 이번 이동만 그 시간 사용 (연출 마커처럼 호출마다 시간이 다를 때)
 	UFUNCTION(BlueprintCallable, Category = "Gimmick|Mover")
-	void SetOpen(bool bOpen, bool bInstant = false);
+	void SetOpen(bool bOpen, bool bInstant = false, float DurationOverride = -1.f);
 
 	// 목표 상태 (움직이는 중이면 향하는 쪽)
 	UFUNCTION(BlueprintPure, Category = "Gimmick|Mover")
@@ -132,4 +133,7 @@ private:
 	float Progress = 0.f;
 	bool bTargetOpen = false;
 	bool bMoving = false;
+
+	// 진행 중인 이동에 쓰는 시간: SetOpen에서 정하고 Tick에서 사용 (호출별 시간 지원)
+	float ActiveDuration = 0.f;
 };

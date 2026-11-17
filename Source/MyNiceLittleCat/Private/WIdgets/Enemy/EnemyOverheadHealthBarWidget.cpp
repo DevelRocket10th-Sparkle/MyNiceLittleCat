@@ -27,7 +27,6 @@ void UEnemyOverheadHealthBarWidget::UnbindOverheadHealthBar()
 		{
 			// 실제 구독자는 내부 ResourceBar
 			Stat->OnHealthChange.RemoveAll(HealthBar);
-			//Stat->OnMaxHealthChange.RemoveAll(HealthBar);
 		}
 	}
 
@@ -56,7 +55,6 @@ void UEnemyOverheadHealthBarWidget::InitializeOverheadHealthBar(AActor* InActor)
 			ObservedStats = Stat;
 
 			Stat->OnHealthChange.AddUObject(HealthBar, &UResourceBarWidget::UpdateResourceBar);
-			//Stat->OnMaxHealthChange.AddUObject(HealthBar, &UResourceBarWidget::UpdateResourceBar);
 
 			HealthBar->UpdateResourceBar(Stat->GetHealth(), Stat->GetMaxHealth());
 		}

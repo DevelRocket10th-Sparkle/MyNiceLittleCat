@@ -3,12 +3,16 @@
 
 #include "Enemy/AI/Services/BTService_Enemy_UpdateHomeState.h"
 
-#include "Enemy/EnemyCharacter.h"
-#include "Enemy/Datas/EnemyConfigData.h"
-
 #include "AIController.h"
+#include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "BehaviorTree/BlackboardComponent.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Bool.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Vector.h"
+
+#include "Enemy/AI/EnemyBlackboardKeys.h"
+#include "Enemy/Data/EnemyConfigData.h"
+#include "Enemy/EnemyCharacter.h"
 
 UBTService_Enemy_UpdateHomeState::UBTService_Enemy_UpdateHomeState()
 {
@@ -20,64 +24,60 @@ UBTService_Enemy_UpdateHomeState::UBTService_Enemy_UpdateHomeState()
 	Interval = 0.3f;
 	RandomDeviation = 0.05f;
 
-	BlackboardKey.AddVectorFilter(
-		this,
-		GET_MEMBER_NAME_CHECKED(
-			UBTService_Enemy_UpdateHomeState,
-			BlackboardKey
-		)
-	);
+	// 입력: 복귀 위치 (Vector)
+	BlackboardKey.AddVectorFilter(this, GET_MEMBER_NAME_CHECKED(UBTService_Enemy_UpdateHomeState, BlackboardKey));
+
+	// 출력: 기존 BT 에셋을 위해 기본 키 이름 지정
+	IsAwayFromHomeKey.AddBoolFilter(this, GET_MEMBER_NAME_CHECKED(UBTService_Enemy_UpdateHomeState, IsAwayFromHomeKey));
+	IsAwayFromHomeKey.SelectedKeyName = EnemyBlackboardKeys::IsAwayFromHome;
+}
+
+void UBTService_Enemy_UpdateHomeState::InitializeFromAsset(UBehaviorTree& Asset)
+{
+	// 부모가 BlackboardKey를 해석
+	Super::InitializeFromAsset(Asset);
+
+	if (const UBlackboardData* Blackboard = GetBlackboardAsset())
+	{
+		IsAwayFromHomeKey.ResolveSelectedKey(*Blackboard);
+	}
 }
 
 void UBTService_Enemy_UpdateHomeState::OnSearchStart(FBehaviorTreeSearchData& SearchData)
 {
 	Super::OnSearchStart(SearchData);
-	
 	UpdateHomeState(SearchData.OwnerComp);
 }
 
-void UBTService_Enemy_UpdateHomeState::TickNode(UBehaviorTreeComponent & OwnerComp, uint8 * NodeMemory, float DeltaSeconds)
+void UBTService_Enemy_UpdateHomeState::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds)
 {
 	Super::TickNode(OwnerComp, NodeMemory, DeltaSeconds);
-
 	UpdateHomeState(OwnerComp);
 }
 
-void UBTService_Enemy_UpdateHomeState::UpdateHomeState(UBehaviorTreeComponent & OwnerComp)
+void UBTService_Enemy_UpdateHomeState::UpdateHomeState(UBehaviorTreeComponent& OwnerComp) const
 {
 	UBlackboardComponent* Blackboard = OwnerComp.GetBlackboardComponent();
-	if (!IsValid(Blackboard))
-		return;
-
-	AAIController* AI = OwnerComp.GetAIOwner();
-
-	// 현재 Enemy 캐릭터 찾기
-	AEnemyCharacter* Enemy =
-		IsValid(AI)
-		? Cast<AEnemyCharacter>(AI->GetPawn())
-		: nullptr;
-
-	// 현재 Enemy 설정값 읽기: HomeArrivalRadius 필요
-	const UEnemyConfigData* Config =
-		IsValid(Enemy)
-		? Enemy->GetEnemyConfig()
-		: nullptr;
-
-	const FName HomeLocationKey = BlackboardKey.SelectedKeyName;
-
-	// 유효 정보가 없으면 BT에서 복귀 분기 선택하지 않도록 설정
-	if (!IsValid(Enemy) || !IsValid(Config) || !Blackboard->IsVectorValueSet(HomeLocationKey))
+	if (!IsValid(Blackboard) || !IsAwayFromHomeKey.IsSet())
 	{
-		Blackboard->SetValueAsBool(TEXT("IsAwayFromHome"), false);
-
 		return;
 	}
 
-	// 거리 알아내기
-	const float DistanceSquared = FVector::DistSquared2D(Enemy->GetActorLocation(), Blackboard->GetValueAsVector(HomeLocationKey));
+	const AAIController* AI = OwnerComp.GetAIOwner();
+	const AEnemyCharacter* Enemy = IsValid(AI) ? Cast<AEnemyCharacter>(AI->GetPawn()) : nullptr;
+	const UEnemyConfigData* Config = IsValid(Enemy) ? Enemy->GetEnemyConfig() : nullptr;
 
-	// Home이랑 떨어졌는지 기록
-	const bool bIsAwayFromHome = DistanceSquared > FMath::Square(Config->HomeArrivalRadius);
+	const FBlackboard::FKey HomeKey = BlackboardKey.GetSelectedKeyID();
 
-	Blackboard->SetValueAsBool(TEXT("IsAwayFromHome"), bIsAwayFromHome);
+	// 정보가 없으면 BT가 복귀 분기를 선택하지 않도록 false
+	bool bIsAwayFromHome = false;
+
+	if (IsValid(Config) && Blackboard->IsVectorValueSet(HomeKey))
+	{
+		const FVector HomeLocation = Blackboard->GetValue<UBlackboardKeyType_Vector>(HomeKey);
+		const double DistanceSquared = FVector::DistSquared2D(Enemy->GetActorLocation(), HomeLocation);
+		bIsAwayFromHome = DistanceSquared > FMath::Square(Config->HomeArrivalRadius);
+	}
+
+	Blackboard->SetValue<UBlackboardKeyType_Bool>(IsAwayFromHomeKey.GetSelectedKeyID(), bIsAwayFromHome);
 }
