@@ -25,6 +25,7 @@ class APawn;
 class APlayerCharacter;
 class IBossEncounterDirector;
 class USceneComponent;
+class USoundBase;
 class UWorld;
 
 // 보스방의 준비, 전투, 초기화, 클리어 및 재도전 대기 상태
@@ -134,6 +135,10 @@ private :
 	void ShowEncounterHealthBar();
 	void HideEncounterHealthBar();
 
+	// 보스 BGM을 BGM 서브시스템 이벤트 스택에 Push/Pop (BossBGM이 비어 있으면 Push 안 함)
+	void PushBossBGM();
+	void PopBossBGM();
+
 protected :
 
 	// 레벨 배치 위치를 제공하는 루트 컴포넌트
@@ -149,6 +154,12 @@ protected :
 	// 보스 처치 후 이동할 레벨 (비우면 이동하지 않음)
 	UPROPERTY(EditInstanceOnly, Category = "Boss|Clear")
 	TSoftObjectPtr<UWorld> LevelAfterDefeat;
+
+	// 보스 전투 BGM: 등장 연출이 끝나고 전투가 실제로 시작될 때(StartEncounter) 재생
+	// - 이벤트 BGM 스택은 Zone보다 우선이라 아레나 존 곡을 덮어씀
+	// - 처치/리셋 시 빠지면서 존·레벨 기본곡으로 자동 복귀. 비우면 BGM 변경 없음
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|BGM")
+	TObjectPtr<USoundBase> BossBGM;
 
 	// 플레이어가 부활하면 보스방을 자동으로 초기화할지 여부
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Retry")
