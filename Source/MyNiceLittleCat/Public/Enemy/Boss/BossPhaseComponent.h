@@ -102,6 +102,9 @@ public :
 	// 현재 페이즈 설정: 시작 전에는 nullptr
 	const FBossPhaseDefinition* GetCurrentPhase() const;
 
+	// Getter: 초기화에 사용한 페이즈 설정 (체력바 경계 표시용)
+	const UBossPhaseConfigData* GetConfig() const { return Config; }
+
 	// Getter: 현재 페이즈 ID
 	UFUNCTION(BlueprintPure, Category = "Boss|Phase")
 	FName GetCurrentPhaseId() const;
