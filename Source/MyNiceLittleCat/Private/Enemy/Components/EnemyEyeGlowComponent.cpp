@@ -17,6 +17,7 @@ UEnemyEyeGlowComponent::UEnemyEyeGlowComponent()
 
 void UEnemyEyeGlowComponent::SetGlowColor(FLinearColor Color)
 {
+	BaseGlowColor = Color;
 	// 꺼진 상태에서 끄는 요청은 눈 메시를 만들 필요 없음
 	const bool bTurnOff = Color.GetMax() <= 0.f;
 	if (bTurnOff && !EyeMaterialInstance)
@@ -29,7 +30,10 @@ void UEnemyEyeGlowComponent::SetGlowColor(FLinearColor Color)
 		return;
 	}
 
-	ApplyColor(Color);
+	if (PulseRemaining <= 0.f)
+	{
+		ApplyColor(BaseGlowColor);
+	}
 }
 
 void UEnemyEyeGlowComponent::PlayWarningPulse(FLinearColor PeakColor, float Duration)
@@ -41,6 +45,7 @@ void UEnemyEyeGlowComponent::PlayWarningPulse(FLinearColor PeakColor, float Dura
 
 	PulsePeakColor = PeakColor;
 	PulseRemaining = Duration;
+	ApplyColor(PulsePeakColor);
 	SetComponentTickEnabled(true);
 }
 
@@ -48,6 +53,7 @@ void UEnemyEyeGlowComponent::StopWarningPulse()
 {
 	PulseRemaining = 0.f;
 	SetComponentTickEnabled(false);
+	ApplyColor(BaseGlowColor);
 }
 
 void UEnemyEyeGlowComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -63,7 +69,7 @@ void UEnemyEyeGlowComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 	if (PulseRemaining <= 0.f)
 	{
-		SetComponentTickEnabled(false);
+		StopWarningPulse();
 	}
 }
 

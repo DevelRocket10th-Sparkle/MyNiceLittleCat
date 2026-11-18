@@ -52,7 +52,7 @@ public :
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Eye Glow")
 	void SetGlowColor(FLinearColor Color);
 
-	// 경고 깜빡임 시작: Duration 동안 PeakColor 밝기로 진동, 끝나면 마지막 색 유지
+	// 경고 깜빡임 시작: Duration 동안 PeakColor 밝기로 진동, 끝나면 기본 안광 색으로 복원
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Eye Glow")
 	void PlayWarningPulse(FLinearColor PeakColor, float Duration);
 
@@ -136,6 +136,9 @@ private :
 	// 생성한 눈 메시
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UStaticMeshComponent>> EyeComponents;
+
+	// 기본 안광은 경고 깜빡임과 별도로 유지
+	FLinearColor BaseGlowColor = FLinearColor::Black;
 
 	// 경고 깜빡임 최대 색과 남은 시간
 	FLinearColor PulsePeakColor = FLinearColor::Black;
