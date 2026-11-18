@@ -69,6 +69,10 @@ public :
 	// - 이미 생성된 보스가 있으면 즉시 OnBossSpawned 호출 → BeginPlay 순서와 무관하게 동작
 	void SetEncounterDirector(UObject* Director);
 
+	// 처치 후 다음 레벨(LevelAfterDefeat) 열기: 레벨 이동을 미룬 연출 담당자가 엔딩 연출 뒤 호출
+	// - 클리어 상태가 아니거나 다음 레벨이 비어 있으면 무시
+	void OpenLevelAfterDefeat();
+
 	/* 조회 */
 
 	ABossCharacter* GetCurrentBoss() const { return CurrentBoss; }

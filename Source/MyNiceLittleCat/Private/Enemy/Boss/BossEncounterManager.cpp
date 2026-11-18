@@ -224,6 +224,22 @@ void ABossEncounterManager::TryOpenLevelAfterDefeat(ABossCharacter* Boss)
 		return;
 	}
 
+	// 엔딩 연출 등으로 연출 담당자가 이동을 미루면 담당자가 연출 뒤 OpenLevelAfterDefeat 호출
+	if (const IBossEncounterDirector* Director = GetDirector(); Director && Director->HoldsLevelAfterDefeat())
+	{
+		return;
+	}
+
+	OpenLevelAfterDefeat();
+}
+
+void ABossEncounterManager::OpenLevelAfterDefeat()
+{
+	if (!HasAuthority() || EncounterState != EBossEncounterState::Cleared || LevelAfterDefeat.IsNull())
+	{
+		return;
+	}
+
 	UGameplayStatics::OpenLevelBySoftObjectPtr(this, LevelAfterDefeat);
 }
 

@@ -26,6 +26,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pet|AI")
 	void StartPetLogic();
 
+	// 컷신 등 외부 연출이 펫을 직접 움직이는 동안 StateTree와 이동 요청 중지 (다시 켤 때 StartPetLogic)
+	UFUNCTION(BlueprintCallable, Category = "Pet|AI")
+	void StopPetLogic();
+
 private:
 	void TryStartPetLogic();
 	// =============================================================================

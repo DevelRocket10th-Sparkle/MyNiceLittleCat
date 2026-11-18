@@ -44,4 +44,9 @@ public :
 
 	// 보스 처치: 출구 개방 등
 	virtual void OnEncounterCleared() = 0;
+
+	// 처치 후 다음 레벨 이동(LevelAfterDefeat)을 연출 담당자가 미루는지
+	// - true면 매니저는 사망 연출이 끝나도 레벨을 열지 않고, 담당자가 연출을 마친 뒤 OpenLevelAfterDefeat()를 호출
+	// - 기본 false: 기존 보스방은 사망 연출 종료 시 바로 이동
+	virtual bool HoldsLevelAfterDefeat() const { return false; }
 };

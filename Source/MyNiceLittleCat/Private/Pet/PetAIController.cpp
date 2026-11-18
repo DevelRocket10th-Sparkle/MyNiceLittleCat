@@ -45,6 +45,12 @@ void APetAIController::StartPetLogic()
 		TryStartPetLogic();
 }
 
+void APetAIController::StopPetLogic()
+{
+	StateTreeComponent->StopLogic(TEXT("Cinematic"));
+	StopMovement();
+}
+
 void APetAIController::TryStartPetLogic()
 {
 	APetCharacter* Pet = Cast<APetCharacter>(GetPawn());
