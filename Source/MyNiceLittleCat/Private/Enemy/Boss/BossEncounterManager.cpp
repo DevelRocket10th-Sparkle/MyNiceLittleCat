@@ -16,6 +16,8 @@
 #include "Enemy/Interfaces/BossEncounterDirector.h"
 #include "Enemy/Interfaces/BossPhaseTransitionHandler.h"
 #include "Frameworks/GameMode/MainGameMode.h"
+#include "Frameworks/Sound/BGMSubSystem.h"
+#include "Engine/GameInstance.h"
 #include "Widgets/MainHUD.h"
 
 namespace
@@ -48,6 +50,9 @@ void ABossEncounterManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	ClearEncounterPlayer();
 	RemoveCurrentBoss();
 	HideEncounterHealthBar();
+
+	// 매니저가 사라지는데 스택에 남아 있으면 보스 곡이 계속 재생되므로 정리
+	PopBossBGM();
 
 	EncounterDirector.Reset();
 
@@ -115,6 +120,9 @@ bool ABossEncounterManager::StartEncounter(APlayerCharacter* Player)
 		}),
 		PlayerCheckInterval, true);
 
+	// 등장 연출 종료 후 담당자가 StartEncounter를 호출하므로, 이 시점에 보스 곡으로 전환
+	PushBossBGM();
+
 	ShowEncounterHealthBar();
 	return true;
 }
@@ -127,6 +135,9 @@ void ABossEncounterManager::ResetEncounter()
 	{
 		Director->OnEncounterReset();
 	}
+
+	// 재도전/실패로 리셋되면 보스 곡을 빼서 존 곡으로 복귀 (다음 시도 때 StartEncounter에서 다시 Push)
+	PopBossBGM();
 
 	HideEncounterHealthBar();
 
@@ -197,6 +208,9 @@ void ABossEncounterManager::HandleBossDefeated(ABossCharacter* Boss)
 	{
 		Director->OnEncounterCleared();
 	}
+
+	// 처치 시 보스 곡 종료 → 존 곡으로 크로스페이드
+	PopBossBGM();
 
 	HideEncounterHealthBar();
 }
@@ -479,4 +493,35 @@ void ABossEncounterManager::HideEncounterHealthBar()
 	}
 
 	EncounterHUD.Reset();
+}
+
+/* BGM */
+
+void ABossEncounterManager::PushBossBGM()
+{
+	if (nullptr == BossBGM)
+	{
+		return;
+	}
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UBGMSubSystem* BGM = GI->GetSubsystem<UBGMSubSystem>())
+		{
+			// Owner = 이 매니저: 같은 Owner로 다시 Push해도 중복 없이 교체됨
+			BGM->PushEventBGM(this, BossBGM, 0.5f); // 마지막 인자는 크로스페이드 초 (추후로 변수로 빼야함)
+		}
+	}
+}
+
+void ABossEncounterManager::PopBossBGM()
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UBGMSubSystem* BGM = GI->GetSubsystem<UBGMSubSystem>())
+		{
+			// 스택에 없으면 아무 일도 안 일어나므로 여러 번 불러도 안전
+			BGM->PopEventBGM(this, 0.5f); // 마지막 인자는 크로스페이드 초 (추후로 변수로 빼야함)
+		}
+	}
 }
