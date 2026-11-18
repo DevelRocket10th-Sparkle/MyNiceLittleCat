@@ -5,6 +5,8 @@
 #include "AIController.h"
 #include "Animation/AnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/AudioComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 #include "Enemy/Combat/EnemyFeedback.h"
 #include "Enemy/Combat/EnemyTargetUtils.h"
@@ -94,6 +96,8 @@ bool UGA_Enemy_MeleeAttack::StartPattern()
 
 void UGA_Enemy_MeleeAttack::StopPattern(bool bWasCancelled)
 {
+	if (IsValid(SwingAudio)) { SwingAudio->Stop(); }
+	SwingAudio = nullptr;
 	if (MeleeTraceComponent.IsValid())
 	{
 		MeleeTraceComponent->OnTargetHit.Remove(TargetHitHandle);
@@ -173,6 +177,10 @@ void UGA_Enemy_MeleeAttack::HandleWindowBegin(FGameplayEventData Payload)
 		return;
 
 	MeleeTraceComponent->BeginWindow(Payload.OptionalObject.Get());
+	if (MeleeSettings->SwingSound && !IsValid(SwingAudio))
+	{
+		SwingAudio = UGameplayStatics::SpawnSoundAttached(MeleeSettings->SwingSound, Enemy->GetMesh());
+	}
 }
 
 void UGA_Enemy_MeleeAttack::HandleWindowEnd(FGameplayEventData Payload)
@@ -182,5 +190,7 @@ void UGA_Enemy_MeleeAttack::HandleWindowEnd(FGameplayEventData Payload)
 		&& Payload.OptionalObject2 == Enemy->GetMesh())
 	{
 		MeleeTraceComponent->EndWindow(Payload.OptionalObject.Get());
+		if (IsValid(SwingAudio)) { SwingAudio->FadeOut(0.03f, 0.f); }
+		SwingAudio = nullptr;
 	}
 }

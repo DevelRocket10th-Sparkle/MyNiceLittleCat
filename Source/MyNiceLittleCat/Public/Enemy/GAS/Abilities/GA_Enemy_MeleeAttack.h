@@ -14,6 +14,7 @@
 
 class UEnemyMeleePatternSettings;
 class UEnemyMeleeTraceComponent;
+class UAudioComponent;
 struct FGameplayEventData;
 
 UCLASS()
@@ -66,6 +67,9 @@ protected :
 	// 이 GA만 해석하는 근접 실행 설정
 	UPROPERTY(Transient)
 	TObjectPtr<UEnemyMeleePatternSettings> MeleeSettings;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> SwingAudio;
 
 	// 소켓 판정 컴포넌트
 	TWeakObjectPtr<UEnemyMeleeTraceComponent> MeleeTraceComponent;

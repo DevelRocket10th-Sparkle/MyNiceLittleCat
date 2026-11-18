@@ -16,6 +16,7 @@
 #include "EnemyMeleePatternSettings.generated.h"
 
 class UAnimMontage;
+class USoundBase;
 
 // 데이터 에셋 내부에서 생성하는 소켓별 판정 설정. 별도 에셋 생성 불필요.
 UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, meta = (DisplayName = "Melee Trace Settings"))
@@ -79,6 +80,10 @@ public :
 	// - 플레이어 자신의 피격 소리는 플레이어 쪽(HitSoundComponent)에서 재생하므로 여기는 무기/몸 충돌음
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee|Feedback")
 	FEnemyFeedbackCue HitCue;
+
+	// 무기 판정 구간 시작 시 재생, 구간 종료/패턴 취소 시 정지.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee|Feedback")
+	TObjectPtr<USoundBase> SwingSound;
 
 	// 배열에 항목을 추가하면 판정 설정 객체를 생성
 #if WITH_EDITOR

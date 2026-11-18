@@ -16,6 +16,7 @@
 
 class UAnimMontage;
 class UNiagaraSystem;
+class USoundBase;
 class AAttackWarningDecal;
 
 UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, meta = (DisplayName = "Boss Laser Pattern Settings"))
@@ -90,6 +91,13 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual", meta = (ClampMin = "0.01"))
 	float ChargeEffectScale = 1.f;
+
+	// 추적/확정 동안 재생하고 발사 시 정지. 반복 여부는 Sound Cue에서 편집.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Sound")
+	TObjectPtr<USoundBase> ChargeSound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Sound")
+	TObjectPtr<USoundBase> FireSound;
 
 	// LaserEyeGlow 태그를 가진 무기 메시의 눈 발광 색. 발사 중에만 적용.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual")

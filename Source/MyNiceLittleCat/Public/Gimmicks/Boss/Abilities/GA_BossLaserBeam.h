@@ -25,6 +25,7 @@ class ULaserBeamComponent;
 class UBossLaserPatternSettings;
 class AAttackWarningDecal;
 class UNiagaraComponent;
+class UAudioComponent;
 class UMaterialInstanceDynamic;
 
 UENUM()
@@ -121,6 +122,12 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> ChargeEffectComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> ChargeAudio;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> FireAudio;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> StaffEyeMaterial;

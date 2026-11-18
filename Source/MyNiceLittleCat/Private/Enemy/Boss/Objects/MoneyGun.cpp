@@ -127,7 +127,7 @@ bool AMoneyGun::UpdateLoading(float DeltaSeconds)
 		}
 
 		// 장전 시작 연출: 지폐가 모여드는 지점
-		EnemyFeedback::PlayAtLocation(this, Settings->LoadStartCue, LoadPoint->GetComponentLocation(), GetActorRotation());
+		LoadingFeedback = EnemyFeedback::PlayAttached(Settings->LoadStartCue, LoadPoint);
 	}
 	const float LoadAlpha = FMath::Clamp((Elapsed - Settings->AppearSeconds) / Settings->LoadSeconds, 0.f, 1.f);
 	const FVector End = Root->GetComponentTransform().InverseTransformPosition(LoadPoint->GetComponentLocation());
@@ -149,6 +149,7 @@ bool AMoneyGun::UpdateLoading(float DeltaSeconds)
 	if (!bLoadFinished)
 	{
 		bLoadFinished = true;
+		LoadingFeedback.Stop(0.04f);
 		ClearLoadingVisuals();
 		if (Settings->LoadedSound)
 		{
@@ -260,6 +261,7 @@ void AMoneyGun::ClearProjectiles()
 
 void AMoneyGun::EndPlay(const EEndPlayReason::Type Reason)
 {
+	LoadingFeedback.Stop(0.f);
 	ClearLoadingVisuals();
 	Super::EndPlay(Reason);
 }

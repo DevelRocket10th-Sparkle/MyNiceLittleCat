@@ -15,6 +15,8 @@
 #include "Enemy/GAS/EnemyCombatTags.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
+#include "Components/AudioComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "Components/MeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 
@@ -135,6 +137,7 @@ void UGA_BossLaserBeam::StartShot()
 
 	// 1단계: 추적
 	Stage = EBossLaserBeamStage::Tracking;
+	ChargeAudio = UGameplayStatics::SpawnSoundAttached(LaserSettings->ChargeSound, Laser);
 	StartChargeEffect();
 	ShowAimWarning(0.f);
 
@@ -189,6 +192,8 @@ void UGA_BossLaserBeam::HandleLockFinished()
 
 	// 3단계: 발사
 	Stage = EBossLaserBeamStage::Firing;
+	if (IsValid(ChargeAudio)) { ChargeAudio->FadeOut(0.04f, 0.f); }
+	ChargeAudio = nullptr;
 	StopChargeEffect();
 	HideAimWarning();
 
@@ -200,6 +205,7 @@ void UGA_BossLaserBeam::HandleLockFinished()
 
 	Laser->OnLaserStopped.AddUniqueDynamic(this, &UGA_BossLaserBeam::HandleLaserStopped);
 	Laser->StartLaser(GetBeamTargetLocation(Laser, AimPoint), LaserSettings->FireDuration);
+	FireAudio = UGameplayStatics::SpawnSoundAttached(LaserSettings->FireSound, Laser);
 	SetStaffEyeGlow(Laser->IsLaserActive());
 
 	UE_LOG(LogTemp, Log, TEXT("[BossLaser] %s: 발사 (%.2f초, 발사 중 추적 %s)"),
@@ -208,6 +214,8 @@ void UGA_BossLaserBeam::HandleLockFinished()
 
 void UGA_BossLaserBeam::HandleLaserStopped(ULaserBeamComponent* InLaser)
 {
+	if (IsValid(FireAudio)) { FireAudio->FadeOut(0.04f, 0.f); }
+	FireAudio = nullptr;
 	SetStaffEyeGlow(false);
 	if (IsValid(Laser))
 	{
@@ -508,6 +516,10 @@ void UGA_BossLaserBeam::RestoreMoveSpeed()
 // 부모 EndAbility가 먼저 호출 → 이 정리 뒤에 부모가 이동/회전 잠금 해제, ExecutionTarget/RequestId 등 초기화, Super::EndAbility 진행
 void UGA_BossLaserBeam::StopPattern(bool bWasCancelled)
 {
+	if (IsValid(ChargeAudio)) { ChargeAudio->Stop(); }
+	if (IsValid(FireAudio)) { FireAudio->Stop(); }
+	ChargeAudio = nullptr;
+	FireAudio = nullptr;
 	SetStaffEyeGlow(false);
 	Stage = EBossLaserBeamStage::None;
 	StopChargeEffect();
