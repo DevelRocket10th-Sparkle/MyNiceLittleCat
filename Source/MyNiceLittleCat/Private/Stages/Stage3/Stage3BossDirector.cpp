@@ -100,6 +100,11 @@ bool AStage3BossDirector::CanBeginIntro_Implementation(APlayerCharacter* Player)
 void AStage3BossDirector::OnIntroStarting_Implementation(ABossCharacter* Boss)
 {
 	OpeningStep = EOpeningStep::BossIntro;
+	if (UEnemyEyeGlowComponent* EyeGlow = GetBossEyeGlow(Boss))
+	{
+		EyeGlow->StopWarningPulse();
+		EyeGlow->SetGlowColor(FLinearColor::Black);
+	}
 
 	// 숨겨 두었던 보스를 등장 컷부터 보이게 함
 	if (Boss)
@@ -119,6 +124,11 @@ void AStage3BossDirector::OnIntroFinished_Implementation()
 
 void AStage3BossDirector::OnEncounterStarted_Implementation()
 {
+	if (ABossCharacter* Boss = GetCurrentBoss())
+	{
+		OnStagePhaseStarted(Boss->GetCurrentPhaseId(), Boss);
+	}
+
 	bEntranceClosed = false;
 	GetWorldTimerManager().SetTimer(EntranceCheckTimer, this, &AStage3BossDirector::UpdateEntranceCheck, EntranceCheckInterval, true);
 }
@@ -137,11 +147,16 @@ void AStage3BossDirector::OnPhaseStagingBegin_Implementation(FName PhaseId, ABos
 	const TArray<const AActor*> IgnoredActors = { Boss, GetAlivePlayer() };
 	BloodTrailDecals->SpawnTrail(Staging->Sequence, GetStageTransform(), Staging->BloodTrail, IgnoredActors);
 
-	if (Staging->bSirenWarning)
+	if (PhaseId == TEXT("Barrier30") || Staging->bSirenWarning)
 	{
 		if (UEnemyEyeGlowComponent* EyeGlow = GetBossEyeGlow(Boss))
 		{
-			EyeGlow->PlayWarningPulse(SirenColor, SirenSeconds);
+			EyeGlow->StopWarningPulse();
+			EyeGlow->SetGlowColor(Staging->EyeGlow);
+			if (Staging->bSirenWarning)
+			{
+				EyeGlow->PlayWarningPulse(Staging->EyeGlow, SirenSeconds);
+			}
 		}
 	}
 
@@ -181,6 +196,16 @@ bool AStage3BossDirector::HandleStageMarker_Implementation(const FCinematicMarke
 {
 	// Stair:Break → 계단 막이 제거
 	const FCinematicMarkerArgs Args(Marker.Label);
+	if (Args.IsCommand(TEXT("EyeGlow")))
+	{
+		const FStage3PhaseStaging* Staging = Phases.Find(FName(*Args.GetArg(0)));
+		if (UEnemyEyeGlowComponent* EyeGlow = GetBossEyeGlow(GetCurrentBoss()); Staging && EyeGlow)
+		{
+			EyeGlow->StopWarningPulse();
+			EyeGlow->SetGlowColor(Staging->EyeGlow);
+		}
+		return true;
+	}
 	if (Args.IsCommand(TEXT("Stair")) && Args.ArgEquals(0, TEXT("Break")))
 	{
 		SetStairBlocked(false);

@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.22.
-* 수정 일자: 2026.11.17. (주석 정리)
+* 수정 일자: 2026.11.17. (주석 정리, 타격 연출 HitCue 추가)
 * 근접 공격 GA(GA_Enemy_MeleeAttack)의 패턴별 실행 설정
 * - 공격 몽타주와 시작 섹션
 * - 판정 구간(AnimNotifyState) 동안 Sphere Sweep할 소켓 목록 (판정 소스별)
@@ -11,10 +11,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Enemy/Combat/EnemyFeedback.h"
 #include "Enemy/Data/EnemyPatternExecutionSettings.h"
 #include "EnemyMeleePatternSettings.generated.h"
 
 class UAnimMontage;
+class USoundBase;
 
 // 데이터 에셋 내부에서 생성하는 소켓별 판정 설정. 별도 에셋 생성 불필요.
 UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, meta = (DisplayName = "Melee Trace Settings"))
@@ -72,6 +74,16 @@ public :
 	// NotifyState 구간 동안 각 소켓의 이전 위치에서 현재 위치까지 Sphere Sweep
 	UPROPERTY(EditAnywhere, Instanced, NoClear, BlueprintReadOnly, Category = "Melee", meta = (DisplayName = "Melee Traces"))
 	TArray<TObjectPtr<UEnemyMeleeTraceSettings>> MeleeTraceSettings;
+
+	// 대상에게 맞은 지점에서 재생할 타격 소리와 이펙트 (대상당 1회, 돌진 판정 포함)
+	// - 휘두르는 소리, 내려찍는 먼지처럼 "맞든 안 맞든" 나는 연출은 몽타주의 Play Sound / Play Niagara Effect 노티파이로 배치
+	// - 플레이어 자신의 피격 소리는 플레이어 쪽(HitSoundComponent)에서 재생하므로 여기는 무기/몸 충돌음
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee|Feedback")
+	FEnemyFeedbackCue HitCue;
+
+	// 무기 판정 구간 시작 시 재생, 구간 종료/패턴 취소 시 정지.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee|Feedback")
+	TObjectPtr<USoundBase> SwingSound;
 
 	// 배열에 항목을 추가하면 판정 설정 객체를 생성
 #if WITH_EDITOR

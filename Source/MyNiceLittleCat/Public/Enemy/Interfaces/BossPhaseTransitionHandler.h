@@ -52,4 +52,7 @@ public :
 
 	// 전투 정지/초기화로 전환이 무효화됨: 진행 중인 연출과 대기를 정리 (완료 통지 금지)
 	virtual void CancelPhaseTransition(int64 TransitionId) = 0;
+
+	// 연출은 끝났고 플레이어 도착(아레나 진입 등)을 기다리는 중인지 (UI 안내용, 기본 false)
+	virtual bool IsWaitingForPlayer(int64 TransitionId) const { return false; }
 };

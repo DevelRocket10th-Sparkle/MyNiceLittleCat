@@ -48,6 +48,15 @@ void UBossPhaseComponent::SetMovementRoutes(const TMap<FName, FBossMovementRoute
 	MovementRoutes = InRoutes;
 }
 
+bool UBossPhaseComponent::IsWaitingForPlayer() const
+{
+	if (!IsTransitioning())
+		return false;
+
+	const IBossPhaseTransitionHandler* Handler = GetTransitionHandler();
+	return Handler && Handler->IsWaitingForPlayer(ActiveTransitionId);
+}
+
 void UBossPhaseComponent::SetTransitionHandler(UObject* InHandler)
 {
 	// 계약을 구현하지 않은 객체는 받지 않음

@@ -4,7 +4,8 @@
 * 작성 일자: 2026.11.17.
 * 보스방 레벨 연출 담당의 공통 베이스 (레벨 배치 액터, 보스방 하나당 하나)
 * - 보스방 매니저에 연출 담당자로 등록, 등장 컷 → 전투 시작, 페이즈 전환 컷 → 아레나 진입 대기 → 다음 페이즈
-* - 공통 마커 처리: Door:<번호>:Open|Close[:초], Door:<번호>:Lock|Unlock, Event:<이름>[:Off]
+* - 공통 마커 처리: Door:<번호>:Open|Close[:초], Door:<번호>:Lock|Unlock, Event:<이름>[:Off], Cue:<이름>
+* - Cue:<이름>: CinematicCues에 등록한 소리/이펙트 재생 (시퀀스를 다시 생성해도 레벨의 연출 설정은 유지)
 * - 문은 연출 중에만 강제하고, 초기화·처치 때 강제를 풀어 문 자체 규칙(신호, 플레이어, 잠금)에 돌려줌
 * - 페이즈가 끝난 방의 문(DoorsFreedOnPhaseEnd)과 처치 후의 문은 플레이어에게 넘김 (잠금 해제 + 여닫기), 초기화 때 원래대로
 * - 스테이지마다 다른 부분은 파생 클래스(C++ 또는 BP)가 아래 확장 지점에서 처리
@@ -30,6 +31,7 @@
 #include "GameFramework/Actor.h"
 
 #include "Cinematics/CinematicTypes.h"
+#include "Enemy/Combat/EnemyFeedback.h"
 #include "Enemy/Interfaces/BossEncounterDirector.h"
 #include "Enemy/Interfaces/BossPhaseTransitionHandler.h"
 
@@ -76,6 +78,55 @@ struct FStagePhaseStaging
 	TArray<int32> DoorsFreedOnPhaseEnd;
 };
 
+// 컷 마커 Cue:<이름>의 연출 기준 위치
+UENUM(BlueprintType)
+enum class EStageCueTarget : uint8
+{
+	Stage	UMETA(DisplayName = "Stage (스테이지 로컬 좌표)"),
+	Boss	UMETA(DisplayName = "Boss (보스 메시)"),
+	Player	UMETA(DisplayName = "Player (플레이어 메시)"),
+	Actor	UMETA(DisplayName = "Actor (레벨 액터)")
+};
+
+// 컷 마커 Cue:<이름> 하나가 재생할 소리와 이펙트
+USTRUCT(BlueprintType)
+struct FStageCinematicCue
+{
+	GENERATED_BODY()
+
+	// 재생할 소리와 이펙트
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue")
+	FEnemyFeedbackCue Feedback;
+
+	// 기준 위치: 스테이지 좌표, 보스, 플레이어, 지정 액터
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue")
+	EStageCueTarget Target = EStageCueTarget::Stage;
+
+	// Target이 Actor일 때 기준 액터 (계단 막이, 대문 등 레벨에 배치된 액터)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue", meta = (EditCondition = "Target == EStageCueTarget::Actor", EditConditionHides))
+	TObjectPtr<AActor> TargetActor;
+
+	// Target이 Boss/Player일 때 붙일 메시 소켓 (None이면 메시 원점 = 발밑)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue")
+	FName Socket;
+
+	// Stage: 스테이지 로컬 좌표 / 그 외: 기준 위치에서 기준의 로컬 방향으로 더할 거리
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue")
+	FVector Offset = FVector::ZeroVector;
+
+	// 기준을 따라 움직이도록 붙여서 재생 (Stage 기준은 무시)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue")
+	bool bAttach = false;
+
+	// 붙여서 재생한 반복 연출을 끌 시간 (0이면 이펙트가 스스로 끝날 때까지, 초기화/처치/종료 때는 항상 정지)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue", meta = (ClampMin = "0.0", Units = "s", EditCondition = "bAttach"))
+	float StopAfterSeconds = 0.f;
+
+	// 스킵으로 한꺼번에 전달될 때도 재생할지 (기본: 지나간 연출은 재생하지 않음)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue")
+	bool bPlayWhenSkipped = false;
+};
+
 // 스테이지가 플레이어에게 넘긴 문의 원래 상태 (전투 초기화 때 복원)
 struct FStageDoorDefaultState
 {
@@ -106,6 +157,7 @@ public :
 
 	virtual bool BeginPhaseTransition(const FBossPhaseTransitionContext& Context) override;
 	virtual void CancelPhaseTransition(int64 TransitionId) override;
+	virtual bool IsWaitingForPlayer(int64 TransitionId) const override;
 
 	/* 파생 클래스와 BP가 쓰는 도우미 */
 
@@ -249,6 +301,10 @@ private :
 
 	void HandleDoorMarker(const FCinematicMarkerArgs& Args, bool bInstant);
 	void HandleEventMarker(const FCinematicMarkerArgs& Args);
+	void HandleCueMarker(const FCinematicMarkerArgs& Args, bool bReachedByPlayback);
+
+	// 붙여서 재생 중인 컷 연출 정지 (초기화, 처치, 종료)
+	void StopCinematicCues();
 
 protected :
 
@@ -306,6 +362,12 @@ protected :
 	UPROPERTY(EditInstanceOnly, Category = "Stage|Cinematic")
 	TMap<FName, TObjectPtr<AActor>> EventReceivers;
 
+	// 마커 Cue:<이름>이 재생할 소리와 이펙트 (키: 이름)
+	// - 시퀀스에는 마커만 두고 에셋은 여기서 지정: 시퀀스를 다시 생성해도 연출 설정 유지
+	// - 등록하지 않은 이름의 마커는 무시 (자리만 만들어 둔 마커)
+	UPROPERTY(EditInstanceOnly, Category = "Stage|Cinematic")
+	TMap<FName, FStageCinematicCue> CinematicCues;
+
 private :
 
 	// 현재 보스
@@ -327,4 +389,7 @@ private :
 
 	// 아레나 진입 확인 타이머
 	FTimerHandle ArenaEntryTimer;
+
+	// 붙여서 재생 중인 컷 연출
+	TArray<FEnemyFeedbackInstance> ActiveCueInstances;
 };

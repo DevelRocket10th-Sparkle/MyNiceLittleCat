@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.14.
-* 수정 일자: 2026.11.17. (중복 주석 정리)
+* 수정 일자: 2026.11.17. (중복 주석 정리, 사망/시체 사라짐 연출 슬롯 추가)
 * 잡몹/보스 캐릭터의 기본 클래스
 * - GAS 연결
 */
@@ -14,6 +14,7 @@
 
 #include "AbilitySystemInterface.h"
 #include "EnemyTypes.h"
+#include "Enemy/Combat/EnemyFeedback.h"
 #include "Interfaces/TargetableInterface.h"
 
 #include "EnemyCharacter.generated.h"
@@ -136,6 +137,9 @@ protected:
 
 	void HandleDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
+	// 시체 유지 시간이 끝나 제거되기 직전: 사라짐 연출 재생 후 부모 호출(Destroy)
+	virtual void LifeSpanExpired() override;
+
 	/* Pattern Component */
 
 	// 기본 초기화 뒤 파생 캐릭터의 추가 설정 준비
@@ -195,6 +199,18 @@ protected :
 	// 사망 시 카메라 셰이크 강도
 	UPROPERTY(EditAnywhere, Category = "Death")
 	float DeathShakeScale = 2.5f;
+
+	// 사망 판정 직후 몸 중심에서 재생할 소리와 이펙트 (비명, 터지는 빛 등)
+	UPROPERTY(EditDefaultsOnly, Category = "Death|Feedback")
+	FEnemyFeedbackCue DeathCue;
+
+	// 시체가 사라지는 순간 재생할 소리와 이펙트 (연기 펑 등)
+	UPROPERTY(EditDefaultsOnly, Category = "Death|Feedback")
+	FEnemyFeedbackCue CorpseVanishCue;
+
+	// 사망 연출이 끝난 뒤 시체가 남아 있는 시간
+	UPROPERTY(EditDefaultsOnly, Category = "Death", meta = (ClampMin = "0.0", Units = "s"))
+	float CorpseLifeSeconds = 3.f;
 
 	/* 밀려나기 */
 	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0", ClampMax = "1.0"))

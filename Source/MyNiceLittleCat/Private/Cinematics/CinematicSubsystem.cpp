@@ -285,6 +285,8 @@ bool UCinematicSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType)
 void UCinematicSubsystem::Deinitialize()
 {
 	// 월드 종료 중에는 콜백을 호출하지 않고 정리만 수행
+	OnCutsceneStateChanged.Clear();
+
 	TArray<FCinematicPlayback> Remaining = MoveTemp(Playbacks);
 	Playbacks.Reset();
 
@@ -556,6 +558,8 @@ void UCinematicSubsystem::BeginCutsceneEffects()
 		SuspendedOcclusion = Occlusion;
 		Occlusion->SetOcclusionSuspended(true);
 	}
+
+	OnCutsceneStateChanged.Broadcast(true);
 }
 
 void UCinematicSubsystem::EndCutsceneEffects()
@@ -576,4 +580,6 @@ void UCinematicSubsystem::EndCutsceneEffects()
 		Occlusion->SetOcclusionSuspended(false);
 	}
 	SuspendedOcclusion.Reset();
+
+	OnCutsceneStateChanged.Broadcast(false);
 }

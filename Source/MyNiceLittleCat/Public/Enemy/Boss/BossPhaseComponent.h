@@ -102,6 +102,9 @@ public :
 	// 현재 페이즈 설정: 시작 전에는 nullptr
 	const FBossPhaseDefinition* GetCurrentPhase() const;
 
+	// Getter: 초기화에 사용한 페이즈 설정 (체력바 경계 표시용)
+	const UBossPhaseConfigData* GetConfig() const { return Config; }
+
 	// Getter: 현재 페이즈 ID
 	UFUNCTION(BlueprintPure, Category = "Boss|Phase")
 	FName GetCurrentPhaseId() const;
@@ -118,6 +121,9 @@ public :
 
 	// 전환 연출 또는 페이즈 적용 처리가 진행 중인지 확인
 	bool IsTransitioning() const { return RunState == EBossPhaseRunState::Transitioning; }
+
+	// 전환 연출이 끝나고 플레이어 도착을 기다리는 중인지 (전환 담당자에게 확인, 체력바 안내용)
+	bool IsWaitingForPlayer() const;
 
 	// 현재 경로 지점 좌표: 실제로 Waypoints 이동 중인지는 호출자가 확인
 	bool GetCurrentWaypoint(FVector& OutLocation) const;

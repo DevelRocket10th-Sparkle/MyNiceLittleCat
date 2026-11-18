@@ -4,6 +4,9 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "NiagaraFunctionLibrary.h"
+
+#include "Enemy/Combat/EnemyFeedback.h"
 
 AMoneyGun::AMoneyGun()
 {
@@ -36,6 +39,9 @@ bool AMoneyGun::StartPattern(UMoneyGunPatternSettings* InSettings, AActor* InTar
 	{
 		Mesh->SetRelativeScale3D(FVector::ZeroVector);
 	}
+
+	// 등장 연출
+	EnemyFeedback::PlayAtLocation(this, Settings->AppearCue, GetActorLocation(), GetActorRotation());
 	return true;
 }
 
@@ -119,6 +125,9 @@ bool AMoneyGun::UpdateLoading(float DeltaSeconds)
 			bFailed = true;
 			return false;
 		}
+
+		// 장전 시작 연출: 지폐가 모여드는 지점
+		LoadingFeedback = EnemyFeedback::PlayAttached(Settings->LoadStartCue, LoadPoint);
 	}
 	const float LoadAlpha = FMath::Clamp((Elapsed - Settings->AppearSeconds) / Settings->LoadSeconds, 0.f, 1.f);
 	const FVector End = Root->GetComponentTransform().InverseTransformPosition(LoadPoint->GetComponentLocation());
@@ -140,10 +149,15 @@ bool AMoneyGun::UpdateLoading(float DeltaSeconds)
 	if (!bLoadFinished)
 	{
 		bLoadFinished = true;
+		LoadingFeedback.Stop(0.04f);
 		ClearLoadingVisuals();
 		if (Settings->LoadedSound)
 		{
 			UGameplayStatics::PlaySoundAtLocation(this, Settings->LoadedSound, GetActorLocation());
+		}
+		if (Settings->LoadedEffect)
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, Settings->LoadedEffect, LoadPoint->GetComponentLocation(), GetActorRotation());
 		}
 	}
 	return true;
@@ -173,6 +187,13 @@ void AMoneyGun::UpdateDisappearance()
 {
 	// 마지막 발사를 기준으로 등장 스케일 연출을 거꾸로 재생한다. 날아간 지폐는 유지한다.
 	const float LastShotTime = Settings->GetExecutionSeconds() - Settings->AppearSeconds;
+
+	// 퇴장 연출은 사라지기 시작할 때 한 번
+	if (!bDisappearStarted)
+	{
+		bDisappearStarted = true;
+		EnemyFeedback::PlayAtLocation(this, Settings->DisappearCue, GetActorLocation(), GetActorRotation());
+	}
 	const float Alpha = Settings->AppearSeconds > 0.f
 		? FMath::Clamp((Elapsed - LastShotTime) / Settings->AppearSeconds, 0.f, 1.f)
 		: 1.f;
@@ -201,6 +222,12 @@ bool AMoneyGun::Fire()
 	if (Settings->ShotSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, Settings->ShotSound, MuzzlePoint->GetComponentLocation());
+	}
+	if (Settings->MuzzleEffect)
+	{
+		FEnemyFeedbackCue MuzzleCue;
+		MuzzleCue.Effect = Settings->MuzzleEffect;
+		EnemyFeedback::PlayAtLocation(this, MuzzleCue, MuzzlePoint->GetComponentLocation(), MuzzlePoint->GetComponentRotation());
 	}
 	OnShot();
 	return true;
@@ -234,6 +261,7 @@ void AMoneyGun::ClearProjectiles()
 
 void AMoneyGun::EndPlay(const EEndPlayReason::Type Reason)
 {
+	LoadingFeedback.Stop(0.f);
 	ClearLoadingVisuals();
 	Super::EndPlay(Reason);
 }

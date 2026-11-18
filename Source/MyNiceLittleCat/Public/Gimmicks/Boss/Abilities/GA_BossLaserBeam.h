@@ -24,6 +24,9 @@
 class ULaserBeamComponent;
 class UBossLaserPatternSettings;
 class AAttackWarningDecal;
+class UNiagaraComponent;
+class UAudioComponent;
+class UMaterialInstanceDynamic;
 
 UENUM()
 enum class EBossLaserBeamStage : uint8
@@ -93,6 +96,10 @@ protected:
 
 	void HideAimWarning();
 
+	void StartChargeEffect();
+	void StopChargeEffect();
+	void SetStaffEyeGlow(bool bEnabled);
+
 	bool IsExecutionValid() const;
 
 	void EndWithResult(bool bWasCancelled);
@@ -112,6 +119,20 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAttackWarningDecal> Warning;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> ChargeEffectComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> ChargeAudio;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> FireAudio;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> StaffEyeMaterial;
+
+	double ChargeStartTime = 0.0;
 
 	EBossLaserBeamStage Stage = EBossLaserBeamStage::None;
 

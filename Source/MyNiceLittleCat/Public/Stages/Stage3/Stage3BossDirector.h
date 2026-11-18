@@ -192,12 +192,9 @@ protected :
 	UPROPERTY(EditInstanceOnly, Category = "Stage3|Staging")
 	TObjectPtr<AActor> StairBlocker;
 
-	// 사이렌 경고 길이와 최대 눈 색
-	UPROPERTY(EditInstanceOnly, Category = "Stage3|Staging", meta = (ClampMin = "0.0", Units = "s"))
+	// 사이렌 경고 길이. 깜빡임 색은 해당 페이즈의 EyeGlow 사용.
+	UPROPERTY(EditInstanceOnly, Category = "Stage3|Siren", meta = (ClampMin = "0.0", Units = "s"))
 	float SirenSeconds = 3.f;
-
-	UPROPERTY(EditInstanceOnly, Category = "Stage3|Staging")
-	FLinearColor SirenColor = FLinearColor(13.f, 0.05f, 0.02f);
 
 private :
 

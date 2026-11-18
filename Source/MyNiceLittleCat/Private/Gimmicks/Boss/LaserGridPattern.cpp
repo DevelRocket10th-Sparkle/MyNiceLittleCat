@@ -4,6 +4,8 @@
 /// 바닥 광역 레이저 패턴 구현
 
 #include "Gimmicks/Boss/LaserGridPattern.h"
+#include "Components/AudioComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "Gimmicks/Boss/LaserGridSequenceData.h"
 #include "Gimmicks/Laser/LaserBeamComponent.h"
 #include "Gimmicks/Warning/AttackWarningDecal.h"
@@ -676,6 +678,7 @@ void ALaserGridPattern::FireSlot(int32 SlotIndex)
 		Slot.Laser->SetMaxRange(AlongHalf * 2.f);
 		Slot.Laser->SetDamagePerHit(ActiveDamageOverride >= 0.f ? ActiveDamageOverride : DefaultDamagePerHit);
 		Slot.Laser->StartLaser(End, Slot.FireDuration);
+		Slot.FireAudio = UGameplayStatics::SpawnSoundAttached(FireSound, Slot.Laser);
 	}
 
 	OnStrikeFired.Broadcast(Slot.Axis, Slot.LaneIndex);
@@ -704,6 +707,8 @@ void ALaserGridPattern::ReleaseSlot(int32 SlotIndex)
 	}
 
 	Slot.bBusy = false;
+	if (IsValid(Slot.FireAudio)) { Slot.FireAudio->Stop(); }
+	Slot.FireAudio = nullptr;
 
 	TryFinishSequenceOnce();
 }
