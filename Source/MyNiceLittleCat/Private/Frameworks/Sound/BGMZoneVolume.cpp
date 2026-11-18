@@ -10,7 +10,19 @@ ABGMZoneVolume::ABGMZoneVolume()
 	Box->SetBoxExtent(FVector(1000.f, 1000.f, 500.f));
 
 	// 오버랩 감지만 하고 아무것도 막지 않음
-	Box->SetCollisionProfileName(TEXT("Trigger"));
+	// 쿼리(오버랩)만 사용, 물리 충돌 없음
+	Box->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+
+	// 오브젝트 타입을 Vehicle로: 레이저의 ObjectType 트레이스(WorldStatic/Dynamic/Pawn/PhysicsBody)에 안 걸리게 하려는 의도
+	// (프로젝트에서 Vehicle 채널은 쓰는 곳이 없음)
+	Box->SetCollisionObjectType(ECC_Vehicle);
+
+	// 모든 채널 무시 → 터렛 프로젝타일(커스텀 채널) 등 아무것도 막지 않음
+	Box->SetCollisionResponseToAllChannels(ECR_Ignore);
+
+	// 플레이어 감지만 남김
+	Box->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+
 	Box->SetGenerateOverlapEvents(true);
 }
 
