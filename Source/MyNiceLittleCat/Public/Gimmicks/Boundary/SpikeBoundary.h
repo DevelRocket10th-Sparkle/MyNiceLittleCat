@@ -5,8 +5,9 @@
 * 스플라인을 따라 가시를 깔고, 같은 선에 보이지 않는 벽을 세워 플레이어 이동 영역을 제한하는 액터
 * - 레벨에서 스플라인 점을 옮겨 경계 모양을 그림 (닫힌 루프): 어떤 아레나 모양에도 맞출 수 있음
 * - 가시: 메시 후보 목록에서 가시마다 무작위로 골라 인스턴스로 배치 (콜리전 없음), 간격·줄 수·크기·회전 무작위 조절
-* - 벽: 스플라인을 일정 길이로 나눈 큐브 인스턴스, 게임에서는 숨김, Pawn 채널만 막음 (투사체·레이저·카메라는 통과)
-* - 피해: 플레이어가 벽에 닿으면 TouchDamage (대상별 DamageCooldown), 적·보스는 막히기만 함
+* - 벽: 스플라인을 일정 길이로 나눈 큐브 인스턴스, 게임에서는 숨김, BlockedChannels만 막음
+*   (기본 Pawn + PhysicsBody: 플레이어·보스·떨어진 자석 동전, 투사체·레이저·카메라는 통과)
+* - 피해·넉백: 플레이어가 조종하는 폰만 (TouchDamage, 대상별 DamageCooldown), 적·보스·동전은 막히기만 함
 * - 메시는 BP 자식(BP_SpikeBoundary)에서 지정: 코드에 에셋 경로를 두지 않음
 */
 
@@ -101,6 +102,13 @@ protected :
 	// 보이지 않는 벽 사용 (끄면 가시만 깔림)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spike Boundary|Walls")
 	bool bBlockPawns = true;
+
+	// 벽이 막을 오브젝트 채널 (나머지는 통과)
+	// - Pawn: 플레이어, 보스·적 캡슐
+	// - PhysicsBody: 물리 시뮬레이션 중인 오브젝트 (바닥에 떨어진 자석 동전 등)
+	// - 레이저 트레이스(Visibility)·투사체·카메라는 넣지 않아야 통과
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spike Boundary|Walls", meta = (EditCondition = "bBlockPawns"))
+	TArray<TEnumAsByte<ECollisionChannel>> BlockedChannels = { ECC_Pawn, ECC_PhysicsBody };
 
 	// 벽 메시 (기본 큐브처럼 100cm 크기 메시를 기준으로 늘림)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spike Boundary|Walls")
