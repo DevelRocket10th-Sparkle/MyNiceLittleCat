@@ -157,6 +157,7 @@ public :
 
 	virtual bool BeginPhaseTransition(const FBossPhaseTransitionContext& Context) override;
 	virtual void CancelPhaseTransition(int64 TransitionId) override;
+	virtual bool IsWaitingForPlayer(int64 TransitionId) const override;
 
 	/* 파생 클래스와 BP가 쓰는 도우미 */
 

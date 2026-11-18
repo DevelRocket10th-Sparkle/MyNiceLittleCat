@@ -536,6 +536,13 @@ bool AStageEncounterDirector::HasPlayerEnteredArena(const FStagePhaseStaging& St
 		&& Delta.Z < Staging.EntryExtent.Z;
 }
 
+bool AStageEncounterDirector::IsWaitingForPlayer(int64 TransitionId) const
+{
+	// 전환 컷이 끝나 아레나 진입 확인 타이머가 도는 동안
+	return TransitionId != 0 && TransitionId == ActiveTransitionId
+		&& GetWorldTimerManager().IsTimerActive(ArenaEntryTimer);
+}
+
 void AStageEncounterDirector::ClearActiveTransition()
 {
 	GetWorldTimerManager().ClearTimer(ArenaEntryTimer);

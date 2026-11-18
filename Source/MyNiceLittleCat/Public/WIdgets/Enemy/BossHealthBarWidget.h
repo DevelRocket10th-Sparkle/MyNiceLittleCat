@@ -23,7 +23,8 @@ enum class EBossHealthBarLockMode : uint8
 {
 	None,		// 일반 전투
 	Transition,	// 페이즈 전환 요청 또는 진행 중
-	Barrier		// 배리어(기믹) 페이즈: 기믹 완료 전까지 피가 닳지 않음
+	Barrier,	// 배리어(기믹) 페이즈: 기믹 완료 전까지 피가 닳지 않음
+	FollowBoss	// 전환 컷이 끝나고 플레이어가 다음 아레나에 들어오기를 기다리는 중
 };
 
 /**
@@ -90,6 +91,10 @@ protected :
 	// 배리어 페이즈 잠금 문구
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Lock")
 	FText BarrierLockMessage = NSLOCTEXT("BossHealthBar", "BarrierLock", "배리어를 파괴하라!");
+
+	// 전환 컷 종료 후 다음 아레나 진입 대기 문구
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Lock")
+	FText FollowBossLockMessage = NSLOCTEXT("BossHealthBar", "FollowBossLock", "보스를 따라가라!");
 
 	// 잠금 문구 깜빡임 속도 (초당 횟수, 0이면 깜빡이지 않음)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Lock", meta = (ClampMin = "0.0"))

@@ -106,12 +106,17 @@ EBossHealthBarLockMode UBossHealthBarWidget::GetLockMode() const
 	if (!IsValid(Boss) || LastRatio <= 0.f)
 		return EBossHealthBarLockMode::None;
 
-	// 전환 요청부터 다음 페이즈 적용까지
+	const UBossPhaseComponent* PhaseComponent = Boss->GetPhaseComponent();
+
+	// 전환 요청부터 다음 페이즈 적용까지 (컷 종료 후 플레이어 도착 대기는 따로 안내)
 	if (Boss->IsPhaseTransitionInProgress())
-		return EBossHealthBarLockMode::Transition;
+	{
+		return (PhaseComponent && PhaseComponent->IsWaitingForPlayer())
+			? EBossHealthBarLockMode::FollowBoss
+			: EBossHealthBarLockMode::Transition;
+	}
 
 	// 배리어 페이즈 진행 중
-	const UBossPhaseComponent* PhaseComponent = Boss->GetPhaseComponent();
 	if (PhaseComponent && PhaseComponent->IsActive())
 	{
 		const FBossPhaseDefinition* Phase = PhaseComponent->GetCurrentPhase();
@@ -147,7 +152,12 @@ void UBossHealthBarWidget::RefreshLockDisplay(float DeltaTime)
 		LockText->SetRenderOpacity(TextOpacity);
 		if (Mode != EBossHealthBarLockMode::None)
 		{
-			LockText->SetText(Mode == EBossHealthBarLockMode::Barrier ? BarrierLockMessage : TransitionLockMessage);
+			switch (Mode)
+			{
+			case EBossHealthBarLockMode::Barrier:		LockText->SetText(BarrierLockMessage); break;
+			case EBossHealthBarLockMode::FollowBoss:	LockText->SetText(FollowBossLockMessage); break;
+			default:									LockText->SetText(TransitionLockMessage); break;
+			}
 		}
 	}
 }
