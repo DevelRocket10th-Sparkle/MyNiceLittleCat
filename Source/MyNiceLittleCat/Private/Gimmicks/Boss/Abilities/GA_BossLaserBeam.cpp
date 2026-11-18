@@ -13,6 +13,8 @@
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "Enemy/GAS/EnemyCombatTags.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 
 namespace
 {
@@ -131,6 +133,7 @@ void UGA_BossLaserBeam::StartShot()
 
 	// 1단계: 추적
 	Stage = EBossLaserBeamStage::Tracking;
+	StartChargeEffect();
 	ShowAimWarning(0.f);
 
 	UE_LOG(LogTemp, Log, TEXT("[BossLaser] %s: %d/%d발 추적 시작 (%.2f초)"), *Enemy->GetName(), ShotsFired + 1, LaserSettings->ShotCount, LaserSettings->AimTrackTime);
@@ -184,6 +187,7 @@ void UGA_BossLaserBeam::HandleLockFinished()
 
 	// 3단계: 발사
 	Stage = EBossLaserBeamStage::Firing;
+	StopChargeEffect();
 	HideAimWarning();
 
 	if (!FMath::IsNearlyEqual(LaserMoveSpeedMultiplier, 1.f))
@@ -258,6 +262,15 @@ void UGA_BossLaserBeam::UpdateAim()
 	if (!IsActive() || !IsExecutionValid())
 	{
 		return;
+	}
+
+	if (IsValid(ChargeEffectComponent))
+	{
+		const float Duration = LaserSettings->AimTrackTime + LaserSettings->LockDelay;
+		const float Progress = Duration > 0.f
+			? FMath::Clamp(static_cast<float>(GetWorld()->GetTimeSeconds() - ChargeStartTime) / Duration, 0.f, 1.f)
+			: 1.f;
+		ChargeEffectComponent->SetVariableFloat(TEXT("User.ChargeProgress"), Progress);
 	}
 
 	if (Stage == EBossLaserBeamStage::Tracking)
@@ -419,6 +432,35 @@ void UGA_BossLaserBeam::HideAimWarning()
 	Warning = nullptr;
 }
 
+void UGA_BossLaserBeam::StartChargeEffect()
+{
+	StopChargeEffect();
+	if (!LaserSettings->ChargeEffect || GetWorld()->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	ChargeStartTime = GetWorld()->GetTimeSeconds();
+	ChargeEffectComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		LaserSettings->ChargeEffect, Laser, NAME_None, LaserSettings->ChargeEffectOffset,
+		FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset, false, false);
+	if (IsValid(ChargeEffectComponent))
+	{
+		ChargeEffectComponent->SetRelativeScale3D(FVector(LaserSettings->ChargeEffectScale));
+		ChargeEffectComponent->SetVariableFloat(TEXT("User.ChargeProgress"), 0.f);
+		ChargeEffectComponent->Activate(true);
+	}
+}
+
+void UGA_BossLaserBeam::StopChargeEffect()
+{
+	if (IsValid(ChargeEffectComponent))
+	{
+		ChargeEffectComponent->DestroyComponent();
+	}
+	ChargeEffectComponent = nullptr;
+}
+
 bool UGA_BossLaserBeam::IsExecutionValid() const
 {
 	// 활성·생존·요청 진행 확인은 부모 도우미, 레이저 고유 조건만 추가
@@ -446,6 +488,7 @@ void UGA_BossLaserBeam::RestoreMoveSpeed()
 void UGA_BossLaserBeam::StopPattern(bool bWasCancelled)
 {
 	Stage = EBossLaserBeamStage::None;
+	StopChargeEffect();
 
 	if (Enemy.IsValid())
 	{

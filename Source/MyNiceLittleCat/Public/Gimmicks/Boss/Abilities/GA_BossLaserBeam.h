@@ -24,6 +24,7 @@
 class ULaserBeamComponent;
 class UBossLaserPatternSettings;
 class AAttackWarningDecal;
+class UNiagaraComponent;
 
 UENUM()
 enum class EBossLaserBeamStage : uint8
@@ -93,6 +94,9 @@ protected:
 
 	void HideAimWarning();
 
+	void StartChargeEffect();
+	void StopChargeEffect();
+
 	bool IsExecutionValid() const;
 
 	void EndWithResult(bool bWasCancelled);
@@ -112,6 +116,11 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAttackWarningDecal> Warning;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> ChargeEffectComponent;
+
+	double ChargeStartTime = 0.0;
 
 	EBossLaserBeamStage Stage = EBossLaserBeamStage::None;
 

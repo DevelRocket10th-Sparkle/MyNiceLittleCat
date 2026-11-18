@@ -15,6 +15,7 @@
 #include "BossLaserPatternSettings.generated.h"
 
 class UAnimMontage;
+class UNiagaraSystem;
 class AAttackWarningDecal;
 
 UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, meta = (DisplayName = "Boss Laser Pattern Settings"))
@@ -79,4 +80,14 @@ public:
 	// 매 발사의 추적·확정 동안 재생할 충전 몽타주 (선택, 끝나도 패턴은 계속)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Animation")
 	TObjectPtr<UAnimMontage> ChargeMontage;
+
+	// 추적 시작부터 발사 직전까지 레이저 발사점에 부착할 충전 이펙트
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual")
+	TObjectPtr<UNiagaraSystem> ChargeEffect;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual")
+	FVector ChargeEffectOffset = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual", meta = (ClampMin = "0.01"))
+	float ChargeEffectScale = 1.f;
 };
