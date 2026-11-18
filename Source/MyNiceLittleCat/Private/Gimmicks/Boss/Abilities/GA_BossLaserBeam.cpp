@@ -15,6 +15,8 @@
 #include "Enemy/GAS/EnemyCombatTags.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
+#include "Components/MeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 namespace
 {
@@ -198,6 +200,7 @@ void UGA_BossLaserBeam::HandleLockFinished()
 
 	Laser->OnLaserStopped.AddUniqueDynamic(this, &UGA_BossLaserBeam::HandleLaserStopped);
 	Laser->StartLaser(GetBeamTargetLocation(Laser, AimPoint), LaserSettings->FireDuration);
+	SetStaffEyeGlow(Laser->IsLaserActive());
 
 	UE_LOG(LogTemp, Log, TEXT("[BossLaser] %s: 발사 (%.2f초, 발사 중 추적 %s)"),
 		*Enemy->GetName(), LaserSettings->FireDuration, LaserSettings->bTrackDuringFire ? TEXT("켬") : TEXT("끔"));
@@ -205,6 +208,7 @@ void UGA_BossLaserBeam::HandleLockFinished()
 
 void UGA_BossLaserBeam::HandleLaserStopped(ULaserBeamComponent* InLaser)
 {
+	SetStaffEyeGlow(false);
 	if (IsValid(Laser))
 	{
 		Laser->OnLaserStopped.RemoveDynamic(this, &UGA_BossLaserBeam::HandleLaserStopped);
@@ -461,6 +465,23 @@ void UGA_BossLaserBeam::StopChargeEffect()
 	ChargeEffectComponent = nullptr;
 }
 
+void UGA_BossLaserBeam::SetStaffEyeGlow(bool bEnabled)
+{
+	if (bEnabled && !StaffEyeMaterial && Enemy.IsValid())
+	{
+		const TArray<UActorComponent*> Meshes = Enemy->GetComponentsByTag(UMeshComponent::StaticClass(), TEXT("LaserEyeGlow"));
+		if (!Meshes.IsEmpty())
+		{
+			StaffEyeMaterial = CastChecked<UMeshComponent>(Meshes[0])->CreateDynamicMaterialInstance(0);
+		}
+	}
+	if (StaffEyeMaterial)
+	{
+		StaffEyeMaterial->SetVectorParameterValue(TEXT("EyeGlow"),
+			bEnabled && LaserSettings ? LaserSettings->StaffEyeGlowColor : FLinearColor::Black);
+	}
+}
+
 bool UGA_BossLaserBeam::IsExecutionValid() const
 {
 	// 활성·생존·요청 진행 확인은 부모 도우미, 레이저 고유 조건만 추가
@@ -487,6 +508,7 @@ void UGA_BossLaserBeam::RestoreMoveSpeed()
 // 부모 EndAbility가 먼저 호출 → 이 정리 뒤에 부모가 이동/회전 잠금 해제, ExecutionTarget/RequestId 등 초기화, Super::EndAbility 진행
 void UGA_BossLaserBeam::StopPattern(bool bWasCancelled)
 {
+	SetStaffEyeGlow(false);
 	Stage = EBossLaserBeamStage::None;
 	StopChargeEffect();
 
@@ -519,6 +541,7 @@ void UGA_BossLaserBeam::StopPattern(bool bWasCancelled)
 
 	Laser = nullptr;
 	LaserSettings = nullptr;
+	StaffEyeMaterial = nullptr;
 	LaserMoveSpeedMultiplier = 1.f;
 	ShotsFired = 0;
 }

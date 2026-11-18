@@ -119,6 +119,11 @@ void AStage3BossDirector::OnIntroFinished_Implementation()
 
 void AStage3BossDirector::OnEncounterStarted_Implementation()
 {
+	if (ABossCharacter* Boss = GetCurrentBoss())
+	{
+		OnStagePhaseStarted(Boss->GetCurrentPhaseId(), Boss);
+	}
+
 	bEntranceClosed = false;
 	GetWorldTimerManager().SetTimer(EntranceCheckTimer, this, &AStage3BossDirector::UpdateEntranceCheck, EntranceCheckInterval, true);
 }

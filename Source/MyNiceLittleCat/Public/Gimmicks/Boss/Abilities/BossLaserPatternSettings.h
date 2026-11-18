@@ -90,4 +90,8 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual", meta = (ClampMin = "0.01"))
 	float ChargeEffectScale = 1.f;
+
+	// LaserEyeGlow 태그를 가진 무기 메시의 눈 발광 색. 발사 중에만 적용.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual")
+	FLinearColor StaffEyeGlowColor = FLinearColor(5.f, 0.3f, 12.f, 1.f);
 };

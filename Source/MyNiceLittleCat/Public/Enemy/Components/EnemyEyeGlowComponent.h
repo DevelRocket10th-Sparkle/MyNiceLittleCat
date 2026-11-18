@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.11.16.
-* 캐릭터 눈 위치에 발광 메시를 붙이고 색을 제어하는 컴포넌트
+* 캐릭터의 눈 표면 재질 또는 소켓에 붙인 발광 메시의 색을 제어하는 컴포넌트
 * - 메시, 재질, 소켓(뼈) 이름, 색 파라미터 이름을 모두 캐릭터 BP에서 설정
 * - 처음 발광할 때 눈 메시를 만들고, 이후에는 재질 파라미터만 변경
 * - 경고 깜빡임(PlayWarningPulse) 동안만 Tick
@@ -16,6 +16,7 @@
 
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UMeshComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
 
@@ -79,6 +80,13 @@ protected :
 
 	/* 외형 */
 
+	// 실제 눈 표면의 재질 파라미터로 발광. 이 모드에서는 별도 눈 메시를 생성하지 않음.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Eye Glow")
+	bool bUseMeshMaterial = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Eye Glow", meta = (EditCondition = "bUseMeshMaterial", ClampMin = "0"))
+	int32 EyeMaterialSlot = 0;
+
 	// 눈 위치에 붙일 메시
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Eye Glow")
 	TObjectPtr<UStaticMesh> EyeMesh;
@@ -118,6 +126,12 @@ private :
 	// 눈 메시들이 공유하는 동적 재질
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> EyeMaterialInstance;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMeshComponent> SurfaceMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> OriginalSurfaceMaterial;
 
 	// 생성한 눈 메시
 	UPROPERTY(Transient)

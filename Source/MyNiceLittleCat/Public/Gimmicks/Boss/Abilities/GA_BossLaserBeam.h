@@ -25,6 +25,7 @@ class ULaserBeamComponent;
 class UBossLaserPatternSettings;
 class AAttackWarningDecal;
 class UNiagaraComponent;
+class UMaterialInstanceDynamic;
 
 UENUM()
 enum class EBossLaserBeamStage : uint8
@@ -96,6 +97,7 @@ protected:
 
 	void StartChargeEffect();
 	void StopChargeEffect();
+	void SetStaffEyeGlow(bool bEnabled);
 
 	bool IsExecutionValid() const;
 
@@ -119,6 +121,9 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> ChargeEffectComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> StaffEyeMaterial;
 
 	double ChargeStartTime = 0.0;
 

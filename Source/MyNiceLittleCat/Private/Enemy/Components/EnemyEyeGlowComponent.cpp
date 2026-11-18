@@ -69,6 +69,13 @@ void UEnemyEyeGlowComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 void UEnemyEyeGlowComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (IsValid(SurfaceMesh) && SurfaceMesh->GetMaterial(EyeMaterialSlot) == EyeMaterialInstance)
+	{
+		SurfaceMesh->SetMaterial(EyeMaterialSlot, OriginalSurfaceMaterial);
+	}
+	SurfaceMesh = nullptr;
+	OriginalSurfaceMaterial = nullptr;
+
 	for (UStaticMeshComponent* Eye : EyeComponents)
 	{
 		if (IsValid(Eye))
@@ -87,6 +94,18 @@ bool UEnemyEyeGlowComponent::CreateEyeMeshes()
 {
 	ACharacter* Character = Cast<ACharacter>(GetOwner());
 	USkeletalMeshComponent* Mesh = Character ? Character->GetMesh() : nullptr;
+	if (bUseMeshMaterial)
+	{
+		SurfaceMesh = Mesh;
+		if (!SurfaceMesh || !EyeMaterial || EyeMaterialSlot < 0 || EyeMaterialSlot >= SurfaceMesh->GetNumMaterials())
+		{
+			return false;
+		}
+		OriginalSurfaceMaterial = SurfaceMesh->GetMaterial(EyeMaterialSlot);
+		EyeMaterialInstance = SurfaceMesh->CreateDynamicMaterialInstance(EyeMaterialSlot, EyeMaterial);
+		return EyeMaterialInstance != nullptr;
+	}
+
 	if (!Mesh || !EyeMesh || !EyeMaterial || EyeSockets.IsEmpty())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[EyeGlow] %s: mesh, material or sockets not set"), *GetNameSafe(GetOwner()));
