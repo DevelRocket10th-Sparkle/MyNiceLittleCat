@@ -43,6 +43,12 @@ void ATutorialSideWallHider::Tick(float DeltaTime)
 	const FVector LocalCamera = RoomBox->GetComponentTransform().InverseTransformPosition(CameraManager->GetCameraLocation());
 	const FVector Extent = RoomBox->GetUnscaledBoxExtent();
 
+	// 플레이어가 이 방 박스 안에 있을 때만 숨김 판정
+	// 옆방 / 복도에 있을 때 이 방 벽(특히 문 있는 -X 벽)이 미리 사라지는 것 방지
+	const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	const FVector LocalPawn = PlayerPawn ? RoomBox->GetComponentTransform().InverseTransformPosition(PlayerPawn->GetActorLocation()) : FVector(FLT_MAX);
+	const bool bPlayerInside = FMath::Abs(LocalPawn.X) <= Extent.X && FMath::Abs(LocalPawn.Y) <= Extent.Y;
+
 	for (int32 Side = 0; Side < 4; ++Side)
 	{
 		const int32 Axis = Side / 2;   // 0 = X, 1 = Y
@@ -50,7 +56,8 @@ void ATutorialSideWallHider::Tick(float DeltaTime)
 		// 카메라가 이 면 평면 바깥으로 나간 거리: 양수면 벽 바깥면을 보고 있음
 		const double Outside = bMinSide ? -Extent[Axis] - LocalCamera[Axis] : LocalCamera[Axis] - Extent[Axis];
 		// 이미 숨긴 면은 Margin 없이 평면 안쪽으로 들어와야 복구: 경계 깜빡임 방지 (히스테리시스)
-		const bool bHide = bSideHidden[Side] ? Outside > 0.0 : Outside > Margin;
+		// 플레이어가 방 밖이면 이 방의 모든 면을 다시 보이게 함
+		const bool bHide = bPlayerInside && (bSideHidden[Side] ? Outside > 0.0 : Outside > Margin);
 		ApplySide(Side, bHide);
 	}
 }

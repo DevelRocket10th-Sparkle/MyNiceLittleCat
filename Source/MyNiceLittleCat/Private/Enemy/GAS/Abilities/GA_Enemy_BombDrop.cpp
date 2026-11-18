@@ -282,7 +282,14 @@ void UGA_Enemy_BombDrop::DropNext()
 		Params.Owner = Enemy.Get();
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
-		if (ABombEnemy* Bomb = GetWorld()->SpawnActor<ABombEnemy>(Settings->BombClass, SpawnLocation, Facing, Params))
+		// 일정 확률로 다른 폭탄(절연체 등)을 섞어서 떨어뜨림
+		TSubclassOf<ABombEnemy> SpawnClass = Settings->BombClass;
+		if (Settings->MixedBombClass && FMath::FRand() < Settings->MixedBombChance)
+		{
+			SpawnClass = Settings->MixedBombClass;
+		}
+
+		if (ABombEnemy* Bomb = GetWorld()->SpawnActor<ABombEnemy>(SpawnClass, SpawnLocation, Facing, Params))
 		{
 			if (Settings->bRandomizePolarity)
 			{

@@ -1,5 +1,6 @@
 #include "Enemy/GAS/Abilities/GA_SelfDestruct.h"
 #include "Enemy/Bomb/BombEnemy.h"
+#include "Gimmicks/Magnetic/MagneticComponent.h"
 #include "Enemy/EnemyCharacter.h"
 #include "Characters/PlayerCharacter.h"
 #include "Pet/PetCharacter.h"
@@ -199,6 +200,13 @@ void UGA_SelfDestruct::Explode(ABombEnemy* InBomb) const
 		if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(Actor))
 		{
 			if (!Enemy->IsAlive()) continue;
+
+			// 절연체 폭탄(자성 꺼짐)은 연쇄 폭발에 반응하지 않음 (대미지·넉백 없음)
+			if (const ABombEnemy* OtherBomb = Cast<ABombEnemy>(Enemy))
+			{
+				const UMagneticComponent* OtherMagnetic = OtherBomb->FindComponentByClass<UMagneticComponent>();
+				if (OtherMagnetic && !OtherMagnetic->IsMagnetEnabled()) continue;
+			}
 
 			if (EnemyDamageEffect)
 			{

@@ -17,8 +17,6 @@
 #include "Materials/MaterialInterface.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "AIController.h"
-#include "Kismet/GameplayStatics.h"
-#include "Components/AudioComponent.h"
 
 namespace
 {
@@ -76,7 +74,10 @@ void UGameplayAbility_PetMagnet::ActivateAbility(const FGameplayAbilitySpecHandl
     TickTask->OnTick.AddDynamic( this, &UGameplayAbility_PetMagnet::HandleMagnetTick);
     TickTask->ReadyForActivation();
 
-    StartMagnetFieldLoop(); // 우클릭 시작 = 자기장 소리 시작
+    // 우클릭 시작 = 자기장 켜지는 소리 한 번
+    // 의도: 루프 대신 짧은 효과음으로 켜짐만 알림 (펫 위치 3D, 기존 펫 효과음과 같은 감쇠)
+    if (const UPetSoundData* Sounds = Pet->GetSoundData())
+        Pet->PlayPetSound3D(Sounds->MagnetFieldOnSound);
 }
 
 void UGameplayAbility_PetMagnet::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
@@ -93,7 +94,12 @@ void UGameplayAbility_PetMagnet::EndAbility(const FGameplayAbilitySpecHandle Han
         ReleaseHeldTarget(100.f);
 
     HideMagnetFieldMesh(); // 모드 종료 시 자기장 표시 제거
-    StopMagnetFieldLoop(); // 모든 종료 경로에서 루프 정리
+
+    // 꺼지는 소리 한 번 (우클릭 해제·모드 변경 등 모든 종료 경로 공통)
+    if (true == IsValid(Pet))
+        if (const UPetSoundData* Sounds = Pet->GetSoundData())
+            Pet->PlayPetSound3D(Sounds->MagnetFieldOffSound);
+
     Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
@@ -121,7 +127,6 @@ void UGameplayAbility_PetMagnet::HandleMagnetTick(float DeltaTime)
     {
         DropHeldTargetAtLastValidLocation();
         HideMagnetFieldMesh();
-        UpdateMagnetFieldLoop(); // 내려놨으니 "안 들고 있음"으로 되돌려요
         return;
     }
 
@@ -145,8 +150,6 @@ void UGameplayAbility_PetMagnet::HandleMagnetTick(float DeltaTime)
         LastValidHeldLocation = Target->GetActorLocation();
         bHasLastValidHeldLocation = true;
     }
-
-    UpdateMagnetFieldLoop(); // 들고 있는지에 따라 루프 피치/볼륨 갱신
 }
 
 void UGameplayAbility_PetMagnet::DrawMagnetDebugRange() const
@@ -964,72 +967,4 @@ void UGameplayAbility_PetMagnet::UpdateMagnetCurtainSection(UProceduralMeshCompo
     // 극성에 맞는 커튼 머티리얼 (바뀔 때만 교체)
     UMaterialInterface* CurtainMaterial = CurrentPolarity == EPetMagnetPolarity::N ? CurtainMaterialN.Get() : CurtainMaterialS.Get();
     SetMaterialIfChanged(FieldMesh, 1, CurtainMaterial);
-}
-
-void UGameplayAbility_PetMagnet::StartMagnetFieldLoop()
-{
-    // 혹시 남아 있던 루프가 있으면 먼저 정리 (중복 재생 방지)
-    StopMagnetFieldLoop();
-
-    const APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
-    if (false == IsValid(Pet)) return;
-
-    const UPetSoundData* Sounds = Pet->GetSoundData();
-    if (nullptr == Sounds || nullptr == Sounds->MagnetFieldLoopSound) return; // 슬롯 비어 있으면 무시
-
-    // 펫 루트에 붙여서 재생 → 펫이 움직여도 소리가 따라다녀요 (3D)
-    // bAutoDestroy = true: FadeOut이 끝나면 컴포넌트가 스스로 지워져요
-    FieldLoopAudio = UGameplayStatics::SpawnSoundAttached(
-        Sounds->MagnetFieldLoopSound, Pet->GetRootComponent(), NAME_None,
-        FVector::ZeroVector, EAttachLocation::KeepRelativeOffset,
-        true,                   // 펫이 사라지면 같이 멈춤
-        1.f, 1.f, 0.f,
-        Sounds->Attenuation,    // 다른 펫 3D 소리와 같은 감쇠
-        nullptr,
-        true);
-
-    if (nullptr == FieldLoopAudio) return;
-
-    // 바로 크게 시작하지 않고 짧게 커지게 (Fade In)
-    FieldLoopAudio->FadeIn(Sounds->MagnetFieldFadeInTime);
-
-    bFieldLoopHolding = false;
-    UpdateMagnetFieldLoop(); // 시작할 때 이미 들고 있는 경우 대비
-}
-
-void UGameplayAbility_PetMagnet::StopMagnetFieldLoop()
-{
-    if (true == IsValid(FieldLoopAudio))
-    {
-        float FadeOutTime = 0.f;
-        const APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
-        if (true == IsValid(Pet))
-            if (const UPetSoundData* Sounds = Pet->GetSoundData())
-                FadeOutTime = Sounds->MagnetFieldFadeOutTime;
-
-        // 작아지면서 꺼지고, 끝나면 bAutoDestroy로 스스로 삭제
-        FieldLoopAudio->FadeOut(FadeOutTime, 0.f);
-    }
-
-    // 참조는 바로 끊어요 → 다음 우클릭에서 새 루프를 만들어도 이전 페이드아웃과 안 섞임
-    FieldLoopAudio = nullptr;
-    bFieldLoopHolding = false;
-}
-
-void UGameplayAbility_PetMagnet::UpdateMagnetFieldLoop()
-{
-    if (false == IsValid(FieldLoopAudio)) return;
-
-    // 끌려오는 중 + 붙어 있는 중 모두 "들고 있음"
-    const bool bHolding = HeldTarget.IsValid();
-    if (bHolding == bFieldLoopHolding) return; // 바뀔 때만 처리
-    bFieldLoopHolding = bHolding;
-
-    const APetCharacter* Pet = Cast<APetCharacter>(GetAvatarActorFromActorInfo());
-    const UPetSoundData* Sounds = IsValid(Pet) ? Pet->GetSoundData() : nullptr;
-    if (nullptr == Sounds) return;
-
-    // 들고 있으면 배율 적용, 놓으면 원래대로 1
-    FieldLoopAudio->SetPitchMultiplier(bHolding ? Sounds->MagnetHoldingPitchMultiplier : 1.f);
-    FieldLoopAudio->SetVolumeMultiplier(bHolding ? Sounds->MagnetHoldingVolumeMultiplier : 1.f);
 }

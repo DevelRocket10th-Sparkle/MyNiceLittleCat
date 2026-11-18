@@ -61,7 +61,17 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Death Sound", meta = (EditCondition = "!bPlay2D"))
 	TObjectPtr<USoundAttenuation> Attenuation;
 
+	/* 쉬움 모드 (비워두면 위의 기본 소리 사용) */
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Death Sound|Easy Mode")
+	TObjectPtr<USoundBase> EasyModeVoiceSound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Death Sound|Easy Mode")
+	TObjectPtr<USoundBase> EasyModeImpactSound;
+
 private:
+	bool IsOwnerEasyMode() const;
+
 	void PlayOne(USoundBase* Sound, float Volume, float Pitch) const;
 
 	FTimerHandle ImpactTimer;
