@@ -91,6 +91,14 @@ protected :
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Lock")
 	FText BarrierLockMessage = NSLOCTEXT("BossHealthBar", "BarrierLock", "배리어를 파괴하라!");
 
+	// 잠금 문구 깜빡임 속도 (초당 횟수, 0이면 깜빡이지 않음)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Lock", meta = (ClampMin = "0.0"))
+	float LockTextBlinkRate = 1.5f;
+
+	// 깜빡일 때 가장 어두운 순간의 투명도
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Lock", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float LockTextMinOpacity = 0.2f;
+
 	// 잠금 시 바를 덮는 어두운 막
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> LockShade = nullptr;
@@ -114,7 +122,7 @@ protected :
 private :
 
 	void HandleHealthChanged(float NewHealth, float MaxHealth);
-	void RefreshLockDisplay();
+	void RefreshLockDisplay(float DeltaTime = 0.f);
 	void RebuildMarkers();
 	void RebuildPips();
 	void RefreshPips();
@@ -188,5 +196,8 @@ private :
 
 	float LastRatio = 1.f;
 	int32 LastPassedCount = 0;
+
+	// 잠금 문구 깜빡임 진행 시간 (잠금이 풀리면 0으로 초기화)
+	float LockBlinkTime = 0.f;
 
 };

@@ -97,7 +97,7 @@ void UBossHealthBarWidget::NativeTick(const FGeometry& MyGeometry, float InDelta
 {
 	// BP Tick(연출)이 먼저 돌고, 잠금 표시는 C++이 마지막에 덮어씀
 	Super::NativeTick(MyGeometry, InDeltaTime);
-	RefreshLockDisplay();
+	RefreshLockDisplay(InDeltaTime);
 }
 
 EBossHealthBarLockMode UBossHealthBarWidget::GetLockMode() const
@@ -122,10 +122,14 @@ EBossHealthBarLockMode UBossHealthBarWidget::GetLockMode() const
 	return EBossHealthBarLockMode::None;
 }
 
-void UBossHealthBarWidget::RefreshLockDisplay()
+void UBossHealthBarWidget::RefreshLockDisplay(float DeltaTime)
 {
 	const EBossHealthBarLockMode Mode = GetLockMode();
-	const float LockOpacity = (Mode == EBossHealthBarLockMode::None) ? 0.f : 1.f;
+	const bool bLocked = Mode != EBossHealthBarLockMode::None;
+	const float LockOpacity = bLocked ? 1.f : 0.f;
+
+	// 잠금 중에만 시간 누적: 잠금이 시작될 때 항상 밝은 상태에서 깜빡임 시작
+	LockBlinkTime = bLocked ? LockBlinkTime + DeltaTime : 0.f;
 
 	if (LockShade)
 		LockShade->SetRenderOpacity(LockOpacity);
@@ -133,7 +137,14 @@ void UBossHealthBarWidget::RefreshLockDisplay()
 		LockStripes->SetRenderOpacity(LockOpacity);
 	if (LockText)
 	{
-		LockText->SetRenderOpacity(LockOpacity);
+		float TextOpacity = LockOpacity;
+		if (bLocked && LockTextBlinkRate > 0.f)
+		{
+			// cos 파형: 1(밝음) → MinOpacity → 1
+			const float Wave = 0.5f + 0.5f * FMath::Cos(LockBlinkTime * LockTextBlinkRate * UE_TWO_PI);
+			TextOpacity = FMath::Lerp(LockTextMinOpacity, 1.f, Wave);
+		}
+		LockText->SetRenderOpacity(TextOpacity);
 		if (Mode != EBossHealthBarLockMode::None)
 		{
 			LockText->SetText(Mode == EBossHealthBarLockMode::Barrier ? BarrierLockMessage : TransitionLockMessage);
