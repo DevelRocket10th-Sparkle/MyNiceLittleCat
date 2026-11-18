@@ -6,6 +6,7 @@
 * - 레벨에서 스플라인 점을 옮겨 경계 모양을 그림 (닫힌 루프): 어떤 아레나 모양에도 맞출 수 있음
 * - 가시: 메시 후보 목록에서 가시마다 무작위로 골라 인스턴스로 배치 (콜리전 없음), 간격·줄 수·크기·회전 무작위 조절
 * - 벽: 스플라인을 일정 길이로 나눈 큐브 인스턴스, 게임에서는 숨김, Pawn 채널만 막음 (투사체·레이저·카메라는 통과)
+* - 피해: 플레이어가 벽에 닿으면 TouchDamage (대상별 DamageCooldown), 적·보스는 막히기만 함
 * - 메시는 BP 자식(BP_SpikeBoundary)에서 지정: 코드에 에셋 경로를 두지 않음
 */
 
@@ -121,7 +122,43 @@ protected :
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spike Boundary|Walls")
 	bool bShowWallsInGame = false;
 
+	/* 피해 */
+
+	// 벽(가시)에 닿으면 피해
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spike Boundary|Damage")
+	bool bDamageOnTouch = true;
+
+	// 한 번 닿을 때 피해량 (1 = 체력 한 칸)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spike Boundary|Damage", meta = (EditCondition = "bDamageOnTouch", ClampMin = "0.0"))
+	float TouchDamage = 1.f;
+
+	// 같은 대상에게 다시 피해를 주기까지 대기: 벽에 붙어 있어도 매 프레임 닳지 않게
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spike Boundary|Damage", meta = (EditCondition = "bDamageOnTouch", ClampMin = "0.0", Units = "s"))
+	float DamageCooldown = 1.f;
+
+	// 닿으면 경계 안쪽으로 밀어냄: 피해 대기 중이거나 무적이어도 밀어서 가시에 비비지 못하게 함
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spike Boundary|Damage")
+	bool bKnockback = true;
+
+	// 수평 넉백 세기
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spike Boundary|Damage", meta = (EditCondition = "bKnockback", ClampMin = "0.0", Units = "cm/s"))
+	float KnockbackStrength = 700.f;
+
+	// 위로 띄우는 세기
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spike Boundary|Damage", meta = (EditCondition = "bKnockback", ClampMin = "0.0", Units = "cm/s"))
+	float KnockbackUpwardStrength = 200.f;
+
+	virtual void BeginPlay() override;
+
 private :
+
+	// 벽에 Pawn이 부딪힘: 피해 대상(플레이어)이면 경계 안쪽 방향으로 피해 전달
+	UFUNCTION()
+	void HandleWallHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent,
+		FVector NormalImpulse, const FHitResult& Hit);
+
+	// 대상별 마지막 피해 시각
+	TMap<TWeakObjectPtr<AActor>, double> LastDamageTimes;
 
 	void BuildSpikes();
 	void BuildWalls();

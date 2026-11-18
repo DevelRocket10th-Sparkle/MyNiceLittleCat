@@ -6,7 +6,11 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SplineComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/World.h"
+#include "GameFramework/Character.h"
 #include "Materials/MaterialInterface.h"
+
+#include "Enemy/Combat/EnemyTargetUtils.h"
 
 ASpikeBoundary::ASpikeBoundary()
 {
@@ -37,7 +41,54 @@ ASpikeBoundary::ASpikeBoundary()
 	Walls->SetCollisionResponseToAllChannels(ECR_Ignore);
 	Walls->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 	Walls->SetCastShadow(false);
+	Walls->SetNotifyRigidBodyCollision(true);
 	Walls->SetHiddenInGame(true);
+}
+
+void ASpikeBoundary::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if ((bDamageOnTouch || bKnockback) && bBlockPawns)
+	{
+		// 캐릭터 이동이 벽에 막힐 때 들어오는 충돌 이벤트
+		Walls->OnComponentHit.AddDynamic(this, &ASpikeBoundary::HandleWallHit);
+	}
+}
+
+void ASpikeBoundary::HandleWallHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent,
+	FVector NormalImpulse, const FHitResult& Hit)
+{
+	// 피해 대상(플레이어 등 ITargetableInterface)만: 보스·적은 벽에 막히기만 함
+	if (!OtherActor || !EnemyTargetUtils::IsAttackableTarget(OtherActor))
+	{
+		return;
+	}
+
+	// 피격·넉백 방향: 닿은 지점 → 대상 (경계 안쪽으로 밀려나는 방향)
+	FVector Direction = (OtherActor->GetActorLocation() - Hit.ImpactPoint).GetSafeNormal2D();
+	if (Direction.IsNearlyZero())
+	{
+		Direction = -OtherActor->GetActorForwardVector().GetSafeNormal2D();
+	}
+
+	// 피해: 대상별 대기 시간마다 한 번
+	const double Now = GetWorld()->GetTimeSeconds();
+	const double* LastTime = LastDamageTimes.Find(OtherActor);
+	if (bDamageOnTouch && (!LastTime || Now - *LastTime >= DamageCooldown))
+	{
+		LastDamageTimes.Add(OtherActor, Now);
+		EnemyTargetUtils::ApplyAttackHit(OtherActor, TouchDamage, Direction, this);
+	}
+
+	// 넉백: 닿을 때마다 (피해 처리의 플레이어 넉백보다 나중에 호출되어 이 값이 적용됨)
+	if (bKnockback)
+	{
+		if (ACharacter* Character = Cast<ACharacter>(OtherActor))
+		{
+			Character->LaunchCharacter(Direction * KnockbackStrength + FVector(0.f, 0.f, KnockbackUpwardStrength), true, true);
+		}
+	}
 }
 
 void ASpikeBoundary::OnConstruction(const FTransform& Transform)
