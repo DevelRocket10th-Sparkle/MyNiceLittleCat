@@ -62,6 +62,11 @@ private:
 	// 컷신 스킵 입력: 재생 중인 컷신이 스킵 가능하면 마지막 장면으로 넘김
 	void HandleSkipCinematic();
 
+	// 컷신 시작/종료 시 입력 매핑 교체
+	// - 시작: 게임플레이 IMC를 빼고 컷신 IMC(스킵만)를 넣음 → 허용 목록 방식이라 액션이 늘어도 자동 차단
+	// - 종료: 시작 시점에 적용돼 있던 IMC만 원래 우선순위로 복구 (튜토리얼 등으로 꺼둔 IMC는 그대로)
+	void HandleCutsceneStateChanged(bool _bCutscenePlaying);
+
 	// 마우스 위치를 다이얼 UI와 같은 좌표 단위로 가져오는 함수 
 	bool TryGetDialPointerPosition(FVector2D& _outPosition) const;
 
@@ -91,6 +96,28 @@ protected:
 	// - 키 매핑은 플레이어 IMC에서 지정 (상호작용과 같은 키여도 됨)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cinematic|Input")
 	TObjectPtr<class UInputAction> IA_SkipCinematic;
+
+	// 컷신 중에만 적용하는 IMC: IA_SkipCinematic 매핑만 둠
+	// - 비어 있으면 스킵 입력까지 막히지 않도록 컷신 입력 차단을 하지 않음
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cinematic|Input")
+	TObjectPtr<class UInputMappingContext> IMC_Cinematic;
+
+	// 컷신 IMC 우선순위: 게임플레이 IMC보다 높게
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cinematic|Input")
+	int32 CinematicContextPriority = 100;
+
+	// 컷신 동안 빼둘 게임플레이 IMC (IMC_Player, IMC_Pet 등)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cinematic|Input")
+	TArray<TObjectPtr<class UInputMappingContext>> CutsceneBlockedContexts;
+
+	// 컷신 시작 시 빼둔 IMC와 원래 우선순위: 종료 시 그대로 복구
+	UPROPERTY(Transient)
+	TMap<TObjectPtr<class UInputMappingContext>, int32> SuspendedCutsceneContexts;
+
+	// 컷신 입력 차단 중인지
+	bool bCutsceneInputBlocked = false;
+
+	FDelegateHandle CutsceneStateChangedHandle;
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<class APetCharacter> PartnerPet;

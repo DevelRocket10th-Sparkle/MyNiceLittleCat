@@ -101,6 +101,9 @@ struct FCinematicPlayback
 	FOnCinematicEnded OnEnded;
 };
 
+// 컷신 상태 변경 알림: 컷신이 겹쳐도 처음 시작(true)과 마지막 종료(false)에만 전달
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnCutsceneStateChanged, bool /*bCutscenePlaying*/);
+
 UCLASS()
 class MYNICELITTLECAT_API UCinematicSubsystem : public UTickableWorldSubsystem
 {
@@ -133,6 +136,10 @@ public :
 
 	// 컷신이 하나라도 재생 중인지 확인
 	bool IsCutscenePlaying() const { return ActiveCutsceneCount > 0; }
+
+	// 컷신 시작/종료 알림: 입력 차단 등 서브시스템이 모르는 처리는 구독자가 담당
+	// - 구독 시점에 이미 컷신 중일 수 있으므로 구독 직후 IsCutscenePlaying()으로 현재 상태를 맞출 것
+	FOnCutsceneStateChanged OnCutsceneStateChanged;
 
 	/* 유틸리티 */
 
