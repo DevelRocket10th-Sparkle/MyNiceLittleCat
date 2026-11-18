@@ -59,8 +59,9 @@ void ASpikeBoundary::BeginPlay()
 void ASpikeBoundary::HandleWallHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent,
 	FVector NormalImpulse, const FHitResult& Hit)
 {
-	// 피해 대상(플레이어 등 ITargetableInterface)만: 보스·적은 벽에 막히기만 함
-	if (!OtherActor || !EnemyTargetUtils::IsAttackableTarget(OtherActor))
+	// 플레이어가 조종하는 폰만: 보스·적(AI)과 동전 같은 물리 오브젝트는 벽에 막히기만 함
+	const APawn* Pawn = Cast<APawn>(OtherActor);
+	if (!Pawn || !Pawn->IsPlayerControlled() || !EnemyTargetUtils::IsAttackableTarget(OtherActor))
 	{
 		return;
 	}
@@ -192,6 +193,13 @@ void ASpikeBoundary::BuildWalls()
 	Walls->SetStaticMesh(WallMesh);
 	Walls->SetHiddenInGame(!bShowWallsInGame);
 	Walls->SetCollisionEnabled(bBlockPawns ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+
+	// 지정한 채널만 막고 나머지는 통과
+	Walls->SetCollisionResponseToAllChannels(ECR_Ignore);
+	for (const TEnumAsByte<ECollisionChannel>& Channel : BlockedChannels)
+	{
+		Walls->SetCollisionResponseToChannel(Channel, ECR_Block);
+	}
 
 	if (!WallMesh || !bBlockPawns)
 	{
