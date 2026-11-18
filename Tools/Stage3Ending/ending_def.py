@@ -136,19 +136,18 @@ def ending():
     s.mark(A3 + 2, "Cue:BossDust")
     s.mark(look_back, "Pet looks back")
 
-    # ---------------- C. 저택 밖 (앞마당 -> 외곽 문 방향) ----------------
+    # ---------------- C. 저택 외곽 철제 대문을 실제로 통과 ----------------
     C = B2_END
     # 컷 직전 프레임까지 옥상 위치 유지 → 컷 프레임에 앞마당으로 재배치 (화면 밖)
     for t in (pet, pl):
         cut_at(t, C)
-    pet.key(C, 4350, 1370, F_YARD, 180)
-    pcf = walk_to(pet, C, [(3000, 1370, F_PATH), (2200, 1370, F_PATH)], turn_frames=1)
-    # 플레이어는 문을 나와 두어 걸음 뒤 멈춤 → 그사이 펫이 먼저 길을 따라감
-    pl.key(C, 4560, 1170, F_YARD, 180)
-    stop = walk_to(pl, C, [(4400, 1170, F_YARD)], turn_frames=1)
-    pause_end = stop + 48                # 잠시 멈춰 주변을 봄 (LookAround 2초)
-    pl.hold(pause_end)
-    walk_to(pl, pause_end, [(3000, 1170, F_PATH), (2400, 1170, F_PATH)], turn_frames=1)
+    # 옥상~현관 이동은 생략. 저택/외곽 문 전경에서 안쪽 출발 → 바깥쪽 도착까지 보여준다.
+    # 외곽 대문 x=-1700, 도로 지면 z=100 (LI 로컬), 두 줄의 이동 방향은 서쪽.
+    pet.key(C, -1400, 1370, F_PATH, 180)
+    pcf = walk_to(pet, C, [(-2600,1370,F_PATH)], turn_frames=1)
+    pl.key(C, -1220, 1170, F_PATH, 180)
+    walk_to(pl, C, [(-2420,1170,F_PATH)], turn_frames=1)
+    C_EXIT = C + 60
     D = C + 170
 
     # ---------------- D. 보스 길 중간 (한 컷, 짧게) ----------------
@@ -165,6 +164,8 @@ def ending():
         pl.key(D, r0[0] - off[0] * 60, r0[1] - off[1] * 60, WF(F_WORLD_PATH), dyaw)
         walk_to(pl, D, [(r1[0] - off[0] * 280, r1[1] - off[1] * 280, WF(F_WORLD_PATH))], turn_frames=1)
     E = D + 84 if USE_ROAD_SHOT else D
+    # 바깥에서 마을 집들/목조 문을 보여준 후, 펫만 먼저 밖으로 나온 시점에 뒤쪽 구도로.
+    E_REAR = E + 124
 
     # ---------------- E. 마을 서쪽 입구 (뒤에서 고정 구도) ----------------
     for t in (pet, pl):
@@ -204,8 +205,7 @@ def ending():
 
     # 애니메이션
     s.player_anims = [(PL + "Idle", 0, 466, 1.0, 0), (PL + "Walk", 466, C, 1.0, 0),
-                      (PL + "Walk", C, stop, 1.0, 0), (LOOK_AROUND, stop, pause_end, 1.0, 0),
-                      (PL + "Walk", pause_end, D, 1.0, 0), (PL + "Walk", D, E, 1.0, 0.4),
+                      (PL + "Walk", C, D, 1.0, 0.1), (PL + "Walk", D, E, 1.0, 0.4),
                       (PL + "Walk", E, collapse, 1.0, 0.2),
                       (COLLAPSE, collapse, collapse + COLLAPSE_FRAMES, 1.0, 0),
                       (COLLAPSE, collapse + COLLAPSE_FRAMES, L, 0.001, 1.49)]   # 마지막 포즈 유지
@@ -254,10 +254,15 @@ def ending():
         (470, *follow_camera(470)),
         (C - 1, *follow_camera(C - 1)),
     ])
-    # 앞마당: 현관 쪽(카메라 뒤)에서 나와 외곽 문 쪽으로 멀어짐
-    s.cam("C Outside", C, D, 26, [
-        (C, (5100, 1250, 500), (4100, 1250, 240)),
-        (D - 1, (5050, 1250, 495), (3450, 1250, 200)),
+    # 저택의 외형과 철제 대문을 함께 보여주어 이전 장소를 명확히 닫는다.
+    s.cam("C1 Mansion and iron gate", C, C_EXIT, 20, [
+        (C, (-5000,-800,1500), (500,1500,700)),
+        (C_EXIT-1, (-4960,-800,1490), (500,1500,700)),
+    ])
+    # 같은 동선의 더 가까운 외부 사선 구도. 두 캐릭터 모두 대문 밖으로 나온 뒤 컷.
+    s.cam("C2 Leaving mansion gate", C_EXIT, D, 22, [
+        (C_EXIT, (-3000,-1400,700), (-1600,1400,500)),
+        (D-1, (-3040,-1400,690), (-1800,1370,430)),
     ])
     # 디딤돌 길: 뒤쪽 낮은 위치, 같은 방향으로 멀어짐
     if USE_ROAD_SHOT:
@@ -267,15 +272,23 @@ def ending():
             (D, (rc[0], rc[1], WF(190)), (rt[0], rt[1], WF(110))),
             (E - 1, (rc[0] - 120, rc[1] + 40, WF(188)), (rt[0], rt[1], WF(110))),
         ])
-    # 문 뒤 고정 구도: 문을 넘기 전부터 잡아 두고, 쓰러진 뒤에도 움직이지 않음 (아주 느린 전진만)
+    # 마을 외부에서 보는 전경: 집들 → 목조 지붕/문턱 → 문 밖 빈 들판의 관계.
+    # 저택과 같은 쪽의 이동 축을 유지하며 두 장소 사이의 이동 시간은 컷으로 생략한다.
+    vloc = W2L(-8200,-1600)
+    vtgt = W2L(-6450,305)
+    s.cam("E1 Village exit exterior", E, E_REAR, 24, [
+        (E, (vloc[0],vloc[1],WF(900)), (vtgt[0],vtgt[1],WF(330))),
+        (E_REAR-1, (vloc[0]+60,vloc[1]+40,WF(880)), (vtgt[0],vtgt[1],WF(320))),
+    ])
+    # 펫이 경계를 넘은 뒤 뒷쪽으로 컷. 라쿤의 문 통과~쓰러짐은 끊지 않고 유지.
     sg = GATE_WALK_DIR
     ec = W2L(GATE_X - sg * 1150, 300)
     et = W2L(GATE_X + sg * 400, 320)
-    s.cam("E Village gate", E, L, 28, [
-        (E, (ec[0], ec[1], WF(210)), (et[0], et[1], WF(140))),
+    s.cam("E2 Beyond village gate", E_REAR, L, 28, [
+        (E_REAR, (ec[0], ec[1], WF(210)), (et[0], et[1], WF(140))),
         (L, (ec[0] + sg * 40, ec[1], WF(209)), (et[0], et[1], WF(140))),
     ])
-    s.debug = {"collapse": collapse, "f_over": f_over, "E": E, "D": D, "C": C, "L": L, "look_back": look_back,
+    s.debug = {"collapse": collapse, "f_over": f_over, "E": E, "E_REAR": E_REAR, "D": D, "C": C, "C_EXIT": C_EXIT, "L": L, "look_back": look_back,
                "pet_wait": pf, "dust": dust, "pet_stair_in": p2}
     # 빈 자리를 지켜보는 6.3초 구간을 4.3초로 압축한다. 동작과 마커도 같은 시간축을 사용.
     def editorial_time(f):
@@ -298,7 +311,7 @@ def ending():
     s.double_hide=editorial_time(s.double_hide)
     s.player_end=editorial_time(s.player_end)
     s.length=editorial_time(s.length)
-    for name in ('collapse','f_over','E','D','C','L','look_back','pet_wait','pet_stair_in'):
+    for name in ('collapse','f_over','E','E_REAR','D','C','C_EXIT','L','look_back','pet_wait','pet_stair_in'):
         s.debug[name]=editorial_time(s.debug[name])
     return s
 

@@ -10,7 +10,7 @@ collapse_preview=sd_preview.debug['collapse']
 preview_out=Path(u.Paths.project_saved_dir())/'CodexEndingWork'/globals().pop('POSE_PREVIEW_NAME','puppet_poses')
 preview_out.mkdir(parents=True,exist_ok=True)
 preview_close=globals().pop('POSE_PREVIEW_CLOSE',False)
-preview_frames=[collapse_preview+i for i in [-1,0,3,6,10,14,18,22,26,30,36,60]]
+preview_frames=globals().pop('POSE_PREVIEW_FRAMES',[collapse_preview+i for i in [-1,0,3,6,10,14,18,22,26,30,36,60]])
 preview_state={'phase':0,'start':time.time(),'i':0,'ticks':0,'rows':[],'errors':[]}
 preview_perf=u.get_default_object(u.load_class(None,'/Script/UnrealEd.EditorPerformanceSettings'))
 preview_throttle=preview_perf.get_editor_property('bThrottleCPUWhenNotForeground')
@@ -45,6 +45,8 @@ def preview_tick(dt):
             preview_state['player']=active[-1].sequence_player
             preview_state['player'].pause()
             preview_state['phase']=2
+            preview_state['ready']=time.time()+2.0  # 처치 후 대문 개방이 끝난 상태에서 검사
+        if time.time()<preview_state['ready']:return
         if preview_state['i']>=len(preview_frames):preview_finish();return
         frame=preview_frames[preview_state['i']]
         if preview_state['ticks']==0:
