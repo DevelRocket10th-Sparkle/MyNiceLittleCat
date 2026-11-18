@@ -43,26 +43,13 @@ public:
     TObjectPtr<USoundBase> SpeechBubbleSound = nullptr;
 
     // ===== 자성 =====
-    // (3D) 자기장 루프: 우클릭 동안 재생 (루프 설정된 에셋을 넣어야 해요)
+    // (3D) 자기장 켤 때 한 번 (우클릭 누름)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnet")
-    TObjectPtr<USoundBase> MagnetFieldLoopSound = nullptr;
+    TObjectPtr<USoundBase> MagnetFieldOnSound = nullptr;
 
-    // 자기장 루프가 커지는 시간
-    // 의도: 우클릭을 짧게 톡 눌러도 소리가 들리도록 짧게 잡아요
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnet", meta = (ClampMin = "0.0", Units = "s"))
-    float MagnetFieldFadeInTime = 0.15f;
-
-    // 자기장 루프가 작아지며 꺼지는 시간
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnet", meta = (ClampMin = "0.0", Units = "s"))
-    float MagnetFieldFadeOutTime = 0.25f;
-
-    // 대상을 들고 있을 때 루프 피치 배율
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnet", meta = (ClampMin = "0.1"))
-    float MagnetHoldingPitchMultiplier = 1.2f;
-
-    // 대상을 들고 있을 때 루프 볼륨 배율
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnet", meta = (ClampMin = "0.0"))
-    float MagnetHoldingVolumeMultiplier = 1.3f;
+    // (3D) 자기장 끌 때 한 번 (우클릭 뗌 / 모드 변경 등 모든 종료)
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnet")
+    TObjectPtr<USoundBase> MagnetFieldOffSound = nullptr;
 
     // (3D) 극변환 (Q) / 극 고정 구역에 들어가서 자동으로 바뀔 때도 재사용
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Magnet")
