@@ -36,15 +36,9 @@ void ABGMZoneVolume::BeginPlay()
 	// 플레이어가 이미 박스 안에서 스폰된 경우에 대비
 	// --> BeginOverlap이 안 올 수 있어서 직접 확인
 	TArray<AActor*> Overlapping;
-	Box->GetOverlappingActors(Overlapping, APawn::StaticClass());
-	for (AActor* Actor : Overlapping)
-	{
-		if (IsPlayerPawn(Actor))
-		{
-			OnBoxBeginOverlap(Box, Actor, nullptr, 0, false, FHitResult());
-			break;
-		}
-	}
+
+	// 플레이어 스폰/빙의가 모두 끝난 뒤 확인하도록 한 틱 미룸
+	GetWorldTimerManager().SetTimerForNextTick(this, &ABGMZoneVolume::CheckInitialPlayerInside);
 }
 
 void ABGMZoneVolume::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -88,4 +82,27 @@ bool ABGMZoneVolume::IsPlayerPawn(const AActor* Actor) const
 {
 	const APawn* Pawn = Cast<APawn>(Actor);
 	return Pawn && Pawn->IsPlayerControlled();
+}
+
+void ABGMZoneVolume::CheckInitialPlayerInside()
+{
+	// 이미 오버랩 이벤트로 들어온 상태면 중복 처리 안 함
+	if (true == bPlayerInside) return;
+
+	APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (nullptr == Pawn) return;
+
+	// 오버랩 대신 위치로 판정 -> 이벤트 타이밍과 무관하게 정확함
+	if (true == IsLocationInsideBox(Pawn->GetActorLocation()))
+		OnBoxBeginOverlap(Box, Pawn, nullptr, 0, false, FHitResult());
+}
+
+bool ABGMZoneVolume::IsLocationInsideBox(const FVector& WorldLocation) const
+{
+	// 월드 좌표 → 박스 로컬 좌표(회전·스케일 제거)로 바꾼 뒤 Extent와 비교
+	const FVector Local = Box->GetComponentTransform().InverseTransformPosition(WorldLocation);
+	const FVector Extent = Box->GetUnscaledBoxExtent();
+	
+	return FMath::Abs(Local.X) <= Extent.X && FMath::Abs(Local.Y) <= Extent.Y && FMath::Abs(Local.Z) <= Extent.Z;
 }
