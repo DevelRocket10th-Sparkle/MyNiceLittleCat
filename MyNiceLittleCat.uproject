@@ -12,7 +12,8 @@
 				"Engine",
 				"AIModule",
 				"UMG",
-				"GameplayAbilities"
+				"GameplayAbilities",
+				"DeveloperSettings"
 			]
 		}
 	],
@@ -37,8 +38,8 @@
 			"Enabled": true
 		},
 		{
-    		"Name": "Fab",
-    		"Enabled": false
+			"Name": "Fab",
+			"Enabled": false
 		}
 	]
 }
