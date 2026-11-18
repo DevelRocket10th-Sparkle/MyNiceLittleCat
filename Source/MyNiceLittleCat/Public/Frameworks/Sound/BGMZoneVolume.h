@@ -39,6 +39,13 @@ protected:
 	// 플레이어가 조종하는 Pawn인지 (펫·적 등 AI Pawn은 제외)
 	bool IsPlayerPawn(const AActor* Actor) const;
 
+	// 시작 시 플레이어가 이미 박스 안에 있는지 위치로 직접 확인
+	// (이어하기/체크포인트 스폰은 BeginPlay 전에 일어나서 오버랩 이벤트를 놓칠 수 있음)
+	void CheckInitialPlayerInside();
+
+	// 월드 위치가 박스 내부인지 (회전·스케일 반영)
+	bool IsLocationInsideBox(const FVector& WorldLocation) const;
+
 // ========================================================================
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "BGM")
