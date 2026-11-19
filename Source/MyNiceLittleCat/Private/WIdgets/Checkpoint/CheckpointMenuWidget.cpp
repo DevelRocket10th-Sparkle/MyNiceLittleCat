@@ -68,13 +68,19 @@ void UCheckpointMenuWidget::Close()
 {
 	if (APlayerCharacter* Player = Cast<APlayerCharacter>(InteractInstigator.Get()))
 	{
-		Player->OnPlayerDied.RemoveDynamic(this, &UCheckpointMenuWidget::HandlePlayerDied);
+		Player->OnPlayerDied.RemoveDynamic(
+			this, &UCheckpointMenuWidget::HandlePlayerDied);
 	}
+
 	if (APlayerController* PC = GetOwningPlayer())
 	{
-		PC->SetInputMode(FInputModeGameOnly());
-		PC->SetShowMouseCursor(false);
+		FInputModeGameAndUI InputMode;
+		InputMode.SetHideCursorDuringCapture(false);
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PC->SetInputMode(InputMode);
+		PC->SetShowMouseCursor(true);
 	}
+
 	RemoveFromParent();
 }
 
