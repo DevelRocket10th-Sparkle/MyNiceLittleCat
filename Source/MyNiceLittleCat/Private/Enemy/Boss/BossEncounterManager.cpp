@@ -16,6 +16,7 @@
 #include "Enemy/Interfaces/BossEncounterDirector.h"
 #include "Enemy/Interfaces/BossPhaseTransitionHandler.h"
 #include "Frameworks/GameMode/MainGameMode.h"
+#include "Frameworks/Save/GameProgressSubsystem.h"
 #include "Frameworks/Sound/BGMSubSystem.h"
 #include "Engine/GameInstance.h"
 #include "Widgets/MainHUD.h"
@@ -203,6 +204,16 @@ void ABossEncounterManager::HandleBossDefeated(ABossCharacter* Boss)
 	GetWorldTimerManager().ClearTimer(PlayerCheckHandle);
 	ClearEncounterPlayer();
 	EncounterState = EBossEncounterState::Cleared;
+
+	// 진행 기록: 게임 흐름(트리거 제거 등)은 플래그를 구독하는 쪽이 처리
+	if (!DefeatedProgressFlag.IsNone())
+	{
+		const UGameInstance* GameInstance = GetGameInstance();
+		if (UGameProgressSubsystem* Progress = GameInstance ? GameInstance->GetSubsystem<UGameProgressSubsystem>() : nullptr)
+		{
+			Progress->SetProgressFlag(DefeatedProgressFlag);
+		}
+	}
 
 	if (IBossEncounterDirector* Director = GetDirector())
 	{

@@ -119,6 +119,8 @@ bool UGameProgressSubsystem::GetRespawnTransform(const UObject* WorldContextObje
 
 void UGameProgressSubsystem::SetProgressFlag(FName Flag, bool bEnabled)
 {
+	// 값이 실제로 바뀔 때만 알림
+	const bool bChanged = CurrentSave->ProgressFlags.Contains(Flag) != bEnabled;
 	if (bEnabled)
 	{
 		CurrentSave->ProgressFlags.Add(Flag);
@@ -126,6 +128,11 @@ void UGameProgressSubsystem::SetProgressFlag(FName Flag, bool bEnabled)
 	else
 	{
 		CurrentSave->ProgressFlags.Remove(Flag);
+	}
+
+	if (bChanged)
+	{
+		OnProgressFlagChanged.Broadcast(Flag, bEnabled);
 	}
 }
 

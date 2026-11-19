@@ -159,6 +159,11 @@ protected :
 	UPROPERTY(EditInstanceOnly, Category = "Boss|Clear")
 	TSoftObjectPtr<UWorld> LevelAfterDefeat;
 
+	// 보스 처치 시 켤 진행 플래그 (비우면 기록 안 함)
+	// - 트리거·입구 차단 등은 UProgressFlagGateComponent로 이 플래그에 반응 (매니저가 직접 참조하지 않음)
+	UPROPERTY(EditInstanceOnly, Category = "Boss|Clear")
+	FName DefeatedProgressFlag;
+
 	// 보스 전투 BGM: 등장 연출이 끝나고 전투가 실제로 시작될 때(StartEncounter) 재생
 	// - 이벤트 BGM 스택은 Zone보다 우선이라 아레나 존 곡을 덮어씀
 	// - 처치/리셋 시 빠지면서 존·레벨 기본곡으로 자동 복귀. 비우면 BGM 변경 없음
