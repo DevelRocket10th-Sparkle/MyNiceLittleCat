@@ -1,7 +1,7 @@
 /*
 * 작성자: 전선현
 * 수정 일자: 2026.11.17. (몸 점유 자원 기본 지정: 동시 실행 시 다른 몸 사용 패턴과 겹치지 않음)
-* 패턴 설ㅈ어의 몽타주를 재생하고 Notify 구간 동안 소켓 판정으로 피해를 주는 근접 공격
+* 패턴 설정의 몽타주를 재생하고 Notify 구간 동안 소켓 판정으로 피해를 주는 근접 공격
 * - 판정 구간: AnimNotifyState_EnemyMeleeTrace -> GameplayEvent(Begin/End) -> UEnemyMeleeTraceComponent
 * - 원거리, 아레나 공격은 UEnemyPatternAbility를 직접 상속한 별도 GA로 구현
 */

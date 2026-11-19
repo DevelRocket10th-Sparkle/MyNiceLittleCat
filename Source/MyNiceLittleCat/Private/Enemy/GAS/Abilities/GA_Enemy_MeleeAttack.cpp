@@ -1,4 +1,5 @@
 #include "Enemy/GAS/Abilities/GA_Enemy_MeleeAttack.h"
+#include "Enemy/EnemyLog.h"
 
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
@@ -39,7 +40,7 @@ bool UGA_Enemy_MeleeAttack::StartPattern()
 
 	if (!MeleeTraceComponent.IsValid() || !MeleeTraceComponent->PrepareAttack(MeleeSettings->MeleeTraceSettings, RequestId))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[%s] Pattern %s has no valid melee traces"),
+		UE_LOG(LogEnemy, Warning, TEXT("[%s] Pattern %s has no valid melee traces"),
 			*Enemy->GetName(), *ExecutionPattern.PatternId.ToString());
 		return false;
 	}
@@ -118,7 +119,7 @@ void UGA_Enemy_MeleeAttack::HandleTargetHit(const FHitResult& Hit)
 		return;
 
 	AActor* Target = Hit.GetActor();
-	if (!EnemyTargetUtils::IsAttackableTarget(Target) || DamagedActors.Contains(Target))
+	if (!EnemyTargetUtils::IsHostileTarget(GetAvatarActorFromActorInfo(), Target) || DamagedActors.Contains(Target))
 		return;
 
 	// 벽 너머 타격 방지: 시야가 필요한 패턴은 맞은 순간에도 시야 확인

@@ -2,6 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.11.13.
+* 수정 일자: 2026.11.19. (같은 편 판정 추가: Enemy 공격이 다른 Enemy에게 맞지 않게)
 * Enemy 공격의 대상 판정과 피해 전달 규칙을 한 곳에 모은 도우미
 * - 플레이어 타입을 모름: 대상 판정은 ITargetableInterface, 피해는 엔진 표준 TakeDamage 경로
 * - 플레이어 외 대상(펫, 소환물 등)도 인터페이스와 TakeDamage만 구현하면 같은 공격에 맞음
@@ -18,6 +19,10 @@ namespace EnemyTargetUtils
 {
 	// 공격 대상으로 유효한지: ITargetableInterface를 구현했고, 살아있는 액터
 	MYNICELITTLECAT_API bool IsAttackableTarget(const AActor* Target);
+
+	// 공격자 기준으로 피해를 줄 대상인지: 공격 대상이면서 같은 편이 아님
+	// - Enemy끼리는 같은 편 (공격자가 탄환이면 발사한 Enemy(Instigator) 기준)
+	MYNICELITTLECAT_API bool IsHostileTarget(const AActor* Attacker, const AActor* Target);
 
 	// 판정에 맞은 컴포넌트가 대상의 피격 판정 컴포넌트인지
 	// - 캐릭터는 캡슐만 인정 (무기, 장식 메시에 맞은 것 제외)

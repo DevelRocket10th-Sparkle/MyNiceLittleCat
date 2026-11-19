@@ -1,4 +1,5 @@
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
+#include "Enemy/EnemyLog.h"
 
 #include "Algo/AllOf.h"
 #include "Components/MeshComponent.h"
@@ -59,7 +60,7 @@ namespace
 
 			if (Weapon)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[%s] Ambiguous melee source Weapon: %s and %s both match. Register the weapon explicitly."),
+				UE_LOG(LogEnemy, Warning, TEXT("[%s] Ambiguous melee source Weapon: %s and %s both match. Register the weapon explicitly."),
 					*GetNameSafe(BodyMesh->GetOwner()), *GetNameSafe(Weapon), *GetNameSafe(Mesh));
 				return nullptr;
 			}
@@ -153,7 +154,7 @@ bool UEnemyMeleeTraceComponent::PrepareAttack(const TArray<TObjectPtr<UEnemyMele
 		if (!IsValid(Definition) || Definition->SocketNames.IsEmpty()
 			|| !FMath::IsFinite(Definition->Radius) || Definition->Radius <= 0.f)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[%s] Invalid melee trace settings"), *GetNameSafe(GetOwner()));
+			UE_LOG(LogEnemy, Warning, TEXT("[%s] Invalid melee trace settings"), *GetNameSafe(GetOwner()));
 			StopAttack();
 			return false;
 		}
@@ -172,7 +173,7 @@ bool UEnemyMeleeTraceComponent::PrepareAttack(const TArray<TObjectPtr<UEnemyMele
 
 		if (!IsValid(Mesh))
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[%s] No melee mesh for source %s"), *GetNameSafe(Enemy), *Definition->SourceName.ToString());
+			UE_LOG(LogEnemy, Warning, TEXT("[%s] No melee mesh for source %s"), *GetNameSafe(Enemy), *Definition->SourceName.ToString());
 			StopAttack();
 			return false;
 		}
@@ -183,7 +184,7 @@ bool UEnemyMeleeTraceComponent::PrepareAttack(const TArray<TObjectPtr<UEnemyMele
 		{
 			if (Socket.IsNone() || !Mesh->DoesSocketExist(Socket))
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[%s] Melee socket missing: %s.%s"),
+				UE_LOG(LogEnemy, Warning, TEXT("[%s] Melee socket missing: %s.%s"),
 					*GetNameSafe(GetOwner()), *Definition->SourceName.ToString(), *Socket.ToString());
 				StopAttack();
 				return false;
@@ -374,7 +375,7 @@ void UEnemyMeleeTraceComponent::SampleSockets()
 		}
 
 		AActor* Target = Hit.GetActor();
-		if (!EnemyTargetUtils::IsAttackableTarget(Target)
+		if (!EnemyTargetUtils::IsHostileTarget(GetOwner(), Target)
 			|| !EnemyTargetUtils::IsHitReceiverComponent(Target, Hit.GetComponent())
 			|| HitActors.Contains(Target))
 		{
