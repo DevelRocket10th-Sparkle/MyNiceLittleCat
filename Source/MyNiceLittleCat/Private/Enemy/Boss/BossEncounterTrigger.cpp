@@ -3,6 +3,7 @@
 #include "Characters/PlayerCharacter.h"
 #include "Components/BoxComponent.h"
 #include "Engine/Level.h"
+#include "Frameworks/Save/ProgressFlagGateComponent.h"
 
 ABossEncounterTrigger::ABossEncounterTrigger()
 {
@@ -16,6 +17,8 @@ ABossEncounterTrigger::ABossEncounterTrigger()
 	TriggerBox->SetCollisionResponseToAllChannels(ECR_Ignore);
 	TriggerBox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 	TriggerBox->SetGenerateOverlapEvents(true);
+
+	ProgressGate = CreateDefaultSubobject<UProgressFlagGateComponent>(TEXT("ProgressGate"));
 }
 
 // 매니저 지정 여부 확인 및 겹침 이벤트 구독

@@ -22,6 +22,8 @@
 
 class AGimmickActorBase;
 class AGimmickKeyLock;
+class APetCharacter;
+class USoundBase;
 class UCinematicTrailDecalComponent;
 class UEnemyEyeGlowComponent;
 class UNiagaraSystem;
@@ -59,6 +61,11 @@ public :
 
 	// 핏자국 컴포넌트 생성
 	AStage3BossDirector();
+
+	/* IBossEncounterDirector */
+
+	// 엔딩 컷이 있으면 처치 후 레벨 이동을 엔딩이 끝날 때까지 미룸
+	virtual bool HoldsLevelAfterDefeat() const override;
 
 protected :
 
@@ -119,6 +126,17 @@ private :
 
 	// 등장 컷 전에는 보스를 숨김
 	void HideBossBeforeIntro();
+
+	/* 엔딩 */
+
+	// 처치 다음 틱: 실제 보스 숨김, 펫 AI 정지, 엔딩 BGM, 엔딩 컷 재생
+	void StartEnding();
+
+	// 엔딩 컷 종료 후 검은 화면 유지 시간이 지나면 다음 레벨로
+	void FinishEnding();
+
+	// 플레이어의 파트너 펫 (없으면 nullptr)
+	APetCharacter* FindPartnerPet() const;
 
 	/* 레벨 상태 */
 
@@ -192,18 +210,44 @@ protected :
 	UPROPERTY(EditInstanceOnly, Category = "Stage3|Staging")
 	TObjectPtr<AActor> StairBlocker;
 
-	// 사이렌 경고 길이와 최대 눈 색
-	UPROPERTY(EditInstanceOnly, Category = "Stage3|Staging", meta = (ClampMin = "0.0", Units = "s"))
+	// 사이렌 경고 길이. 깜빡임 색은 해당 페이즈의 EyeGlow 사용.
+	UPROPERTY(EditInstanceOnly, Category = "Stage3|Siren", meta = (ClampMin = "0.0", Units = "s"))
 	float SirenSeconds = 3.f;
 
-	UPROPERTY(EditInstanceOnly, Category = "Stage3|Staging")
-	FLinearColor SirenColor = FLinearColor(13.f, 0.05f, 0.02f);
+	/* 엔딩 */
+
+	// 보스 처치 후 재생할 엔딩 컷 (비우면 기존처럼 사망 연출 뒤 바로 다음 레벨)
+	// - 시퀀스: 보스 대역(스폰), Player/Pet 태그 바인딩, 마커 Cue:BossDust, Ragdoll:Player
+	UPROPERTY(EditInstanceOnly, Category = "Stage3|Ending")
+	TObjectPtr<ULevelSequence> EndingSequence;
+
+	// 엔딩 컷에서 펫을 연결할 바인딩 태그
+	UPROPERTY(EditInstanceOnly, Category = "Stage3|Ending")
+	FName PetBindingTag = TEXT("Pet");
+
+	// 엔딩 동안 이어질 곡 (이벤트 BGM: 존 볼륨보다 우선이라 컷이 마을로 넘어가도 곡 유지, 비우면 기존 곡)
+	UPROPERTY(EditInstanceOnly, Category = "Stage3|Ending")
+	TObjectPtr<USoundBase> EndingBGM;
+
+	// 엔딩 컷이 끝난 뒤(페이드 아웃 상태) 다음 레벨로 넘어가기 전 대기 시간
+	UPROPERTY(EditInstanceOnly, Category = "Stage3|Ending", meta = (ClampMin = "0.0", Units = "s"))
+	float EndingBlackHoldSeconds = 1.f;
 
 private :
 
 	// Stage3 전용 컷 태그
 	static const FName ArrivalCutTag;
 	static const FName UnlockCutTag;
+	static const FName EndingCutTag;
+
+	// 엔딩 컷에 연결할 펫 (엔딩 시작 시 저장, AddCutBindings가 const라 미리 찾아 둠)
+	TWeakObjectPtr<APetCharacter> EndingPet;
+
+	// 엔딩 진행 여부 (중복 시작 방지)
+	bool bEndingStarted = false;
+
+	// 엔딩 컷 종료 후 레벨 이동 대기
+	FTimerHandle EndingTimer;
 
 	// 오프닝 단계
 	EOpeningStep OpeningStep = EOpeningStep::WaitingForArrival;

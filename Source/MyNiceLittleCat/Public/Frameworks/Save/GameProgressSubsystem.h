@@ -17,6 +17,8 @@
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCheckpointChanged, FName, CheckpointId);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnProgressSaved, bool, bSuccess);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPlayerRested);
+// 진행 플래그가 실제로 켜지거나 꺼졌을 때 (같은 값 재설정은 무시)
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnProgressFlagChanged, FName, Flag, bool, bEnabled);
 // 세이브 직전 (맵의 기믹 등이 현재 상태를 세이브 데이터에 기록)
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnCollectSaveData, UGameProgressSaveGame*);
 // 세이브 데이터가 통째로 바뀜 (슬롯 로드, 새 게임 초기화) → 세이브를 캐시하는 쪽이 다시 읽음
@@ -110,6 +112,10 @@ public:
 	// 체크포인트에서 휴식했을 때 (포션 충전, 몬스터 리셋 등을 여기에 연결)
 	UPROPERTY(BlueprintAssignable, Category = "Progress")
 	FOnPlayerRested OnPlayerRested;
+
+	// 진행 플래그 변경 (보스 처치 후 트리거 제거 등, 맵 액터가 진행 상태에 반응)
+	UPROPERTY(BlueprintAssignable, Category = "Progress")
+	FOnProgressFlagChanged OnProgressFlagChanged;
 
 	// 세이브 직전 (C++ 전용)
 	FOnCollectSaveData OnCollectSaveData;

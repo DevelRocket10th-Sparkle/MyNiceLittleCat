@@ -117,6 +117,9 @@ public :
 	// Getter: 시퀀스에서 이 보스를 연결할 바인딩 태그
 	FName GetSequenceBindingTag() const { return SequenceBindingTag; }
 
+	// Getter: 체력바에 표시할 보스 이름 (비어 있으면 위젯 기본 이름)
+	const FText& GetBossDisplayName() const { return BossDisplayName; }
+
 protected :
 
 	/* AEnemyCharacter */
@@ -204,6 +207,10 @@ protected :
 	// 시퀀스에서 이 보스를 연결할 바인딩 태그 (시퀀서 바인딩 Tags와 같은 이름)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Cinematic")
 	FName SequenceBindingTag = TEXT("Boss");
+
+	// 보스 체력바에 표시할 이름
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|UI")
+	FText BossDisplayName;
 
 private :
 

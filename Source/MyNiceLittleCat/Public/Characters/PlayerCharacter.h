@@ -68,6 +68,11 @@ public:
 	UStaticMeshComponent* GetPotionMesh() const { return PotionMesh; }
 
 	void PlayDeflect();
+
+	// 연출용 쓰러짐 (엔딩 컷의 Collapse:Player 마커)
+	// - 사망 처리(Die)와 달리 OnPlayerDied를 방송하지 않음: 펫 사망 반응, 리스폰, 사망 몽타주/소리 없음
+	// - 조작과 몽타주만 정리: 쓰러지는 동작은 시퀀스의 쓰러짐 애님이 담당 (래그돌 아님)
+	void BeginCinematicCollapse();
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -137,6 +142,9 @@ protected:
 	void PushNearbyEnemies(const FVector& WorldMoveInput);
 
 private:
+	// 애님 중지, 캡슐 충돌 해제, 메시 래그돌 전환 (사망과 연출 쓰러짐 공용)
+	void StartRagdoll();
+
 	void StartHitReaction(FVector HitDirection);
 	void ToggleHitFlash();
 	void EndInvincibility();

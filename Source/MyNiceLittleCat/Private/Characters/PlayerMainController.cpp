@@ -3,6 +3,7 @@
 #include "Cinematics/CinematicSubsystem.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubSystems.h"
+#include "InputMappingContext.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Pet/PetCharacter.h"
 #include "Widgets/Pause/PauseMenuWidget.h"
@@ -62,6 +63,14 @@ void APlayerMainController::BeginPlay()
                 Subsystem->AddMappingContext(IMC_Pet, 1);
         }
     }
+
+	// 컷신 중 입력 차단: 레벨 시작 컷신처럼 구독 전에 이미 재생 중일 수 있어 현재 상태도 바로 반영
+	if (UCinematicSubsystem* Cinematics = GetWorld() ? GetWorld()->GetSubsystem<UCinematicSubsystem>() : nullptr)
+	{
+		CutsceneStateChangedHandle = Cinematics->OnCutsceneStateChanged.AddUObject(this, &APlayerMainController::HandleCutsceneStateChanged);
+		if (true == Cinematics->IsCutscenePlaying())
+			HandleCutsceneStateChanged(true);
+	}
 }
 
 void APlayerMainController::SetupInputComponent()
@@ -101,6 +110,10 @@ void APlayerMainController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	HandleDialCanceled();
 	HandleModeUseCanceled();
+
+	if (UCinematicSubsystem* Cinematics = GetWorld() ? GetWorld()->GetSubsystem<UCinematicSubsystem>() : nullptr)
+		Cinematics->OnCutsceneStateChanged.Remove(CutsceneStateChangedHandle);
+	CutsceneStateChangedHandle.Reset();
 
 	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
 	{
@@ -278,6 +291,16 @@ void APlayerMainController::SetPetInputEnabled(bool _bEnable)
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = (nullptr != LocalPlayer) ? LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>() : nullptr;
 	if (nullptr == Subsystem || nullptr == IMC_Pet) return;
 
+	// 컷신 중이면 지금 넣지 않고 컷신 종료 후 복구할 목록만 갱신 → 컷신 도중 펫 입력이 살아나지 않게
+	if (true == bCutsceneInputBlocked && true == CutsceneBlockedContexts.Contains(IMC_Pet))
+	{
+		if (true == _bEnable)
+			SuspendedCutsceneContexts.FindOrAdd(IMC_Pet, 1); // BeginPlay 와 같은 우선순위
+		else
+			SuspendedCutsceneContexts.Remove(IMC_Pet);
+		return;
+	}
+
 	// 펫 키 매핑(IMC_Pet)을 통째로 빼고 넣음 -> 키를 눌러도 펫 입력 액션 자체가 발생하지 않음
 	// (캐릭터 이동/공격 매핑은 따로라 영향 없음)
 	if (true == _bEnable)
@@ -370,6 +393,59 @@ void APlayerMainController::HandleSkipCinematic()
 	{
 		Cinematics->TrySkipActiveCutscene();
 	}
+}
+
+void APlayerMainController::HandleCutsceneStateChanged(bool _bCutscenePlaying)
+{
+	if (bCutsceneInputBlocked == _bCutscenePlaying) return;
+
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = (nullptr != LocalPlayer) ? LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>() : nullptr;
+	if (nullptr == Subsystem) return;
+
+	// 컷신 전후로 누르고 있던 키는 뗄 때까지 무시 → 컷신이 끝나는 순간 공격/회피가 바로 나가지 않게
+	FModifyContextOptions Options;
+	Options.bIgnoreAllPressedKeysUntilRelease = true;
+
+	if (true == _bCutscenePlaying)
+	{
+		// 컷신 IMC가 없으면 게임플레이 IMC를 빼는 순간 스킵 입력도 사라지므로 차단하지 않음
+		if (nullptr == IMC_Cinematic)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Cinematic] IMC_Cinematic is not set on %s: cutscene input is not blocked"), *GetClass()->GetName());
+			return;
+		}
+
+		// 진행 중인 펫 다이얼/모드 사용을 먼저 정리 (IMC가 빠지면 Completed/Canceled를 못 받을 수 있음)
+		HandleDialCanceled();
+		HandleModeUseCanceled();
+
+		SuspendedCutsceneContexts.Reset();
+		for (UInputMappingContext* Context : CutsceneBlockedContexts)
+		{
+			int32 Priority = 0;
+			if (nullptr == Context || false == Subsystem->HasMappingContext(Context, Priority)) continue;
+
+			SuspendedCutsceneContexts.Add(Context, Priority);
+			Subsystem->RemoveMappingContext(Context, Options);
+		}
+
+		Subsystem->AddMappingContext(IMC_Cinematic, CinematicContextPriority, Options);
+	}
+	else
+	{
+		if (nullptr != IMC_Cinematic)
+			Subsystem->RemoveMappingContext(IMC_Cinematic, Options);
+
+		for (const TPair<TObjectPtr<UInputMappingContext>, int32>& Pair : SuspendedCutsceneContexts)
+		{
+			if (nullptr != Pair.Key && false == Subsystem->HasMappingContext(Pair.Key))
+				Subsystem->AddMappingContext(Pair.Key, Pair.Value, Options);
+		}
+		SuspendedCutsceneContexts.Reset();
+	}
+
+	bCutsceneInputBlocked = _bCutscenePlaying;
 }
 
 

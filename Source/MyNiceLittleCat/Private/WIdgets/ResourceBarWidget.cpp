@@ -15,6 +15,28 @@ void UResourceBarWidget::NativePreConstruct()
 	SetShowValueText(bShowValueText);
 }
 
+void UResourceBarWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	if (!TrailBar || TrailPercent <= TargetPercent)
+		return;
+
+	// 피격 직후 잠시 멈췄다가 현재 값까지 따라감
+	if (TrailHoldTime > 0.f)
+	{
+		TrailHoldTime -= InDeltaTime;
+		return;
+	}
+
+	float NewTrail = FMath::FInterpTo(TrailPercent, TargetPercent, InDeltaTime, TrailInterpSpeed);
+	if (NewTrail - TargetPercent < 0.002f)
+	{
+		NewTrail = TargetPercent;
+	}
+	ApplyTrailPercent(NewTrail);
+}
+
 #if WITH_EDITOR
 void UResourceBarWidget::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
@@ -42,10 +64,35 @@ void UResourceBarWidget::UpdateResourceBar(float InCurrent, float InMax)
 	const float Percent = FMath::IsNearlyZero(InMax) ? 0.f : FMath::Clamp(InCurrent / InMax, 0.f, 1.f);
 	if (Bar)
 		Bar->SetPercent(Percent);
+
+	// 잔상: 감소면 대기 후 따라가고, 증가(회복)나 첫 값이면 즉시 맞춤
+	if (!bHasValue || Percent >= TrailPercent)
+	{
+		ApplyTrailPercent(Percent);
+	}
+	else if (Percent < TargetPercent)
+	{
+		TrailHoldTime = TrailDelay;
+	}
+	TargetPercent = Percent;
+	bHasValue = true;
 	if (CurrentText)
 		CurrentText->SetText(FText::AsNumber(FMath::FloorToInt(InCurrent)));	// 소수점 떼기
 	if (MaxText)
 		MaxText->SetText(FText::AsNumber(FMath::FloorToInt(InMax)));	// 소수점 떼기
+}
+
+void UResourceBarWidget::ResetTrail()
+{
+	TrailHoldTime = 0.f;
+	ApplyTrailPercent(TargetPercent);
+}
+
+void UResourceBarWidget::ApplyTrailPercent(float InPercent)
+{
+	TrailPercent = InPercent;
+	if (TrailBar)
+		TrailBar->SetPercent(TrailPercent);
 }
 
 void UResourceBarWidget::SetShowValueText(bool bShow)
@@ -70,5 +117,16 @@ void UResourceBarWidget::SetResourceBarColor(FLinearColor InColor)
 
 	FProgressBarStyle Style = Bar->GetWidgetStyle();	// 위젯 스타일 변경 위해서 기존 위젯 스타일 가져오기
 	Style.BackgroundImage.TintColor = BackgroundColor;
+
+	// 잔상 바가 있으면 배경은 TrailBar가 그리고, Bar 배경은 투명하게 해서 잔상이 보이도록 함
+	if (TrailBar)
+	{
+		FProgressBarStyle TrailStyle = TrailBar->GetWidgetStyle();
+		TrailStyle.BackgroundImage.TintColor = BackgroundColor;
+		TrailBar->SetWidgetStyle(TrailStyle);
+		TrailBar->SetFillColorAndOpacity(TrailColor);
+
+		Style.BackgroundImage.TintColor = FLinearColor::Transparent;
+	}
 	Bar->SetWidgetStyle(Style);
 }

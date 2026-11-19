@@ -1,4 +1,5 @@
 #include "Enemy/Boss/Objects/MoneyProjectile.h"
+#include "Enemy/Combat/EnemyFeedback.h"
 #include "Enemy/Combat/EnemyTargetUtils.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -43,6 +44,9 @@ void AMoneyProjectile::Launch(const FVector& Direction, float Speed, float Damag
 	Movement->Velocity = Direction.GetSafeNormal() * Speed;
 	Movement->Activate();
 	SetLifeSpan(LifeSeconds);
+
+	// 외형이 펄럭여도 궤적은 탄환의 진행 방향을 따른다.
+	EnemyFeedback::PlayAttached(TrailCue, Collision);
 }
 
 void AMoneyProjectile::Tick(float DeltaSeconds)
@@ -66,6 +70,9 @@ void AMoneyProjectile::HandleHit(UPrimitiveComponent* HitComponent, AActor* Othe
 		return;
 	}
 	bConsumed = true;
+
+	// 충돌 연출: 맞은 면 바깥쪽을 향하도록
+	EnemyFeedback::PlayAtLocation(this, ImpactCue, Hit.ImpactPoint, Hit.ImpactNormal.Rotation());
 	
 	// 대상 판정과 피해 전달은 EnemyTargetUtils에 위임 (탄환은 플레이어 타입을 모름)
 	// - 가해자 컨트롤러는 이 탄환의 Instigator(발사한 보스)에서 구함

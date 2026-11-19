@@ -57,6 +57,9 @@ struct FLaserGridSlot
 	UPROPERTY()
 	TObjectPtr<UNiagaraComponent> Preview;
 
+	UPROPERTY()
+	TObjectPtr<class UAudioComponent> FireAudio;
+
 	bool bBusy = false;
 
 	// 예고한 공격 (발사 때 사용)
@@ -79,6 +82,10 @@ class MYNICELITTLECAT_API ALaserGridPattern : public AActor
 
 public:
 	ALaserGridPattern();
+
+	// 실제 레이저가 켜질 때만 슬롯마다 재생. 프리뷰에는 사용하지 않음.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LaserGrid|Sound")
+	TObjectPtr<class USoundBase> FireSound;
 
 	virtual void OnConstruction(const FTransform& Transform) override;
 

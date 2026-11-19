@@ -13,6 +13,12 @@
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "Enemy/GAS/EnemyCombatTags.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "Components/AudioComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Components/MeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 namespace
 {
@@ -131,6 +137,8 @@ void UGA_BossLaserBeam::StartShot()
 
 	// 1단계: 추적
 	Stage = EBossLaserBeamStage::Tracking;
+	ChargeAudio = UGameplayStatics::SpawnSoundAttached(LaserSettings->ChargeSound, Laser);
+	StartChargeEffect();
 	ShowAimWarning(0.f);
 
 	UE_LOG(LogTemp, Log, TEXT("[BossLaser] %s: %d/%d발 추적 시작 (%.2f초)"), *Enemy->GetName(), ShotsFired + 1, LaserSettings->ShotCount, LaserSettings->AimTrackTime);
@@ -184,6 +192,9 @@ void UGA_BossLaserBeam::HandleLockFinished()
 
 	// 3단계: 발사
 	Stage = EBossLaserBeamStage::Firing;
+	if (IsValid(ChargeAudio)) { ChargeAudio->FadeOut(0.04f, 0.f); }
+	ChargeAudio = nullptr;
+	StopChargeEffect();
 	HideAimWarning();
 
 	if (!FMath::IsNearlyEqual(LaserMoveSpeedMultiplier, 1.f))
@@ -194,6 +205,8 @@ void UGA_BossLaserBeam::HandleLockFinished()
 
 	Laser->OnLaserStopped.AddUniqueDynamic(this, &UGA_BossLaserBeam::HandleLaserStopped);
 	Laser->StartLaser(GetBeamTargetLocation(Laser, AimPoint), LaserSettings->FireDuration);
+	FireAudio = UGameplayStatics::SpawnSoundAttached(LaserSettings->FireSound, Laser);
+	SetStaffEyeGlow(Laser->IsLaserActive());
 
 	UE_LOG(LogTemp, Log, TEXT("[BossLaser] %s: 발사 (%.2f초, 발사 중 추적 %s)"),
 		*Enemy->GetName(), LaserSettings->FireDuration, LaserSettings->bTrackDuringFire ? TEXT("켬") : TEXT("끔"));
@@ -201,6 +214,9 @@ void UGA_BossLaserBeam::HandleLockFinished()
 
 void UGA_BossLaserBeam::HandleLaserStopped(ULaserBeamComponent* InLaser)
 {
+	if (IsValid(FireAudio)) { FireAudio->FadeOut(0.04f, 0.f); }
+	FireAudio = nullptr;
+	SetStaffEyeGlow(false);
 	if (IsValid(Laser))
 	{
 		Laser->OnLaserStopped.RemoveDynamic(this, &UGA_BossLaserBeam::HandleLaserStopped);
@@ -258,6 +274,15 @@ void UGA_BossLaserBeam::UpdateAim()
 	if (!IsActive() || !IsExecutionValid())
 	{
 		return;
+	}
+
+	if (IsValid(ChargeEffectComponent))
+	{
+		const float Duration = LaserSettings->AimTrackTime + LaserSettings->LockDelay;
+		const float Progress = Duration > 0.f
+			? FMath::Clamp(static_cast<float>(GetWorld()->GetTimeSeconds() - ChargeStartTime) / Duration, 0.f, 1.f)
+			: 1.f;
+		ChargeEffectComponent->SetVariableFloat(TEXT("User.ChargeProgress"), Progress);
 	}
 
 	if (Stage == EBossLaserBeamStage::Tracking)
@@ -419,6 +444,52 @@ void UGA_BossLaserBeam::HideAimWarning()
 	Warning = nullptr;
 }
 
+void UGA_BossLaserBeam::StartChargeEffect()
+{
+	StopChargeEffect();
+	if (!LaserSettings->ChargeEffect || GetWorld()->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	ChargeStartTime = GetWorld()->GetTimeSeconds();
+	ChargeEffectComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		LaserSettings->ChargeEffect, Laser, NAME_None, LaserSettings->ChargeEffectOffset,
+		FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset, false, false);
+	if (IsValid(ChargeEffectComponent))
+	{
+		ChargeEffectComponent->SetRelativeScale3D(FVector(LaserSettings->ChargeEffectScale));
+		ChargeEffectComponent->SetVariableFloat(TEXT("User.ChargeProgress"), 0.f);
+		ChargeEffectComponent->Activate(true);
+	}
+}
+
+void UGA_BossLaserBeam::StopChargeEffect()
+{
+	if (IsValid(ChargeEffectComponent))
+	{
+		ChargeEffectComponent->DestroyComponent();
+	}
+	ChargeEffectComponent = nullptr;
+}
+
+void UGA_BossLaserBeam::SetStaffEyeGlow(bool bEnabled)
+{
+	if (bEnabled && !StaffEyeMaterial && Enemy.IsValid())
+	{
+		const TArray<UActorComponent*> Meshes = Enemy->GetComponentsByTag(UMeshComponent::StaticClass(), TEXT("LaserEyeGlow"));
+		if (!Meshes.IsEmpty())
+		{
+			StaffEyeMaterial = CastChecked<UMeshComponent>(Meshes[0])->CreateDynamicMaterialInstance(0);
+		}
+	}
+	if (StaffEyeMaterial)
+	{
+		StaffEyeMaterial->SetVectorParameterValue(TEXT("EyeGlow"),
+			bEnabled && LaserSettings ? LaserSettings->StaffEyeGlowColor : FLinearColor::Black);
+	}
+}
+
 bool UGA_BossLaserBeam::IsExecutionValid() const
 {
 	// 활성·생존·요청 진행 확인은 부모 도우미, 레이저 고유 조건만 추가
@@ -445,7 +516,13 @@ void UGA_BossLaserBeam::RestoreMoveSpeed()
 // 부모 EndAbility가 먼저 호출 → 이 정리 뒤에 부모가 이동/회전 잠금 해제, ExecutionTarget/RequestId 등 초기화, Super::EndAbility 진행
 void UGA_BossLaserBeam::StopPattern(bool bWasCancelled)
 {
+	if (IsValid(ChargeAudio)) { ChargeAudio->Stop(); }
+	if (IsValid(FireAudio)) { FireAudio->Stop(); }
+	ChargeAudio = nullptr;
+	FireAudio = nullptr;
+	SetStaffEyeGlow(false);
 	Stage = EBossLaserBeamStage::None;
+	StopChargeEffect();
 
 	if (Enemy.IsValid())
 	{
@@ -476,6 +553,7 @@ void UGA_BossLaserBeam::StopPattern(bool bWasCancelled)
 
 	Laser = nullptr;
 	LaserSettings = nullptr;
+	StaffEyeMaterial = nullptr;
 	LaserMoveSpeedMultiplier = 1.f;
 	ShotsFired = 0;
 }

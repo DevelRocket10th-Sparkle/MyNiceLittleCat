@@ -834,6 +834,36 @@ void APlayerCharacter::OnDeathMontageEnded(UAnimMontage* Montage, bool bInterrup
     if (Montage && Montage != DeathMontage)
         return;
 
+    StartRagdoll();
+}
+
+void APlayerCharacter::BeginCinematicCollapse()
+{
+    if (bIsDead) return;
+
+    bIsAbleToAttack = false;
+    bIsAbleToDodge = false;
+    bIsAbleToMove = false;
+    bIsDodging = false;
+
+    GetWorldTimerManager().ClearTimer(InvincibilityTimerHandle);
+    GetWorldTimerManager().ClearTimer(BlinkTimerHandle);
+    GetWorldTimerManager().ClearTimer(HitStunTimerHandle);
+
+    if (PotionMesh) PotionMesh->SetHiddenInGame(true);
+
+    if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
+    {
+        AnimInstance->StopAllMontages(0.0f);
+    }
+
+    // 쓰러지는 동작은 연출(시퀀스 애님)이 담당: 래그돌은 쓰지 않음
+    // - Rig_Raccoon Root 본 스케일(2.54) 때문에 물리 래그돌에서 팔다리가 늘어남
+    GetCharacterMovement()->DisableMovement();
+}
+
+void APlayerCharacter::StartRagdoll()
+{
     USkeletalMeshComponent* CharacterMesh = GetMesh();
 
     // 애니메이션 갱신 중단

@@ -15,6 +15,8 @@
 #include "BossLaserPatternSettings.generated.h"
 
 class UAnimMontage;
+class UNiagaraSystem;
+class USoundBase;
 class AAttackWarningDecal;
 
 UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, meta = (DisplayName = "Boss Laser Pattern Settings"))
@@ -79,4 +81,25 @@ public:
 	// 매 발사의 추적·확정 동안 재생할 충전 몽타주 (선택, 끝나도 패턴은 계속)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Animation")
 	TObjectPtr<UAnimMontage> ChargeMontage;
+
+	// 추적 시작부터 발사 직전까지 레이저 발사점에 부착할 충전 이펙트
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual")
+	TObjectPtr<UNiagaraSystem> ChargeEffect;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual")
+	FVector ChargeEffectOffset = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual", meta = (ClampMin = "0.01"))
+	float ChargeEffectScale = 1.f;
+
+	// 추적/확정 동안 재생하고 발사 시 정지. 반복 여부는 Sound Cue에서 편집.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Sound")
+	TObjectPtr<USoundBase> ChargeSound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Sound")
+	TObjectPtr<USoundBase> FireSound;
+
+	// LaserEyeGlow 태그를 가진 무기 메시의 눈 발광 색. 발사 중에만 적용.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual")
+	FLinearColor StaffEyeGlowColor = FLinearColor(5.f, 0.3f, 12.f, 1.f);
 };

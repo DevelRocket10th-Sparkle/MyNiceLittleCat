@@ -16,6 +16,9 @@
 #include "Enemy/Interfaces/BossEncounterDirector.h"
 #include "Enemy/Interfaces/BossPhaseTransitionHandler.h"
 #include "Frameworks/GameMode/MainGameMode.h"
+#include "Frameworks/Save/GameProgressSubsystem.h"
+#include "Frameworks/Sound/BGMSubSystem.h"
+#include "Engine/GameInstance.h"
 #include "Widgets/MainHUD.h"
 
 namespace
@@ -48,6 +51,9 @@ void ABossEncounterManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	ClearEncounterPlayer();
 	RemoveCurrentBoss();
 	HideEncounterHealthBar();
+
+	// 매니저가 사라지는데 스택에 남아 있으면 보스 곡이 계속 재생되므로 정리
+	PopBossBGM();
 
 	EncounterDirector.Reset();
 
@@ -115,6 +121,9 @@ bool ABossEncounterManager::StartEncounter(APlayerCharacter* Player)
 		}),
 		PlayerCheckInterval, true);
 
+	// 등장 연출 종료 후 담당자가 StartEncounter를 호출하므로, 이 시점에 보스 곡으로 전환
+	PushBossBGM();
+
 	ShowEncounterHealthBar();
 	return true;
 }
@@ -127,6 +136,9 @@ void ABossEncounterManager::ResetEncounter()
 	{
 		Director->OnEncounterReset();
 	}
+
+	// 재도전/실패로 리셋되면 보스 곡을 빼서 존 곡으로 복귀 (다음 시도 때 StartEncounter에서 다시 Push)
+	PopBossBGM();
 
 	HideEncounterHealthBar();
 
@@ -193,10 +205,23 @@ void ABossEncounterManager::HandleBossDefeated(ABossCharacter* Boss)
 	ClearEncounterPlayer();
 	EncounterState = EBossEncounterState::Cleared;
 
+	// 진행 기록: 게임 흐름(트리거 제거 등)은 플래그를 구독하는 쪽이 처리
+	if (!DefeatedProgressFlag.IsNone())
+	{
+		const UGameInstance* GameInstance = GetGameInstance();
+		if (UGameProgressSubsystem* Progress = GameInstance ? GameInstance->GetSubsystem<UGameProgressSubsystem>() : nullptr)
+		{
+			Progress->SetProgressFlag(DefeatedProgressFlag);
+		}
+	}
+
 	if (IBossEncounterDirector* Director = GetDirector())
 	{
 		Director->OnEncounterCleared();
 	}
+
+	// 처치 시 보스 곡 종료 → 존 곡으로 크로스페이드
+	PopBossBGM();
 
 	HideEncounterHealthBar();
 }
@@ -206,6 +231,22 @@ void ABossEncounterManager::TryOpenLevelAfterDefeat(ABossCharacter* Boss)
 	if (!HasAuthority() || !IsValid(Boss) || Boss != CurrentBoss
 		|| EncounterState != EBossEncounterState::Cleared
 		|| !Boss->HasFinishedDeath() || LevelAfterDefeat.IsNull())
+	{
+		return;
+	}
+
+	// 엔딩 연출 등으로 연출 담당자가 이동을 미루면 담당자가 연출 뒤 OpenLevelAfterDefeat 호출
+	if (const IBossEncounterDirector* Director = GetDirector(); Director && Director->HoldsLevelAfterDefeat())
+	{
+		return;
+	}
+
+	OpenLevelAfterDefeat();
+}
+
+void ABossEncounterManager::OpenLevelAfterDefeat()
+{
+	if (!HasAuthority() || EncounterState != EBossEncounterState::Cleared || LevelAfterDefeat.IsNull())
 	{
 		return;
 	}
@@ -479,4 +520,35 @@ void ABossEncounterManager::HideEncounterHealthBar()
 	}
 
 	EncounterHUD.Reset();
+}
+
+/* BGM */
+
+void ABossEncounterManager::PushBossBGM()
+{
+	if (nullptr == BossBGM)
+	{
+		return;
+	}
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UBGMSubSystem* BGM = GI->GetSubsystem<UBGMSubSystem>())
+		{
+			// Owner = 이 매니저: 같은 Owner로 다시 Push해도 중복 없이 교체됨
+			BGM->PushEventBGM(this, BossBGM, 0.5f); // 마지막 인자는 크로스페이드 초 (추후로 변수로 빼야함)
+		}
+	}
+}
+
+void ABossEncounterManager::PopBossBGM()
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UBGMSubSystem* BGM = GI->GetSubsystem<UBGMSubSystem>())
+		{
+			// 스택에 없으면 아무 일도 안 일어나므로 여러 번 불러도 안전
+			BGM->PopEventBGM(this, 0.5f); // 마지막 인자는 크로스페이드 초 (추후로 변수로 빼야함)
+		}
+	}
 }

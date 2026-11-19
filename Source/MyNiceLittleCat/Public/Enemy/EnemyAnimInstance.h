@@ -24,6 +24,8 @@ public :
 
 protected :
 
+	virtual bool HandleNotify(const FAnimNotifyEvent& AnimNotifyEvent) override;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
 	bool bShouldMove = false;
 

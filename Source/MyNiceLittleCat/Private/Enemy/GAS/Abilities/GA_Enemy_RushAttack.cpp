@@ -7,6 +7,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 
+#include "Enemy/Combat/EnemyFeedback.h"
 #include "Enemy/Combat/EnemyTargetUtils.h"
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
 #include "Enemy/Data/EnemyMeleePatternSettings.h"
@@ -93,6 +94,9 @@ void UGA_Enemy_RushAttack::StopPattern(bool bWasCancelled)
 		}
 	}
 
+	// 돌진 중 취소(사망, 보스방 초기화)되어도 반복 연출이 남지 않게 정지
+	RushTrail.Stop();
+
 	bOwnsRootMotionOverride = false;
 	bRushStarted = false;
 	bRushing = false;
@@ -151,6 +155,10 @@ void UGA_Enemy_RushAttack::UpdateRush()
 		MontageJumpToSection(RushSection);
 		Anim->Montage_Pause(Montage);
 
+		// 돌진 시작 연출: 발밑에서 한 번, 돌진하는 동안 몸에 붙은 반복 연출
+		EnemyFeedback::PlayAtLocation(Enemy.Get(), RushStartCue, Enemy->GetMesh()->GetComponentLocation(), RushDirection.Rotation());
+		RushTrail = EnemyFeedback::PlayAttached(RushTrailCue, Enemy->GetMesh(), RushTrailSocket);
+
 		// 진입 프레임에는 이동하지 않아 준비 시간만큼 거리가 늘어나지 않게 함
 		if (DistanceRemaining <= KINDA_SMALL_NUMBER)
 		{
@@ -194,6 +202,12 @@ void UGA_Enemy_RushAttack::UpdateRush()
 	// 장애물에 막히거나 목표 거리만큼 이동하면 돌진 종료 (벽 통과나 무한 대기 방지)
 	if (MovementHit.IsValidBlockingHit() || MovementHit.bStartPenetrating || DistanceRemaining <= KINDA_SMALL_NUMBER)
 	{
+		// 막혀서 멈춘 경우만 충돌 연출 (목표 거리 도달은 공격 섹션 몽타주 노티파이가 담당)
+		if (MovementHit.IsValidBlockingHit())
+		{
+			EnemyFeedback::PlayAtLocation(Enemy.Get(), RushBlockedCue, MovementHit.ImpactPoint, MovementHit.ImpactNormal.Rotation());
+		}
+
 		FinishRush();
 	}
 }
@@ -237,6 +251,7 @@ void UGA_Enemy_RushAttack::SweepRushHits(const FVector& Start, const FVector& En
 void UGA_Enemy_RushAttack::FinishRush()
 {
 	bRushing = false;
+	RushTrail.Stop();
 	GetWorld()->GetTimerManager().ClearTimer(RushTimer);
 	Enemy->GetCharacterMovement()->StopMovementImmediately();
 
