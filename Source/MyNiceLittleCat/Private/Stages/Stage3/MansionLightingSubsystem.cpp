@@ -70,8 +70,21 @@ void UMansionLightingSubsystem::SetEvening(bool bNewEvening)
 		}
 		if (FBoolProperty* AutomaticColors = FindFProperty<FBoolProperty>(Sky->GetClass(), TEXT("Colors determined by sun position")))
 		{
-			AutomaticColors->SetPropertyValue_InContainer(Sky, true);
+			AutomaticColors->SetPropertyValue_InContainer(Sky, !bEvening);
 		}
+		const auto SetSkyColor = [Sky](const TCHAR* Name, const FLinearColor& Color)
+		{
+			if (FStructProperty* Property = FindFProperty<FStructProperty>(Sky->GetClass(), Name);
+				Property && Property->Struct == TBaseStructure<FLinearColor>::Get())
+			{
+				*Property->ContainerPtrToValuePtr<FLinearColor>(Sky) = Color;
+			}
+		};
+		// 저녁은 짙은 보라색 위쪽 하늘과 분홍기가 도는 지평선을 사용한다.
+		SetSkyColor(TEXT("Zenith color"), bEvening ? FLinearColor(0.035f, 0.009f, 0.065f) : FLinearColor(0.f, 0.014149f, 0.171875f));
+		SetSkyColor(TEXT("Horizon color"), bEvening ? FLinearColor(0.22f, 0.085f, 0.16f) : FLinearColor(1.979559f, 2.586644f, 3.f));
+		SetSkyColor(TEXT("Cloud color"), bEvening ? FLinearColor(0.16f, 0.075f, 0.20f) : FLinearColor(0.684349f, 0.919020f, 1.f));
+		SetSkyColor(TEXT("Overall color"), bEvening ? FLinearColor(0.55f, 0.42f, 0.65f) : FLinearColor::White);
 		if (FObjectPropertyBase* SunActor = FindFProperty<FObjectPropertyBase>(Sky->GetClass(), TEXT("Directional light actor")))
 		{
 			SunActor->SetObjectPropertyValue_InContainer(Sky, nullptr);
