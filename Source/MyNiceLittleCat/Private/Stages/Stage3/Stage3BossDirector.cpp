@@ -2,6 +2,7 @@
 
 
 #include "Stages/Stage3/Stage3BossDirector.h"
+#include "Stages/Stage3/MansionLightingSubsystem.h"
 
 #include "Animation/AnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -46,6 +47,7 @@ AStage3BossDirector::AStage3BossDirector()
 
 void AStage3BossDirector::BeginPlay()
 {
+	GetWorld()->GetSubsystem<UMansionLightingSubsystem>()->InitializeForStage();
 	// 베이스: 보스방에 연출 담당자로 등록
 	Super::BeginPlay();
 
@@ -234,6 +236,7 @@ bool AStage3BossDirector::HandleStageMarker_Implementation(const FCinematicMarke
 	}
 	if (Args.IsCommand(TEXT("Stair")) && Args.ArgEquals(0, TEXT("Break")))
 	{
+		GetWorld()->GetSubsystem<UMansionLightingSubsystem>()->SetEvening(true);
 		SetStairBlocked(false);
 		return true;
 	}

@@ -5,6 +5,7 @@
 
 #include "Frameworks/GameMode/MainGameMode.h"
 #include "Frameworks/Save/GameProgressSubsystem.h"
+#include "Stages/Stage3/MansionLightingSubsystem.h"
 #include "Pet/PetCharacter.h"
 #include "Characters/PlayerMainController.h"
 #include "Characters/PlayerCharacter.h"
@@ -141,6 +142,7 @@ bool AMainGameMode::RespawnPlayer(AController* Controller)
 	}
 
 	bRespawning = true;
+	GetWorld()->GetSubsystem<UMansionLightingSubsystem>()->RestoreCheckpointLighting();
 	RestartPlayer(Controller);
 	bRespawning = false;
 

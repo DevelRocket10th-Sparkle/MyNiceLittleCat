@@ -6,6 +6,7 @@
 #include "Frameworks/Save/GameProgressSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
+#include "Stages/Stage3/MansionLightingSubsystem.h"
 
 void UGameProgressSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -30,6 +31,9 @@ void UGameProgressSubsystem::SetCheckpoint(const UObject* WorldContextObject, FN
 	Data.LevelName = GetLevelName(WorldContextObject);
 	Data.CheckpointId = CheckpointId;
 	Data.RespawnTransform = RespawnTransform;
+	const UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
+	const UMansionLightingSubsystem* Lighting = World ? World->GetSubsystem<UMansionLightingSubsystem>() : nullptr;
+	Data.bEvening = Lighting && Lighting->IsEvening();
 
 	OnCheckpointChanged.Broadcast(CheckpointId);
 
@@ -53,6 +57,9 @@ bool UGameProgressSubsystem::DiscoverCheckpoint(const UObject* WorldContextObjec
 	Data.CheckpointId = CheckpointId;
 	Data.DisplayName = DisplayName;
 	Data.RespawnTransform = RespawnTransform;
+	const UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
+	const UMansionLightingSubsystem* Lighting = World ? World->GetSubsystem<UMansionLightingSubsystem>() : nullptr;
+	Data.bEvening = Lighting && Lighting->IsEvening();
 	return Found == nullptr;
 }
 
@@ -77,6 +84,13 @@ void UGameProgressSubsystem::UnlockCheckpoint(FName LevelName, FName CheckpointI
 void UGameProgressSubsystem::SetCheckpointData(const FCheckpointSaveData& Data, bool bSave)
 {
 	CurrentSave->LastCheckpoint = Data;
+	if (UWorld* World = GetWorld())
+	{
+		if (UMansionLightingSubsystem* Lighting = World->GetSubsystem<UMansionLightingSubsystem>())
+		{
+			Lighting->RestoreCheckpointLighting();
+		}
+	}
 	OnCheckpointChanged.Broadcast(Data.CheckpointId);
 
 	if (bSave)
