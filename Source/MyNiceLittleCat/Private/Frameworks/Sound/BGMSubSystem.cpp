@@ -2,6 +2,7 @@
 #include "Frameworks/Sound/BGMSetting.h"
 #include "Frameworks/Sound/AudioVolumeSetting.h"
 #include "Sound/SoundClass.h"
+#include "Sound/SoundBase.h"
 #include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -172,6 +173,9 @@ void UBGMSubSystem::RefreshPlayback(float FadeTime)
 
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
 	if (!World) return;
+
+	// 볼륨 설정이 0이어도 곡을 종료하지 않아야 음소거 해제 시 같은 위치에서 이어집니다.
+	Desired->VirtualizationMode = EVirtualizationMode::PlayWhenSilent;
 
 	// bPersistAcrossLevelTransition = true 가 핵심:
 	// OpenLevel로 월드가 바뀌어도 이 컴포넌트는 계속 재생되어요..
