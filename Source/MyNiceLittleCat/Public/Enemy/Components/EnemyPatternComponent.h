@@ -119,9 +119,6 @@ public :
 	// 이전 실행 정리 후 패턴 설정 검사, 패턴마다 GA Spec 부여, 유효 자원 계산
 	bool InitializePatterns(UAbilitySystemComponent* InASC, UEnemyPatternSetData* InPatternSet);
 
-	// 사용할 패턴 ID만 교체 (가중치는 패턴 기본값, 동시 실행은 그대로)
-	void SetAvailablePatterns(const TArray<FName>& PatternIds);
-
 	// 사용할 패턴, 가중치 재정의, 동시 실행 설정을 한 번에 교체 (보스 페이즈 진입)
 	void SetPatternSelection(const TArray<FEnemyPatternSelectionEntry>& Entries, const FEnemyPatternConcurrency& InConcurrency);
 
@@ -157,18 +154,12 @@ public :
 
 	/* 실행 요청 */
 
-	// 주 패턴을 추첨해 실행 (보조 패턴도 함께 채움)
-	bool TryStartAttack(AActor* Target, int64& OutRequestId);
-
 	// 지정한 패턴을 주 패턴으로 실행하고 요청 번호 반환, 이어서 빈 자리에 보조 패턴 추첨
 	// - 직접 지정은 가중치 0인 패턴도 실행 (가중치는 자동 선택 빈도만 조절)
 	bool TryStartPattern(FName PatternId, AActor* Target, int64& OutRequestId);
 
 	// 요청 번호가 일치하는 실행만 취소 (주 패턴은 Cancelled 결과 유지, 보조 패턴은 자리 반환)
 	void CancelRequest(int64 RequestId);
-
-	// 주 패턴만 취소 (보조 패턴은 계속 실행)
-	void CancelActiveRequest();
 
 	// 주 패턴, 보조 패턴, 시작 지연 예약, 상시 패턴을 모두 취소 (페이즈 전환)
 	void CancelAllRequests();

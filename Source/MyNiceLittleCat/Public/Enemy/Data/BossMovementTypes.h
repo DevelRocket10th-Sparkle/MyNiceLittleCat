@@ -1,4 +1,9 @@
 // Fill out your copyright notice in the Description page of Project Settings.
+/*
+* 작성자: 전선현
+* 작성 일자: 2026.10.29.
+* 보스 페이즈 이동에 쓰는 경로 타입 (웨이포인트 목록, 순환 방식)
+*/
 
 #pragma once
 

@@ -150,9 +150,6 @@ public :
 	// 첫 부분이 지정한 명령인지 확인 (대소문자 무시)
 	bool IsCommand(const TCHAR* Command) const;
 
-	// 명령을 제외한 인자 개수
-	int32 NumArgs() const { return FMath::Max(0, Parts.Num() - 1); }
-
 	// 인자 문자열 반환: 없으면 빈 문자열
 	const FString& GetArg(int32 ArgIndex) const;
 

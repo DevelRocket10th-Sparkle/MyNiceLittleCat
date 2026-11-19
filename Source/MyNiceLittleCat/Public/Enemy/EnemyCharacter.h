@@ -140,7 +140,7 @@ protected:
 	// 시체 유지 시간이 끝나 제거되기 직전: 사라짐 연출 재생 후 부모 호출(Destroy)
 	virtual void LifeSpanExpired() override;
 
-	/* Pattern Component */
+	/* 파생 캐릭터 확장 */
 
 	// 기본 초기화 뒤 파생 캐릭터의 추가 설정 준비
 	virtual bool InitializeEnemyExtensions();

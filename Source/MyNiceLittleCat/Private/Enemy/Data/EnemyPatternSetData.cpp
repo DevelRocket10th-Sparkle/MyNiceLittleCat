@@ -94,7 +94,7 @@ bool FEnemyPersistentPatternEntry::Validate(FString& OutError) const
 	return true;
 }
 
-/* UEnemyPatternSetDat */
+/* UEnemyPatternSetData */
 
 void UEnemyPatternSetData::Serialize(FArchive& Ar)
 {

@@ -2,6 +2,7 @@
 
 
 #include "Stages/StageEncounterDirector.h"
+#include "Cinematics/CinematicLog.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
@@ -57,7 +58,7 @@ void AStageEncounterDirector::BeginPlay()
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("[StageDirector] %s: Encounter is not set"), *GetName());
+		UE_LOG(LogStage, Error, TEXT("[StageDirector] %s: Encounter is not set"), *GetName());
 	}
 }
 
@@ -92,7 +93,7 @@ bool AStageEncounterDirector::TryBeginEncounterIntro(ABossEncounterManager& Mana
 	const FStagePhaseStaging* Staging = FindPhaseStaging(IntroPhaseId);
 	if (!Staging)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[StageDirector] Intro staging '%s' not found. Starting without cut."), *IntroPhaseId.ToString());
+		UE_LOG(LogStage, Warning, TEXT("[StageDirector] Intro staging '%s' not found. Starting without cut."), *IntroPhaseId.ToString());
 	}
 
 	PlayCutInternal(Staging ? Staging->Sequence.Get() : nullptr, IntroCutTag, 0.f);
@@ -251,7 +252,7 @@ void AStageEncounterDirector::PlayStageCut(ULevelSequence* Sequence, FName CutTa
 	// 공통 태그는 등장/전환 흐름 전용
 	if (CutTag == IntroCutTag || CutTag == PhaseTransitionCutTag)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[StageDirector] Cut tag '%s' is reserved"), *CutTag.ToString());
+		UE_LOG(LogStage, Error, TEXT("[StageDirector] Cut tag '%s' is reserved"), *CutTag.ToString());
 		return;
 	}
 
@@ -591,7 +592,7 @@ void AStageEncounterDirector::HandleEventMarker(const FCinematicMarkerArgs& Args
 	AActor* Receiver = EventReceivers.FindRef(EventName);
 	if (!Receiver || !Receiver->Implements<UActivatableInterface>())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[StageDirector] No IActivatableInterface receiver for cinematic event '%s'"), *EventName.ToString());
+		UE_LOG(LogStage, Warning, TEXT("[StageDirector] No IActivatableInterface receiver for cinematic event '%s'"), *EventName.ToString());
 		return;
 	}
 
@@ -664,7 +665,7 @@ void AStageEncounterDirector::HandleCueMarker(const FCinematicMarkerArgs& Args, 
 
 	if (!Anchor)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[StageDirector] Cinematic cue '%s' has no target"), *CueName.ToString());
+		UE_LOG(LogStage, Warning, TEXT("[StageDirector] Cinematic cue '%s' has no target"), *CueName.ToString());
 		return;
 	}
 

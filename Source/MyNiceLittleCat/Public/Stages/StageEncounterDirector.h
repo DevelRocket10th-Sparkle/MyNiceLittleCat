@@ -243,7 +243,7 @@ protected :
 	void OnStagePhaseStarted(FName PhaseId, ABossCharacter* Boss);
 	virtual void OnStagePhaseStarted_Implementation(FName PhaseId, ABossCharacter* Boss) {}
 
-	// 공통 마커(Door, Event)가 아닌 마커: 처리했으면 true
+	// 공통 마커(Door, Event, Cue)가 아닌 마커: 처리했으면 true
 	// - Marker.bReachedByPlayback == false면 스킵으로 한꺼번에 온 마커 → 애니메이션 없이 최종 상태만
 	UFUNCTION(BlueprintNativeEvent, Category = "Stage|Events")
 	bool HandleStageMarker(const FCinematicMarker& Marker);

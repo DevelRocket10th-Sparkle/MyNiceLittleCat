@@ -2,6 +2,7 @@
 
 
 #include "Enemy/Components/EnemyOverheadHealthBarComponent.h"
+#include "Enemy/EnemyLog.h"
 
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/World.h"
@@ -61,7 +62,7 @@ void UEnemyOverheadHealthBarComponent::BeginPlay()
 	HealthBarWidget = Cast<UEnemyOverheadHealthBarWidget>(GetUserWidgetObject());
 	if (!IsValid(HealthBarWidget))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("%s: Check the overhead Widget Class."), *GetName());
+		UE_LOG(LogEnemy, Warning, TEXT("%s: Check the overhead Widget Class."), *GetName());
 
 		SetVisibility(false);
 		SetComponentTickEnabled(false);

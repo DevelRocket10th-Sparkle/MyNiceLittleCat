@@ -2,6 +2,7 @@
 
 
 #include "Enemy/Components/EnemyPatternComponent.h"
+#include "Enemy/EnemyLog.h"
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
@@ -57,7 +58,7 @@ bool UEnemyPatternComponent::InitializePatterns(UAbilitySystemComponent* InASC, 
 		FString Error;
 		if (!Pattern.Validate(Error) || PatternIds.Contains(Pattern.PatternId))
 		{
-			UE_LOG(LogTemp, Error, TEXT("[EnemyPattern] %s: invalid pattern settings. %s"),
+			UE_LOG(LogEnemy, Error, TEXT("[EnemyPattern] %s: invalid pattern settings. %s"),
 				*GetNameSafe(InPatternSet), Error.IsEmpty() ? TEXT("Duplicate PatternId.") : *Error);
 			return false;
 		}
@@ -88,7 +89,7 @@ bool UEnemyPatternComponent::InitializePatterns(UAbilitySystemComponent* InASC, 
 			FGameplayTagContainer AsCompanion = ResolvePatternResources(Pattern, true);
 			if (AsCompanion.HasTag(EnemyCombatTags::PatternResourceBody))
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[EnemyPattern] %s: '%s' uses the body by its ability class and cannot run as a companion"),
+				UE_LOG(LogEnemy, Warning, TEXT("[EnemyPattern] %s: '%s' uses the body by its ability class and cannot run as a companion"),
 					*GetNameSafe(GetOwner()), *Pattern.PatternId.ToString());
 			}
 			else
@@ -111,21 +112,6 @@ bool UEnemyPatternComponent::InitializePatterns(UAbilitySystemComponent* InASC, 
 	bRequestsBlocked = false;
 
 	return true;
-}
-
-// 사용할 패턴 ID만 교체 (가중치는 패턴 기본값)
-void UEnemyPatternComponent::SetAvailablePatterns(const TArray<FName>& PatternIds)
-{
-	AvailablePatterns.Reset();
-	WeightOverrides.Reset();
-
-	for (const FName PatternId : PatternIds)
-	{
-		if (HasPattern(PatternId))
-		{
-			AvailablePatterns.Add(PatternId);
-		}
-	}
 }
 
 // 사용할 패턴, 가중치 재정의, 동시 실행 설정을 한 번에 교체
@@ -263,14 +249,6 @@ bool UEnemyPatternComponent::PickAttackPattern(AActor* Target, FName& OutPattern
 
 /* 실행 요청 */
 
-bool UEnemyPatternComponent::TryStartAttack(AActor* Target, int64& OutRequestId)
-{
-	OutRequestId = 0;
-
-	FName SelectedId;
-	return PickAttackPattern(Target, SelectedId) && TryStartPattern(SelectedId, Target, OutRequestId);
-}
-
 // 지정한 패턴을 주 패턴으로 실행하고, 이어서 빈 자리에 보조 패턴 추첨
 bool UEnemyPatternComponent::TryStartPattern(FName PatternId, AActor* Target, int64& OutRequestId)
 {
@@ -337,11 +315,6 @@ void UEnemyPatternComponent::CancelRequest(int64 RequestId)
 	{
 		ASC->CancelAbilityHandle(AbilityHandle);
 	}
-}
-
-void UEnemyPatternComponent::CancelActiveRequest()
-{
-	CancelRequest(PrimaryRequestId);
 }
 
 // 주 패턴, 보조 패턴, 시작 지연 예약, 상시 패턴을 모두 취소 (남은 생성물은 각 GA의 정리 규칙을 따름)
@@ -1125,7 +1098,7 @@ void UEnemyPatternComponent::SetPersistentPatterns(const TArray<FEnemyPersistent
 		FString Error;
 		if (!Entry.Validate(Error) || !HasPattern(Entry.PatternId))
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[EnemyPattern] %s: skipped persistent pattern '%s' (unknown or invalid)"),
+			UE_LOG(LogEnemy, Warning, TEXT("[EnemyPattern] %s: skipped persistent pattern '%s' (unknown or invalid)"),
 				*GetNameSafe(GetOwner()), *Entry.PatternId.ToString());
 			continue;
 		}
@@ -1133,7 +1106,7 @@ void UEnemyPatternComponent::SetPersistentPatterns(const TArray<FEnemyPersistent
 		// 보조 실행 규칙: 몸은 랜덤 선택 패턴이 쓰므로 몸을 쓰지 않는 패턴만
 		if (!CompanionResources.Contains(Entry.PatternId))
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[EnemyPattern] %s: persistent pattern '%s' needs Can Run As Companion (and an ability class that does not use the body)"),
+			UE_LOG(LogEnemy, Warning, TEXT("[EnemyPattern] %s: persistent pattern '%s' needs Can Run As Companion (and an ability class that does not use the body)"),
 				*GetNameSafe(GetOwner()), *Entry.PatternId.ToString());
 			continue;
 		}
@@ -1363,7 +1336,7 @@ void UEnemyPatternComponent::HandleExecutionTimeout(int64 RequestId)
 		return;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("[EnemyPattern] %s: pattern '%s' did not end within %.1fs"),
+	UE_LOG(LogEnemy, Warning, TEXT("[EnemyPattern] %s: pattern '%s' did not end within %.1fs"),
 		*GetNameSafe(GetOwner()), *Slot->Pattern.PatternId.ToString(), Slot->Pattern.MaxExecutionSeconds);
 
 	const FGameplayAbilitySpecHandle AbilityHandle = Slot->AbilityHandle;

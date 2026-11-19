@@ -1,4 +1,5 @@
 #include "Enemy/GAS/Abilities/GA_Enemy_MoneyGun.h"
+#include "Enemy/EnemyLog.h"
 
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
@@ -26,7 +27,7 @@ bool UGA_Enemy_MoneyGun::CanStartPattern() const
 
 	if (!bValid)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[MoneyGun] %s: invalid settings, missing anchor tags, or MaxExecutionSeconds too short."),
+		UE_LOG(LogEnemy, Error, TEXT("[MoneyGun] %s: invalid settings, missing anchor tags, or MaxExecutionSeconds too short."),
 			*GetNameSafe(Enemy.Get()));
 	}
 

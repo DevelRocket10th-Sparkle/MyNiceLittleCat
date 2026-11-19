@@ -2,6 +2,7 @@
 
 
 #include "Enemy/EnemyCharacter.h"
+#include "Enemy/EnemyLog.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -77,7 +78,7 @@ float AEnemyCharacter::CalculateHealthAfterDamage(float CurrentHealth, float Max
 	return FMath::Clamp(CurrentHealth - FMath::Max(0.f, Damage), 0.f, MaxHealth);
 }
 
-// 게임 시작 시 초기화한다. or when spawned
+// 게임 시작 또는 스폰 시 초기화
 // 컴포넌트 초기화 후 실행 준비
 void AEnemyCharacter::BeginPlay()
 {
@@ -117,14 +118,14 @@ void AEnemyCharacter::BeginPlay()
 	if (HasAuthority() && EnemyConfig && EnemyConfig->PatternSet
 		&& !PatternComponent->InitializePatterns(ASC, EnemyConfig->PatternSet))
 	{
-		UE_LOG(LogTemp, Error, TEXT("%s: pattern initialization failed"), *GetName());
+		UE_LOG(LogEnemy, Error, TEXT("%s: pattern initialization failed"), *GetName());
 		return;
 	}
 	// 보스 여부와 관계없이 데이터 에셋의 설정을 개체별 실행 컴포넌트에 전달한다.
 	if (HasAuthority() && EnemyConfig
 		&& !PatternComponent->ConfigureAttackInterval(EnemyConfig->MinAttackInterval, EnemyConfig->MaxAttackInterval))
 	{
-		UE_LOG(LogTemp, Error, TEXT("%s: attack interval configuration failed"), *GetName());
+		UE_LOG(LogEnemy, Error, TEXT("%s: attack interval configuration failed"), *GetName());
 		return;
 	}
 	if (!HasAuthority() || !InitializeEnemyExtensions())
@@ -219,7 +220,7 @@ void AEnemyCharacter::BeginDeath()
 	// AnimInstance(ABP)나 DeathMontage가 없으면 연출 없이 즉시 사망 처리
 	if (!IsValid(AnimInstance) || !IsValid(DeathMontage))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[%s] Death animation unavailable"), *GetName());
+		UE_LOG(LogEnemy, Warning, TEXT("[%s] Death animation unavailable"), *GetName());
 
 		FinishDeath();
 		return;
@@ -230,7 +231,7 @@ void AEnemyCharacter::BeginDeath()
 	// 재생 실패 시 연출 없이 즉시 사망 처리
 	if (Result <= 0.f)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[%s] Death montage failed to start"), *GetName());
+		UE_LOG(LogEnemy, Warning, TEXT("[%s] Death montage failed to start"), *GetName());
 
 		FinishDeath();
 		return;
@@ -243,7 +244,7 @@ void AEnemyCharacter::BeginDeath()
 	// 재생에 성공한 사망 몽타주의 종료 델리게이트를 AnimInstance에 연결
 	AnimInstance->Montage_SetEndDelegate(OnDeathMontageEnd, DeathMontage);
 
-	UE_LOG(LogTemp, Log, TEXT("[%s] BeginDeath"), *GetName());
+	UE_LOG(LogEnemy, Verbose, TEXT("[%s] BeginDeath"), *GetName());
 
 }
 
@@ -277,7 +278,7 @@ void AEnemyCharacter::FinishDeath()
 	MeshComp->SetAllPhysicsLinearVelocity(FVector::ZeroVector);
 	MeshComp->WakeAllRigidBodies();
 
-	UE_LOG(LogTemp, Log, TEXT("[%s] FinishDeath"), *GetName());
+	UE_LOG(LogEnemy, Verbose, TEXT("[%s] FinishDeath"), *GetName());
 
 	// 시체 제거 유예 (초단위): 끝나면 LifeSpanExpired에서 사라짐 연출 후 제거
 	// - SetLifeSpan(0)은 "무기한"이므로 0 이하는 바로 제거
@@ -309,7 +310,7 @@ void AEnemyCharacter::LifeSpanExpired()
 // 체력 변경 시 사망 판정을 먼저 수행한 뒤 추가 상태 처리
 void AEnemyCharacter::HandleHealthChanged(float NewHealth, float MaxHealth)
 {
-	UE_LOG(LogTemp, Log, TEXT("[%s] Health Changed: %.1f / %.1f"), *GetName(), NewHealth, MaxHealth);
+	UE_LOG(LogEnemy, Verbose, TEXT("[%s] Health Changed: %.1f / %.1f"), *GetName(), NewHealth, MaxHealth);
 
 	if (NewHealth <= 0.f)
 	{
@@ -322,7 +323,7 @@ void AEnemyCharacter::HandleDeathMontageEnded(UAnimMontage* Montage, bool bInter
 	if (Montage != DeathMontage || LifeState != EEnemyLifeState::Dying)
 		return;
 
-	UE_LOG(LogTemp, Log, TEXT("[%s] Death montage ended. Interrupted=%d"), *GetName(), bInterrupted);
+	UE_LOG(LogEnemy, Verbose, TEXT("[%s] Death montage ended. Interrupted=%d"), *GetName(), bInterrupted);
 
 	FinishDeath();
 }

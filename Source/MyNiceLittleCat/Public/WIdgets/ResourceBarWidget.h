@@ -1,4 +1,10 @@
 // Fill out your copyright notice in the Description page of Project Settings.
+/*
+* 작성자: 전선현
+* 작성 일자: 2026.10.29.
+* 체력 등 자원 값을 보여 주는 바 위젯
+* - 값이 줄면 잔상(트레일)이 천천히 따라옴
+*/
 
 #pragma once
 

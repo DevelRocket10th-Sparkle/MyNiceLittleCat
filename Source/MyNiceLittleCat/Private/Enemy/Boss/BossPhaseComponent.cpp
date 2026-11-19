@@ -2,6 +2,7 @@
 
 
 #include "Enemy/Boss/BossPhaseComponent.h"
+#include "Enemy/EnemyLog.h"
 
 #include "Engine/TargetPoint.h"
 #include "Engine/World.h"
@@ -30,13 +31,13 @@ bool UBossPhaseComponent::InitializePhases(UBossPhaseConfigData* InConfig)
 
 	if (!GetOwner()->HasAuthority() || !IsValid(InConfig) || !InConfig->ValidateConfiguration(Error))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[BossPhase] %s: initialization failed: %s"), *GetNameSafe(GetOwner()), *Error);
+		UE_LOG(LogEnemy, Error, TEXT("[BossPhase] %s: initialization failed: %s"), *GetNameSafe(GetOwner()), *Error);
 		return false;
 	}
 
 	if (!ValidateMovementRoutes(Error))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[BossPhase] %s: initialization failed: %s"), *GetNameSafe(GetOwner()), *Error);
+		UE_LOG(LogEnemy, Error, TEXT("[BossPhase] %s: initialization failed: %s"), *GetNameSafe(GetOwner()), *Error);
 		return false;
 	}
 
@@ -62,7 +63,7 @@ void UBossPhaseComponent::SetTransitionHandler(UObject* InHandler)
 	// 계약을 구현하지 않은 객체는 받지 않음
 	if (InHandler && !InHandler->GetClass()->ImplementsInterface(UBossPhaseTransitionHandler::StaticClass()))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[BossPhase] %s does not implement IBossPhaseTransitionHandler"), *GetNameSafe(InHandler));
+		UE_LOG(LogEnemy, Error, TEXT("[BossPhase] %s does not implement IBossPhaseTransitionHandler"), *GetNameSafe(InHandler));
 		TransitionHandlerObject.Reset();
 		return;
 	}
@@ -235,7 +236,7 @@ bool UBossPhaseComponent::NotifyTransitionPresentationFinished(int64 TransitionI
 	bPresentationByHandler = false;
 	PresentationCinematic.Reset();
 
-	UE_LOG(LogTemp, Log, TEXT("[BossPhase] %s: transition presentation finished"),
+	UE_LOG(LogEnemy, Log, TEXT("[BossPhase] %s: transition presentation finished"),
 		*Config->Phases[PendingPhaseIndex].PhaseId.ToString());
 
 	CompleteTransition();
@@ -485,7 +486,7 @@ void UBossPhaseComponent::StartTransitionPresentation()
 		}
 
 		// 시퀀스 문제로 전투가 멈추지 않도록 연출만 건너뜀
-		UE_LOG(LogTemp, Warning, TEXT("[BossPhase] %s: transition sequence failed to start, skipped"),
+		UE_LOG(LogEnemy, Warning, TEXT("[BossPhase] %s: transition sequence failed to start, skipped"),
 			*NextPhase.PhaseId.ToString());
 	}
 
@@ -502,7 +503,7 @@ void UBossPhaseComponent::HandleDefaultPresentationEnded(FCinematicHandle Handle
 	}
 
 	// 정상 종료, 스킵, 제한 시간, 외부 정지 모두 연출 종료로 보고 다음 페이즈 진행
-	UE_LOG(LogTemp, Log, TEXT("[BossPhase] default transition sequence ended (%s)"), *UEnum::GetValueAsString(Reason));
+	UE_LOG(LogEnemy, Log, TEXT("[BossPhase] default transition sequence ended (%s)"), *UEnum::GetValueAsString(Reason));
 	NotifyTransitionPresentationFinished(ActiveTransitionId);
 }
 

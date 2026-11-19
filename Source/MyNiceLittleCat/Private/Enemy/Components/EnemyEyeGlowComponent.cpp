@@ -2,6 +2,7 @@
 
 
 #include "Enemy/Components/EnemyEyeGlowComponent.h"
+#include "Enemy/EnemyLog.h"
 
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -114,7 +115,7 @@ bool UEnemyEyeGlowComponent::CreateEyeMeshes()
 
 	if (!Mesh || !EyeMesh || !EyeMaterial || EyeSockets.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[EyeGlow] %s: mesh, material or sockets not set"), *GetNameSafe(GetOwner()));
+		UE_LOG(LogEnemy, Warning, TEXT("[EyeGlow] %s: mesh, material or sockets not set"), *GetNameSafe(GetOwner()));
 		return false;
 	}
 
@@ -124,7 +125,7 @@ bool UEnemyEyeGlowComponent::CreateEyeMeshes()
 	{
 		if (!Mesh->DoesSocketExist(Socket.RootSocket))
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[EyeGlow] %s: socket '%s' not found"), *GetNameSafe(GetOwner()), *Socket.RootSocket.ToString());
+			UE_LOG(LogEnemy, Warning, TEXT("[EyeGlow] %s: socket '%s' not found"), *GetNameSafe(GetOwner()), *Socket.RootSocket.ToString());
 			continue;
 		}
 

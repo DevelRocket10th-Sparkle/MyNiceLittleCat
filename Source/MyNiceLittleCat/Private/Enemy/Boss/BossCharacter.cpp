@@ -2,6 +2,7 @@
 
 
 #include "Enemy/Boss/BossCharacter.h"
+#include "Enemy/EnemyLog.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
@@ -225,7 +226,7 @@ bool ABossCharacter::InitializeEnemyExtensions()
 {
 	if (!Super::InitializeEnemyExtensions() || !PhaseConfig || !GetPatternComponent()->HasPatterns())
 	{
-		UE_LOG(LogTemp, Error, TEXT("[Boss] %s: PhaseConfig or PatternSet is missing"), *GetName());
+		UE_LOG(LogEnemy, Error, TEXT("[Boss] %s: PhaseConfig or PatternSet is missing"), *GetName());
 		return false;
 	}
 
@@ -293,7 +294,7 @@ void ABossCharacter::HandleTransitionRequested()
 	}
 
 	GetPatternComponent()->SetRequestsBlocked(true);
-	// 주 패턴뿐 아니라 보조 패턴과 시작 지연 예약까지 취소 (전환 Task는 IsIdle을 기다림)
+	// 주 패턴뿐 아니라 보조 패턴과 시작 지연 예약까지 취소 (전환 Task는 바로 IsIdle을 확인하므로 취소는 즉시 끝나야 함)
 	GetPatternComponent()->CancelAllRequests();
 
 	// 이전 페이즈의 공격 간격을 새 페이즈 첫 공격에 넘기지 않음
@@ -332,7 +333,7 @@ bool ABossCharacter::HandlePhaseEntered(const FBossPhaseDefinition& Phase)
 	// 기믹 구현이 빠진 배리어는 완료될 수 없으므로 진행하지 않음
 	if (Phase.Kind == EBossPhaseKind::Barrier)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[Boss] %s: missing phase gimmick component for barrier '%s'"),
+		UE_LOG(LogEnemy, Error, TEXT("[Boss] %s: missing phase gimmick component for barrier '%s'"),
 			*GetName(), *Phase.PhaseId.ToString());
 		return false;
 	}
@@ -399,7 +400,7 @@ bool ABossCharacter::ValidatePhasePatterns() const
 		{
 			if (!Patterns->HasPattern(Entry.PatternId))
 			{
-				UE_LOG(LogTemp, Error, TEXT("[Boss] %s: phase '%s' uses unknown pattern '%s'"),
+				UE_LOG(LogEnemy, Error, TEXT("[Boss] %s: phase '%s' uses unknown pattern '%s'"),
 					*GetName(), *Phase.PhaseId.ToString(), *Entry.PatternId.ToString());
 				return false;
 			}
@@ -410,7 +411,7 @@ bool ABossCharacter::ValidatePhasePatterns() const
 		{
 			if (!Patterns->HasPattern(Entry.PatternId))
 			{
-				UE_LOG(LogTemp, Error, TEXT("[Boss] %s: phase '%s' uses unknown persistent pattern '%s'"),
+				UE_LOG(LogEnemy, Error, TEXT("[Boss] %s: phase '%s' uses unknown persistent pattern '%s'"),
 					*GetName(), *Phase.PhaseId.ToString(), *Entry.PatternId.ToString());
 				return false;
 			}
@@ -435,7 +436,7 @@ bool ABossCharacter::ValidatePhasePatterns() const
 
 		if (!bUsableAtArrival)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[Boss] Phase '%s': no auto pattern usable at chase acceptance radius %.0f (check MinRange/MaxRange)"),
+			UE_LOG(LogEnemy, Warning, TEXT("[Boss] Phase '%s': no auto pattern usable at chase acceptance radius %.0f (check MinRange/MaxRange)"),
 				*Phase.PhaseId.ToString(), Radius);
 		}
 	}
@@ -460,7 +461,7 @@ bool ABossCharacter::InitializeGimmickConnection()
 
 		if (PhaseGimmickComponent)
 		{
-			UE_LOG(LogTemp, Error, TEXT("[Boss] %s requires at most one phase gimmick component"), *GetName());
+			UE_LOG(LogEnemy, Error, TEXT("[Boss] %s requires at most one phase gimmick component"), *GetName());
 			return false;
 		}
 
@@ -502,7 +503,7 @@ void ABossCharacter::TeleportToFirstWaypoint(const FBossPhaseDefinition& Phase)
 	FVector Point;
 	if (!PhaseComponent->GetCurrentWaypoint(Point))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Boss] %s: no first waypoint for '%s', route '%s'. Teleport skipped."),
+		UE_LOG(LogEnemy, Warning, TEXT("[Boss] %s: no first waypoint for '%s', route '%s'. Teleport skipped."),
 			*GetName(), *Phase.PhaseId.ToString(), *Phase.MovementRouteId.ToString());
 		return;
 	}

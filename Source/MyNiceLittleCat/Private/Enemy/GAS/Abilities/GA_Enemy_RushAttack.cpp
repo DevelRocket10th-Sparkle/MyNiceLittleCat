@@ -24,7 +24,7 @@ bool UGA_Enemy_RushAttack::CanStartPattern() const
 		return false;
 	}
 
-	// 섹션 순서: 시작 섹선 <= Rush < Attack
+	// 섹션 순서: 시작 섹션 <= Rush < Attack
 	const UEnemyMeleePatternSettings* Settings = GetPatternSettings<UEnemyMeleePatternSettings>();
 	const UAnimMontage* Montage = Settings->Montage;
 	const int32 RushIndex = Montage->GetSectionIndex(RushSection);

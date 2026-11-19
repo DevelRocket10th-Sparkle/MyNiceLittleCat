@@ -2,6 +2,7 @@
 
 
 #include "Enemy/GAS/Abilities/EnemyPatternAbility.h"
+#include "Enemy/EnemyLog.h"
 
 #include "AIController.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
@@ -43,7 +44,7 @@ void UEnemyPatternAbility::ActivateAbility(const FGameplayAbilitySpecHandle Hand
 
 	if (!CanStartPattern() || !CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[%s] Pattern '%s' cannot start '%s'"),
+		UE_LOG(LogEnemy, Warning, TEXT("[%s] Pattern '%s' cannot start '%s'"),
 			*GetNameSafe(Enemy.Get()), *ExecutionPattern.PatternId.ToString(), *GetName());
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
@@ -51,7 +52,7 @@ void UEnemyPatternAbility::ActivateAbility(const FGameplayAbilitySpecHandle Hand
 
 	/* 파생 GA 동작 시작 */
 	
-	// StartPattern 안에서 즉시 끝날 수 있으믈 활성 상태일 때만 실패 처리
+	// StartPattern 안에서 즉시 끝날 수 있으므로 활성 상태일 때만 실패 처리
 	if (!StartPattern() && IsActive())
 	{
 		CancelPattern();

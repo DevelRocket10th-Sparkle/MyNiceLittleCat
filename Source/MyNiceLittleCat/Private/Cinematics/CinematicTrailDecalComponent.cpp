@@ -2,6 +2,7 @@
 
 
 #include "Cinematics/CinematicTrailDecalComponent.h"
+#include "Cinematics/CinematicLog.h"
 
 #include "Channels/MovieSceneChannelProxy.h"
 #include "Channels/MovieSceneDoubleChannel.h"
@@ -35,7 +36,7 @@ int32 UCinematicTrailDecalComponent::SpawnTrail(ULevelSequence* Sequence, const 
 	UWorld* World = GetWorld();
 	if (!World || !DecalMaterial || !Sequence)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[TrailDecal] %s: skipped (material %d, sequence %d)"),
+		UE_LOG(LogCinematic, Warning, TEXT("[TrailDecal] %s: skipped (material %d, sequence %d)"),
 			*GetNameSafe(GetOwner()), DecalMaterial != nullptr, Sequence != nullptr);
 		return 0;
 	}
@@ -117,7 +118,7 @@ int32 UCinematicTrailDecalComponent::SpawnTrail(ULevelSequence* Sequence, const 
 		++SpawnedCount;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[TrailDecal] %s: points %d, decals %d"), *Sequence->GetName(), Points.Num(), SpawnedCount);
+	UE_LOG(LogCinematic, Log, TEXT("[TrailDecal] %s: points %d, decals %d"), *Sequence->GetName(), Points.Num(), SpawnedCount);
 	return SpawnedCount;
 }
 
@@ -211,7 +212,7 @@ TArray<UCinematicTrailDecalComponent::FTrailPoint> UCinematicTrailDecalComponent
 
 	if (LocationChannels.Num() < 3)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[TrailDecal] %s: no transform track on binding tag '%s'"),
+		UE_LOG(LogCinematic, Warning, TEXT("[TrailDecal] %s: no transform track on binding tag '%s'"),
 			*Sequence->GetName(), *BindingTag.ToString());
 		return Points;
 	}

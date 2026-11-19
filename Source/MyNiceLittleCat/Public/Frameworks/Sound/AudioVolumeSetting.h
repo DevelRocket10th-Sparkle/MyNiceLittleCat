@@ -1,3 +1,9 @@
+/*
+* 작성자: 전선현
+* 작성 일자: 2026.11.19.
+* 소리 설정 기본값 (프로젝트 설정 → Game → Audio Volume, DefaultGame.ini)
+* - BGM, 효과음 사운드 클래스와 사운드 믹스 지정
+*/
 // Project Settings > Game > Audio Volume
 // 옵션 메뉴의 BGM / SFX 볼륨 조절에 쓰는 SoundMix와 SoundClass를 지정합니다.
 #pragma once

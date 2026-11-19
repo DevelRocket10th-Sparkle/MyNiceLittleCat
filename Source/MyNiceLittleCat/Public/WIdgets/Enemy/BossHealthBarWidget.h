@@ -1,4 +1,10 @@
 // Fill out your copyright notice in the Description page of Project Settings.
+/*
+* 작성자: 전선현
+* 작성 일자: 2026.10.30.
+* 보스 체력바 위젯 (메인 HUD에 포함)
+* - 보스 이름, 페이즈 구간 표시, 잠금(무적) 문구와 깜빡임
+*/
 
 #pragma once
 

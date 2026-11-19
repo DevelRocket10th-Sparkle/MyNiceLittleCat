@@ -2,6 +2,7 @@
 
 
 #include "Cinematics/PlayCinematicAsyncAction.h"
+#include "Cinematics/CinematicLog.h"
 
 #include "Engine/Engine.h"
 #include "Engine/World.h"
@@ -35,7 +36,7 @@ void UPlayCinematicAsyncAction::Activate()
 
 	if (!Handle.IsValid())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[PlayCinematic] 시퀀스 %s 재생 시작 실패"), *GetNameSafe(Request.Sequence));
+		UE_LOG(LogCinematic, Warning, TEXT("[PlayCinematic] 시퀀스 %s 재생 시작 실패"), *GetNameSafe(Request.Sequence));
 		OnFailed.Broadcast();
 		Finish();
 		return;
