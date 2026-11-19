@@ -1,6 +1,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.11.19.
+* 수정 일자: 2026.11.19. (입력 잠금을 컷신 처리로 통일, 레벨 언로드 시에도 정리)
 * 아직 나가면 안 되는 출구(마을 입구 등)를 막는 액터
 * - BlockingBox: 보이지 않는 벽 (Pawn만 막음). 트리거를 피해 가도 못 나가게 하는 안전장치
 * - TriggerBox: 벽 앞의 감지 영역. 플레이어가 들어오면
@@ -62,7 +63,7 @@ protected:
 	void BeginFlight();
 	void FinishSequence();
 
-	// 입력 잠금/해제 (짝 맞춰 호출)
+	// 입력 잠금/해제 (짝 맞춰 호출): 시네마틱 서브시스템의 외부 컷신으로 처리 (참조 횟수, 다른 잠금과 겹쳐도 안전)
 	void SetPlayerInputLocked(bool bLocked);
 	// 복귀 지점: ReturnPoint → GameMode의 PlayerStart
 	bool ResolveReturnLocation(FVector& OutLocation, FRotator& OutRotation) const;

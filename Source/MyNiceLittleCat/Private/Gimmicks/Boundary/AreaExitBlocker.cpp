@@ -13,6 +13,7 @@
 
 #include "Characters/PlayerCharacter.h"
 #include "Characters/PlayerMainController.h"
+#include "Cinematics/CinematicSubsystem.h"
 #include "Frameworks/Save/ProgressFlagGateComponent.h"
 #include "Pet/PetCharacter.h"
 #include "Pet/SpeechBubbleComponent.h"
@@ -70,8 +71,8 @@ void AAreaExitBlocker::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	TriggerBox->OnComponentBeginOverlap.RemoveDynamic(this, &AAreaExitBlocker::HandleTriggerBeginOverlap);
 	GetWorldTimerManager().ClearTimer(StepTimerHandle);
-	// 연출 도중 제거되면 잠금 상태를 남기지 않음
-	if (bBusy && EndPlayReason == EEndPlayReason::Destroyed)
+	// 연출 도중 제거되거나 레벨이 언로드되면 잠금 상태를 남기지 않음 (월드 종료 시에는 서브시스템이 함께 정리됨)
+	if (bBusy && (EndPlayReason == EEndPlayReason::Destroyed || EndPlayReason == EEndPlayReason::RemovedFromWorld))
 	{
 		FinishSequence();
 	}
@@ -297,25 +298,26 @@ void AAreaExitBlocker::FinishSequence()
 void AAreaExitBlocker::SetPlayerInputLocked(bool bLocked)
 {
 	if (bInputLocked == bLocked)
+	{
 		return;
+	}
 	bInputLocked = bLocked;
 
-	APlayerController* Controller = ActiveController.Get();
-	APlayerCharacter* Player = ActivePlayer.Get();
-	if (!Controller)
+	// 컷신과 같은 경로로 차단: 컨트롤러가 입력 매핑을 바꾸고(누르고 있던 키는 뗄 때까지 무시) 가림 처리도 멈춤
+	// - DisableInput/EnableInput은 횟수를 세지 않아 화면 전환, 튜토리얼 등 다른 잠금을 풀어 버리므로 쓰지 않음
+	UCinematicSubsystem* Cinematics = GetWorld() ? GetWorld()->GetSubsystem<UCinematicSubsystem>() : nullptr;
+	if (!Cinematics)
+	{
 		return;
+	}
 
 	if (bLocked)
 	{
-		Controller->DisableInput(Controller);
-		if (Player)
-			Player->DisableInput(Controller);
+		Cinematics->BeginExternalCutscene();
 	}
 	else
 	{
-		Controller->EnableInput(Controller);
-		if (Player)
-			Player->EnableInput(Controller);
+		Cinematics->EndExternalCutscene();
 	}
 }
 

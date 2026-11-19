@@ -2,6 +2,7 @@
 
 
 #include "Cinematics/CinematicSubsystem.h"
+#include "Cinematics/CinematicLog.h"
 
 #include "DefaultLevelSequenceInstanceData.h"
 #include "Engine/LevelStreaming.h"
@@ -79,7 +80,7 @@ FCinematicHandle UCinematicSubsystem::Play(const FCinematicRequest& Request, FOn
 	// 재생 범위가 없는 시퀀스는 시작하지 않음
 	if (!World || !MovieScene || MovieScene->GetPlaybackRange().IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Cinematic] Invalid sequence: %s"), *GetNameSafe(Sequence));
+		UE_LOG(LogCinematic, Warning, TEXT("[Cinematic] Invalid sequence: %s"), *GetNameSafe(Sequence));
 		return FCinematicHandle();
 	}
 
@@ -103,7 +104,7 @@ FCinematicHandle UCinematicSubsystem::Play(const FCinematicRequest& Request, FOn
 			SequenceActor->Destroy();
 		}
 
-		UE_LOG(LogTemp, Warning, TEXT("[Cinematic] Failed to create player: %s"), *Sequence->GetName());
+		UE_LOG(LogCinematic, Warning, TEXT("[Cinematic] Failed to create player: %s"), *Sequence->GetName());
 		return FCinematicHandle();
 	}
 
@@ -343,7 +344,7 @@ void UCinematicSubsystem::Tick(float DeltaTime)
 			&& Playback->TimeoutSeconds > 0.f
 			&& Now - Playback->StartWorldSeconds >= Playback->TimeoutSeconds)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[Cinematic] Timed out after %.1fs: %s"),
+			UE_LOG(LogCinematic, Warning, TEXT("[Cinematic] Timed out after %.1fs: %s"),
 				Playback->TimeoutSeconds, *GetNameSafe(Playback->Player ? Playback->Player->GetSequence() : nullptr));
 			Playback->PendingEndReason = ECinematicEndReason::TimedOut;
 		}
@@ -438,7 +439,7 @@ void UCinematicSubsystem::EndPlayback(FCinematicHandle Handle, ECinematicEndReas
 		Playback.OnMarker.ExecuteIfBound(Handle, Marker);
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[Cinematic] Ended (%s)"), *UEnum::GetValueAsString(Reason));
+	UE_LOG(LogCinematic, Log, TEXT("[Cinematic] Ended (%s)"), *UEnum::GetValueAsString(Reason));
 
 	Playback.OnEnded.ExecuteIfBound(Handle, Reason);
 }
@@ -521,7 +522,7 @@ void UCinematicSubsystem::ApplyBindings(ALevelSequenceActor& SequenceActor, ULev
 		UActorComponent* Component = Cast<UActorComponent>(Object);
 		if (!Component || !SequenceActor.BindingOverrides)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[Cinematic] %s: tag '%s' supports only actors and components"),
+			UE_LOG(LogCinematic, Warning, TEXT("[Cinematic] %s: tag '%s' supports only actors and components"),
 				*Sequence.GetName(), *Binding.Tag.ToString());
 			continue;
 		}
