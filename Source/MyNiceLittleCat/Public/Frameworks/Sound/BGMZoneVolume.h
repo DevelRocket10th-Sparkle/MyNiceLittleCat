@@ -12,6 +12,9 @@
 #include "GameFramework/Actor.h"
 #include "BGMZoneVolume.generated.h"
 
+class APawn;
+class APlayerController;
+
 UCLASS()
 class MYNICELITTLECAT_API ABGMZoneVolume : public AActor
 {
@@ -46,6 +49,19 @@ protected:
 	// 월드 위치가 박스 내부인지 (회전·스케일 반영)
 	bool IsLocationInsideBox(const FVector& WorldLocation) const;
 
+	// 플레이어 컨트롤러의 빙의 변경 이벤트 구독 (중복 구독 방지)
+	void BindPossessionChanged();
+
+	// 빙의가 바뀔 때마다(체크포인트 이동/사망 후 리스폰) 새 폰 위치로 존 안/밖 재판정
+	// 의도: 같은 레벨 리스폰은 "폰 파괴 → 새 폰 스폰 → 빙의" 순서라
+	//       파괴 때 EndOverlap, 스폰 때 BeginOverlap 모두 IsPlayerControlled()가 false여서 놓침
+	UFUNCTION()
+	void HandlePossessedPawnChanged(APawn* OldPawn, APawn* NewPawn);
+
+	// 실제 진입/이탈 처리 (서브시스템 호출 + 상태 갱신)
+	void EnterWithPawn(APawn* Pawn);
+	void ExitNow();
+
 // ========================================================================
 protected:
 	UPROPERTY(VisibleAnywhere, Category = "BGM")
@@ -66,4 +82,10 @@ protected:
 private:
 	// 지금 플레이어가 안에 있는지 (EndPlay 정리 판단용)
 	bool bPlayerInside = false;
+
+	// 들어올 때의 플레이어 폰: 나갈 때 컨트롤러가 이미 떨어져 있어도(파괴 직전) 같은 폰인지로 이탈 판정
+	TWeakObjectPtr<APawn> InsidePawn;
+
+	// 빙의 변경 이벤트를 구독한 컨트롤러 (EndPlay에서 해제)
+	TWeakObjectPtr<APlayerController> BoundController;
 };
