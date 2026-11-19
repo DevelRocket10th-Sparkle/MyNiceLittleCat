@@ -49,6 +49,9 @@ void ASpikeBoundary::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// 패키지에 저장된 액터도 가시를 다시 생성
+	Rebuild();
+
 	if ((bDamageOnTouch || bKnockback) && bBlockPawns)
 	{
 		// 캐릭터 이동이 벽에 막힐 때 들어오는 충돌 이벤트
@@ -106,10 +109,22 @@ void ASpikeBoundary::Rebuild()
 
 void ASpikeBoundary::BuildSpikes()
 {
-	// 이전 컴포넌트 정리 (에디터 생성 스크립트 재실행 시 엔진도 정리하지만 Rebuild 직접 호출에 대비)
-	for (UInstancedStaticMeshComponent* Component : SpikeComponents)
+	// 로드 후 Transient 배열이 비어 있어도 기존 가시를 찾아 정리
+	TArray<UInstancedStaticMeshComponent*> ExistingComponents;
+	GetComponents(ExistingComponents);
+
+	for (UInstancedStaticMeshComponent* Component : ExistingComponents)
 	{
-		if (IsValid(Component))
+		if (IsValid(Component)
+			&& Component != Walls
+			&& (SpikeComponents.Contains(Component)
+				|| Component->ComponentHasTag(TEXT("GeneratedBoundarySpike"))
+				|| (Component->CreationMethod == EComponentCreationMethod::UserConstructionScript
+					&& SpikeMeshes.Contains(Component->GetStaticMesh())
+					&& Component->GetCollisionEnabled() == ECollisionEnabled::NoCollision
+					)
+				)
+			)
 		{
 			Component->DestroyComponent();
 		}
@@ -126,7 +141,12 @@ void ASpikeBoundary::BuildSpikes()
 		}
 
 		UInstancedStaticMeshComponent* Component = NewObject<UInstancedStaticMeshComponent>(this, NAME_None, RF_Transactional);
+
+		RemoveOwnedComponent(Component);
 		Component->CreationMethod = EComponentCreationMethod::UserConstructionScript;
+		AddOwnedComponent(Component);
+		Component->ComponentTags.Add(TEXT("GeneratedBoundarySpike"));
+		
 		Component->SetupAttachment(RootComponent);
 		Component->SetStaticMesh(Mesh);
 		Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);

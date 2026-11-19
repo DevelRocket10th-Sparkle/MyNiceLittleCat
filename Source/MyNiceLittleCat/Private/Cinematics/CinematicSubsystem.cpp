@@ -208,6 +208,19 @@ bool UCinematicSubsystem::TrySkipActiveCutscene()
 	return false;
 }
 
+FCinematicHandle UCinematicSubsystem::GetActiveSkippableCutscene() const
+{
+	for (int32 Index = Playbacks.Num() - 1; Index >= 0; --Index)
+	{
+		const FCinematicPlayback& Playback = Playbacks[Index];
+		if (Playback.bSkippable && !Playback.PendingEndReason.IsSet() && IsPlayerRunning(Playback.Player))
+		{
+			return Playback.Handle;
+		}
+	}
+	return FCinematicHandle();
+}
+
 /* 상태 조회 */
 
 bool UCinematicSubsystem::IsPlaying(FCinematicHandle Handle) const
