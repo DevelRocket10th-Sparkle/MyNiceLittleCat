@@ -15,6 +15,7 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "GameFramework/PlayerController.h"
+#include "Kismet/GameplayStatics.h"
 
 AMainGameMode::AMainGameMode()
 {
@@ -133,6 +134,19 @@ bool AMainGameMode::RespawnPlayer(AController* Controller)
 	}
 
 	GetWorldTimerManager().ClearTimer(RespawnTimerHandle);
+
+	// 폰만 교체하면 미저장 열쇠/처치 기록과 열린 상자가 남음.
+	// 마지막 저장을 읽고 맵도 다시 열어, 파괴된 액터와 기믹까지 함께 복원.
+	UGameProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UGameProgressSubsystem>();
+	if (Progress && Progress->HasSaveSlot() && Progress->LoadProgress())
+	{
+		const FCheckpointSaveData& Checkpoint = Progress->GetCheckpointData();
+		const FName RespawnLevel = Checkpoint.bValid
+			? FName(*Checkpoint.LevelName)
+			: FName(*UGameplayStatics::GetCurrentLevelName(this, true));
+		UGameplayStatics::OpenLevel(this, RespawnLevel);
+		return true;
+	}
 
 	// 기존 폰이 남아 있으면 RestartPlayer가 새로 스폰하지 않으므로 먼저 제거
 	if (APawn* OldPawn = Controller->GetPawn())

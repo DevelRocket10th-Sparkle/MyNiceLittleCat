@@ -99,8 +99,9 @@ void UTitleScreenWidget::HandleNewGame()
 
 void UTitleScreenWidget::HandleContinue()
 {
-	const UGameProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UGameProgressSubsystem>();
-	if (!Progress) return;
+	UGameProgressSubsystem* Progress = GetGameInstance()->GetSubsystem<UGameProgressSubsystem>();
+	// 타이틀로 돌아온 같은 세션에서도 미저장 진행 대신 슬롯의 상태로 이어하기.
+	if (!Progress || !Progress->LoadProgress()) return;
 
 	// Last checkpoint's map; MainGameMode spawns at the checkpoint (bSpawnAtCheckpointOnStart)
 	const FCheckpointSaveData& Last = Progress->GetCheckpointData();

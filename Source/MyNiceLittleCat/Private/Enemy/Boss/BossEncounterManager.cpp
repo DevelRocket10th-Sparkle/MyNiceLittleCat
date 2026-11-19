@@ -131,6 +131,23 @@ bool ABossEncounterManager::StartEncounter(APlayerCharacter* Player)
 // 보스와 기믹 정리 후 새 보스를 생성하여 체력 및 페이즈 초기화
 void ABossEncounterManager::ResetEncounter()
 {
+	// 저장된 처치 기록이 있으면 재입장/리셋에서도 보스를 다시 생성하지 않음.
+	const UGameInstance* GameInstance = GetGameInstance();
+	const UGameProgressSubsystem* Progress = GameInstance ? GameInstance->GetSubsystem<UGameProgressSubsystem>() : nullptr;
+	if (!DefeatedProgressFlag.IsNone() && Progress && Progress->HasProgressFlag(DefeatedProgressFlag))
+	{
+		++EncounterGeneration;
+		GetWorldTimerManager().ClearTimer(PlayerCheckHandle);
+		GetWorldTimerManager().ClearTimer(ResetTimerHandle);
+		StopWaitForRespawn();
+		ClearEncounterPlayer();
+		RemoveCurrentBoss();
+		HideEncounterHealthBar();
+		PopBossBGM();
+		EncounterState = EBossEncounterState::Cleared;
+		return;
+	}
+
 	// 연출 담당자가 레벨 상태(문, 데칼 등)를 먼저 되돌림
 	if (IBossEncounterDirector* Director = GetDirector())
 	{
