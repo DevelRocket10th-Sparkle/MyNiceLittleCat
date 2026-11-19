@@ -216,9 +216,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Easy Mode", meta = (EditCondition = "bEasyMode"))
 	FName EasyModePacifierSocket = TEXT("Character_Mouth_Socket");
 
-	// 소켓 기준 위치·회전·크기 보정
+	// 소켓 기준 위치·회전·크기 보정 (크기 포함, 기본 2배)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Easy Mode", meta = (EditCondition = "bEasyMode"))
-	FTransform EasyModePacifierOffset;
+	FTransform EasyModePacifierOffset = FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector(2.f));
 
 	// 쉬움 모드일 때 포션 대신 드는 젖병 (원래 포션과 높이가 같도록 자동으로 크기 맞춤)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Easy Mode", meta = (EditCondition = "bEasyMode"))
@@ -325,10 +325,10 @@ protected:
 
 	// 구르는 중 이동 입력 방향으로 꺾는 속도 (초당 각도, 0이면 조향 안 함)
 	UPROPERTY(EditDefaultsOnly, Category = "Dodge", meta = (ClampMin = "0", Units = "deg"))
-	float DodgeSteerRate = 180.f;
+	float DodgeSteerRate = 450.f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Dodge")
-	float DodgeRollSpeed = 1000.f;
+	float DodgeRollSpeed = 600.f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<UStaticMeshComponent> PotionMesh;
