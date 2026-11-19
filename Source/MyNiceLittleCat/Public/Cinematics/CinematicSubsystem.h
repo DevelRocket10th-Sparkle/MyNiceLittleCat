@@ -129,6 +129,9 @@ public :
 	// - 지나치지 못한 마커는 bReachedByPlayback = false로 전달
 	bool TrySkipActiveCutscene();
 
+	// UI와 입력이 동일한 재생을 대상으로 하도록 핸들을 제공.
+	FCinematicHandle GetActiveSkippableCutscene() const;
+
 	/* 상태 조회 */
 
 	// 해당 재생이 아직 진행 중인지 확인
