@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "Cinematics/CinematicTypes.h"
 #include "PlayerMainController.generated.h"
 
 /**
@@ -48,6 +49,9 @@ public:
 	// 일시정지 메뉴 열기/닫기 (Esc / 패드 Start)
 	void TogglePauseMenu();
 
+	bool IsCinematicSkipPromptVisible() const;
+	float GetCinematicSkipProgress() const { return CinematicSkipProgress; }
+
 private:
 	// 펫 입력 관련 콜백 함수들
 	void HandleDialStarted();
@@ -61,6 +65,8 @@ private:
 
 	// 컷신 스킵 입력: 재생 중인 컷신이 스킵 가능하면 마지막 장면으로 넘김
 	void HandleSkipCinematic();
+	void UpdateCinematicSkip(float DeltaTime);
+	void ResetCinematicSkip();
 
 	// 컷신 시작/종료 시 입력 매핑 교체
 	// - 시작: 게임플레이 IMC를 빼고 컷신 IMC(스킵만)를 넣음 → 허용 목록 방식이라 액션이 늘어도 자동 차단
@@ -91,9 +97,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pet|Input")
 	TObjectPtr<class UInputAction> IA_PetSpecialAction;
 
-	// 컷신 스킵 입력
-	// - IA 에셋에 Hold 트리거(One Shot)를 달아 길게 눌러야 스킵: 상호작용 연타로 컷이 넘어가는 것 방지
-	// - 키 매핑은 플레이어 IMC에서 지정 (상호작용과 같은 키여도 됨)
+	// 기존 에셋 참조 유지. E 홀드와 진행도는 컨트롤러에서 함께 처리해 IA의 Hold 설정과 중복되지 않음.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Cinematic|Input")
 	TObjectPtr<class UInputAction> IA_SkipCinematic;
 
@@ -118,6 +122,16 @@ protected:
 	bool bCutsceneInputBlocked = false;
 
 	FDelegateHandle CutsceneStateChangedHandle;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Cinematic|UI", meta = (ClampMin = "0.2", Units = "s"))
+	float CinematicSkipHoldSeconds = 1.f;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UCinematicSkipWidget> CinematicSkipWidget;
+
+	FCinematicHandle SkipPromptHandle;
+	float CinematicSkipProgress = 0.f;
+	bool bSkipNeedsRelease = true;
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<class APetCharacter> PartnerPet;

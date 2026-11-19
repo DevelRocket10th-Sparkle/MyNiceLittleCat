@@ -7,6 +7,8 @@
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Pet/PetCharacter.h"
 #include "Widgets/Pause/PauseMenuWidget.h"
+#include "Widgets/Cinematics/CinematicSkipWidget.h"
+#include "Misc/App.h"
 
 APlayerMainController::APlayerMainController()
 {
@@ -18,6 +20,7 @@ void APlayerMainController::FlushPressedKeys()
 	// 입력 초기화 되기 전에 모드 변경 캔슬 내요
 	HandleDialCanceled();
 	HandleModeUseCanceled();
+	ResetCinematicSkip();
 
 	Super::FlushPressedKeys();
 }
@@ -30,6 +33,7 @@ bool APlayerMainController::ShouldFlushKeysWhenViewportFocusChanges() const
 void APlayerMainController::PlayerTick(float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
+	UpdateCinematicSkip(FApp::GetDeltaTime());
 
 	APetCharacter* Pet = PartnerPet.Get();
 
@@ -86,11 +90,7 @@ void APlayerMainController::SetupInputComponent()
 
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
 
-	// 컷신 스킵은 펫 입력 설정과 무관하게 바인딩 (아래 펫 입력 검사보다 먼저)
-	if (EnhancedInput && IA_SkipCinematic)
-	{
-		EnhancedInput->BindAction(IA_SkipCinematic, ETriggerEvent::Triggered, this, &APlayerMainController::HandleSkipCinematic);
-	}
+	// E 홀드는 UpdateCinematicSkip에서 처리. 기존 IA의 Triggered가 즉시 스킵하지 않도록 중복 바인딩하지 않음.
 
 	if ((nullptr == EnhancedInput) || (nullptr == IA_PetModeDial) || (nullptr == IA_PetModeUse) || (nullptr == IA_PetSpecialAction)) return;
 
@@ -108,6 +108,12 @@ void APlayerMainController::SetupInputComponent()
 
 void APlayerMainController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (CinematicSkipWidget)
+	{
+		CinematicSkipWidget->RemoveFromParent();
+		CinematicSkipWidget = nullptr;
+	}
+	ResetCinematicSkip();
 	HandleDialCanceled();
 	HandleModeUseCanceled();
 
@@ -395,6 +401,55 @@ void APlayerMainController::HandleSkipCinematic()
 	}
 }
 
+bool APlayerMainController::IsCinematicSkipPromptVisible() const
+{
+	const UCinematicSubsystem* Cinematics = GetWorld() ? GetWorld()->GetSubsystem<UCinematicSubsystem>() : nullptr;
+	return IsLocalController() && !IsPaused() && Cinematics && Cinematics->GetActiveSkippableCutscene().IsValid();
+}
+
+void APlayerMainController::ResetCinematicSkip()
+{
+	CinematicSkipProgress = 0.f;
+	bSkipNeedsRelease = true;
+}
+
+void APlayerMainController::UpdateCinematicSkip(float DeltaTime)
+{
+	if (!IsLocalController()) return;
+	UCinematicSubsystem* Cinematics = GetWorld() ? GetWorld()->GetSubsystem<UCinematicSubsystem>() : nullptr;
+	const FCinematicHandle Target = Cinematics ? Cinematics->GetActiveSkippableCutscene() : FCinematicHandle();
+	if (Target != SkipPromptHandle)
+	{
+		SkipPromptHandle = Target;
+		ResetCinematicSkip();
+	}
+	if (!Target.IsValid() || IsPaused())
+	{
+		ResetCinematicSkip();
+		return;
+	}
+	if (!CinematicSkipWidget)
+	{
+		CinematicSkipWidget = CreateWidget<UCinematicSkipWidget>(this);
+		if (CinematicSkipWidget) CinematicSkipWidget->AddToPlayerScreen(2000);
+	}
+	if (!IsInputKeyDown(EKeys::E))
+	{
+		CinematicSkipProgress = 0.f;
+		bSkipNeedsRelease = false;
+		return;
+	}
+	if (bSkipNeedsRelease) return;
+	CinematicSkipProgress = FMath::Min(1.f, CinematicSkipProgress +
+		FMath::Max(0.f, DeltaTime) / FMath::Max(0.2f, CinematicSkipHoldSeconds));
+	if (CinematicSkipProgress >= 1.f)
+	{
+		// Set the latch before callbacks, which can immediately start another cinematic.
+		ResetCinematicSkip();
+		HandleSkipCinematic();
+	}
+}
+
 void APlayerMainController::HandleCutsceneStateChanged(bool _bCutscenePlaying)
 {
 	if (bCutsceneInputBlocked == _bCutscenePlaying) return;
@@ -457,6 +512,7 @@ bool APlayerMainController::TryGetDialPointerPosition(FVector2D& _outPosition) c
 
 void APlayerMainController::TogglePauseMenu()
 {
+	ResetCinematicSkip();
 	if (PauseMenu && PauseMenu->IsOpen())
 	{
 		PauseMenu->Close();
