@@ -16,6 +16,7 @@
 #include "Enemy/Interfaces/BossEncounterDirector.h"
 #include "Enemy/Interfaces/BossPhaseTransitionHandler.h"
 #include "Frameworks/GameMode/MainGameMode.h"
+#include "Frameworks/Save/GameProgressSubsystem.h"
 #include "Frameworks/Sound/BGMSubSystem.h"
 #include "Engine/GameInstance.h"
 #include "Widgets/MainHUD.h"
@@ -204,6 +205,16 @@ void ABossEncounterManager::HandleBossDefeated(ABossCharacter* Boss)
 	ClearEncounterPlayer();
 	EncounterState = EBossEncounterState::Cleared;
 
+	// 진행 기록: 게임 흐름(트리거 제거 등)은 플래그를 구독하는 쪽이 처리
+	if (!DefeatedProgressFlag.IsNone())
+	{
+		const UGameInstance* GameInstance = GetGameInstance();
+		if (UGameProgressSubsystem* Progress = GameInstance ? GameInstance->GetSubsystem<UGameProgressSubsystem>() : nullptr)
+		{
+			Progress->SetProgressFlag(DefeatedProgressFlag);
+		}
+	}
+
 	if (IBossEncounterDirector* Director = GetDirector())
 	{
 		Director->OnEncounterCleared();
@@ -220,6 +231,22 @@ void ABossEncounterManager::TryOpenLevelAfterDefeat(ABossCharacter* Boss)
 	if (!HasAuthority() || !IsValid(Boss) || Boss != CurrentBoss
 		|| EncounterState != EBossEncounterState::Cleared
 		|| !Boss->HasFinishedDeath() || LevelAfterDefeat.IsNull())
+	{
+		return;
+	}
+
+	// 엔딩 연출 등으로 연출 담당자가 이동을 미루면 담당자가 연출 뒤 OpenLevelAfterDefeat 호출
+	if (const IBossEncounterDirector* Director = GetDirector(); Director && Director->HoldsLevelAfterDefeat())
+	{
+		return;
+	}
+
+	OpenLevelAfterDefeat();
+}
+
+void ABossEncounterManager::OpenLevelAfterDefeat()
+{
+	if (!HasAuthority() || EncounterState != EBossEncounterState::Cleared || LevelAfterDefeat.IsNull())
 	{
 		return;
 	}

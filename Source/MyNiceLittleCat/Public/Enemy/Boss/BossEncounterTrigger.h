@@ -7,6 +7,7 @@
 class ABossEncounterManager;
 class UBoxComponent;
 class UPrimitiveComponent;
+class UProgressFlagGateComponent;
 
 // 플레이어가 영역에 들어오면 지정한 보스방 매니저에 전투 시작 요청
 // - 매니저를 인스턴스에서 직접 지정 (레벨에 매니저가 여러 개 있어도 대상이 고정됨)
@@ -43,4 +44,8 @@ protected:
 	// 시작 요청을 보낼 보스방 매니저: 비우면 같은 레벨의 매니저를 자동 사용
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Boss")
 	TObjectPtr<ABossEncounterManager> EncounterManager;
+
+	// 진행 플래그로 트리거 제거 (예: 보스 처치 플래그). Flag가 None이면 동작 안 함
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss")
+	TObjectPtr<UProgressFlagGateComponent> ProgressGate;
 };

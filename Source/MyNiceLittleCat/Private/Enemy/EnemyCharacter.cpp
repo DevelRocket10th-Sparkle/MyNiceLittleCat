@@ -296,7 +296,12 @@ void AEnemyCharacter::LifeSpanExpired()
 	// 래그돌로 떨어진 시체 위치(메시)에서 재생: 액터 위치는 사망 지점에 남아 있음
 	const USkeletalMeshComponent* MeshComp = GetMesh();
 	const FVector Location = IsValid(MeshComp) ? MeshComp->Bounds.Origin : GetActorLocation();
-	EnemyFeedback::PlayAtLocation(this, CorpseVanishCue, Location);
+
+	// 숨긴 시체(연출 대역이 대신 연기 중인 보스 등)는 사라짐 연출 없이 제거
+	if (!IsHidden())
+	{
+		EnemyFeedback::PlayAtLocation(this, CorpseVanishCue, Location);
+	}
 
 	Super::LifeSpanExpired();
 }

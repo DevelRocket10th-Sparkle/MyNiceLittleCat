@@ -37,6 +37,10 @@ struct FCheckpointSaveData
 	// 부활 위치 (발 위치 기준) · 방향
 	UPROPERTY(BlueprintReadOnly, Category = "Checkpoint")
 	FTransform RespawnTransform;
+
+	// 해당 체크포인트로 복귀할 때의 시간대. 이전 세이브는 아침으로 시작.
+	UPROPERTY(BlueprintReadOnly, Category = "Checkpoint")
+	bool bEvening = false;
 };
 
 UCLASS()
@@ -47,7 +51,7 @@ class MYNICELITTLECAT_API UGameProgressSaveGame : public USaveGame
 public:
 	// 세이브 구조 버전 (항목 추가·변경 시 올림)
 	UPROPERTY(BlueprintReadOnly, Category = "Save")
-	int32 SaveVersion = 4;
+	int32 SaveVersion = 5;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Save")
 	FDateTime SavedTime;
