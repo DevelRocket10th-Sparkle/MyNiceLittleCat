@@ -2,12 +2,13 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.11.17. (AStage3BossCinematics 대체)
+* 수정 일자: 2026.11.19. (다음 레벨이 없을 때 엔딩 뒤 검은 화면에서 멈추지 않게 복구)
 * Stage3 저택 보스전 연출 (AStageEncounterDirector 파생)
 * - 오프닝: 도착 컷 → 대문 자물쇠 잠김 → (자물쇠를 열쇠로 풀면) 대문 열림 컷 → 마당 → (베이스) 보스 등장 컷 → 전투
 * - 페이즈 전환 연출: 핏자국, 사이렌, 보스 효과, 컷 종료 후 눈 색
-* - Stage3 전용 마커: Stair:Break
+* - Stage3 전용 마커: Stair:Break, EyeGlow, Collapse:Player
 *
-* 베이스가 처리하는 것: 보스방 등록, 컷 재생, Door/Event 마커, 보스 시작 위치, 아레나 진입 대기, 문 복원/출구 개방
+* 베이스가 처리하는 것: 보스방 등록, 컷 재생, Door/Event/Cue 마커, 보스 시작 위치, 아레나 진입 대기, 문 복원/출구 개방
 * 다른 곳으로 분리된 것: 시퀀스 재생(UCinematicSubsystem), 핏자국(UCinematicTrailDecalComponent),
 *   눈 발광(보스 BP의 UEnemyEyeGlowComponent), 문·잠긴 문 덜컹 소리(AGimmickDoor),
 *   열쇠·자물쇠 상호작용(AGimmickKeyLock), 재도전 초기화(ABossEncounterManager)
@@ -133,7 +134,11 @@ private :
 	void StartEnding();
 
 	// 엔딩 컷 종료 후 검은 화면 유지 시간이 지나면 다음 레벨로
+	// - 다음 레벨이 없으면 화면 페이드와 펫 AI를 되돌림 (검은 화면에 멈추지 않게)
 	void FinishEnding();
+
+	// 보스방에 엔딩 뒤 열 다음 레벨이 지정되어 있는지
+	bool HasLevelAfterEnding() const;
 
 	// 플레이어의 파트너 펫 (없으면 nullptr)
 	APetCharacter* FindPartnerPet() const;
@@ -217,7 +222,7 @@ protected :
 	/* 엔딩 */
 
 	// 보스 처치 후 재생할 엔딩 컷 (비우면 기존처럼 사망 연출 뒤 바로 다음 레벨)
-	// - 시퀀스: 보스 대역(스폰), Player/Pet 태그 바인딩, 마커 Cue:BossDust, Ragdoll:Player
+	// - 시퀀스: 보스 대역(스폰), Player/Pet 태그 바인딩, 마커 Cue:BossDust, Collapse:Player
 	UPROPERTY(EditInstanceOnly, Category = "Stage3|Ending")
 	TObjectPtr<ULevelSequence> EndingSequence;
 

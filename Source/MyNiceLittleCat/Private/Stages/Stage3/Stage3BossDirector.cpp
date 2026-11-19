@@ -2,9 +2,11 @@
 
 
 #include "Stages/Stage3/Stage3BossDirector.h"
+#include "Cinematics/CinematicLog.h"
 #include "Stages/Stage3/MansionLightingSubsystem.h"
 
 #include "Animation/AnimInstance.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -50,6 +52,12 @@ void AStage3BossDirector::BeginPlay()
 	GetWorld()->GetSubsystem<UMansionLightingSubsystem>()->InitializeForStage();
 	// 베이스: 보스방에 연출 담당자로 등록
 	Super::BeginPlay();
+
+	// 엔딩이 있는데 다음 레벨이 없으면 엔딩 뒤 검은 화면에서 멈추므로 설정 오류를 미리 알림
+	if (EndingSequence && !HasLevelAfterEnding())
+	{
+		UE_LOG(LogStage, Warning, TEXT("[Stage3] EndingSequence is set but the encounter has no LevelAfterDefeat"));
+	}
 
 	SetStairBlocked(true);
 
@@ -322,6 +330,11 @@ bool AStage3BossDirector::HoldsLevelAfterDefeat() const
 	return EndingSequence != nullptr;
 }
 
+bool AStage3BossDirector::HasLevelAfterEnding() const
+{
+	return Encounter && Encounter->HasLevelAfterDefeat();
+}
+
 void AStage3BossDirector::StartEnding()
 {
 	APlayerCharacter* Player = GetAlivePlayer();
@@ -373,9 +386,24 @@ void AStage3BossDirector::StartEnding()
 
 void AStage3BossDirector::FinishEnding()
 {
-	if (Encounter)
+	if (HasLevelAfterEnding())
 	{
 		Encounter->OpenLevelAfterDefeat();
+		return;
+	}
+
+	// 다음 레벨이 없으면 엔딩의 검은 화면(KeepState 페이드)에 갇히므로 화면과 펫을 되돌림
+	UE_LOG(LogStage, Error, TEXT("[Stage3] Ending finished but the encounter has no LevelAfterDefeat; restoring view"));
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController(); PC && PC->PlayerCameraManager)
+	{
+		PC->PlayerCameraManager->StopCameraFade();
+	}
+	if (APetCharacter* Pet = EndingPet.Get())
+	{
+		if (APetAIController* PetAI = Pet->GetController<APetAIController>())
+		{
+			PetAI->StartPetLogic();
+		}
 	}
 }
 

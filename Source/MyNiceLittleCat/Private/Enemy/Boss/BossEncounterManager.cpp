@@ -2,6 +2,7 @@
 
 
 #include "Enemy/Boss/BossEncounterManager.h"
+#include "Enemy/EnemyLog.h"
 
 #include "BrainComponent.h"
 #include "Components/SceneComponent.h"
@@ -101,7 +102,7 @@ bool ABossEncounterManager::StartEncounter(APlayerCharacter* Player)
 	// BT가 실제로 실행되지 않으면(필수 BB 키 누락 등) 전투를 진행할 수 없음
 	if (!AI->GetBrainComponent() || !AI->GetBrainComponent()->IsRunning())
 	{
-		UE_LOG(LogTemp, Error, TEXT("[BossEncounter] %s: boss AI did not start"), *GetName());
+		UE_LOG(LogEnemy, Error, TEXT("[BossEncounter] %s: boss AI did not start"), *GetName());
 		ResetEncounter();
 		return false;
 	}
@@ -174,7 +175,7 @@ void ABossEncounterManager::ResetEncounter()
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("[BossEncounter] %s: boss room initialization failed"), *GetName());
+		UE_LOG(LogEnemy, Error, TEXT("[BossEncounter] %s: boss room initialization failed"), *GetName());
 	}
 }
 
@@ -184,7 +185,7 @@ void ABossEncounterManager::SetEncounterDirector(UObject* Director)
 {
 	if (Director && !Director->GetClass()->ImplementsInterface(UBossEncounterDirector::StaticClass()))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[BossEncounter] %s does not implement IBossEncounterDirector"), *GetNameSafe(Director));
+		UE_LOG(LogEnemy, Error, TEXT("[BossEncounter] %s does not implement IBossEncounterDirector"), *GetNameSafe(Director));
 		return;
 	}
 
@@ -456,7 +457,7 @@ void ABossEncounterManager::BeginWaitForRespawn()
 	AMainGameMode* GameMode = GetWorld()->GetAuthGameMode<AMainGameMode>();
 	if (!GameMode)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[BossEncounter] %s: GameMode is not AMainGameMode. Auto reset on respawn is disabled."), *GetName());
+		UE_LOG(LogEnemy, Warning, TEXT("[BossEncounter] %s: GameMode is not AMainGameMode. Auto reset on respawn is disabled."), *GetName());
 		return;
 	}
 

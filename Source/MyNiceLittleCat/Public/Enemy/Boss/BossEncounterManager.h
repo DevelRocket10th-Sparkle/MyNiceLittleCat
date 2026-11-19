@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 /*
 * 작성자: 전선현
-* 수정 일자: 2026.11.17. (Stage3 연출 직접 참조 제거 → IBossEncounterDirector, 재도전 자동 초기화 이동)
+* 수정 일자: 2026.11.19. (다음 레벨 지정 여부 조회 추가)
 * 보스방 전투 진행 관리 (레벨 배치 액터)
 * - 보스 생성/제거, 전투 시작, 플레이어 사망 시 대기, 전환 실패 시 재생성, 클리어
 * - 등장 연출, 문, 출구처럼 스테이지마다 다른 처리는 연출 담당자(IBossEncounterDirector)에게 위임
@@ -77,6 +77,9 @@ public :
 
 	ABossCharacter* GetCurrentBoss() const { return CurrentBoss; }
 	EBossEncounterState GetEncounterState() const { return EncounterState; }
+
+	// 처치 후 열 다음 레벨이 지정되어 있는지 (연출 담당자가 레벨 이동을 미룰지 판단할 때 사용)
+	bool HasLevelAfterDefeat() const { return !LevelAfterDefeat.IsNull(); }
 
 protected :
 
