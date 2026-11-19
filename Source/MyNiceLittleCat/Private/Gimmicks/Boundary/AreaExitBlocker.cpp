@@ -125,6 +125,7 @@ void AAreaExitBlocker::FocusPetCamera()
 		return;
 
 	SetPetLogicPaused(true);
+	SetBubbleHeightOverridden(true);
 	Pet->GetCharacterMovement()->StopMovementImmediately();
 
 	const FVector ToPlayer = (Player->GetActorLocation() - Pet->GetActorLocation()).GetSafeNormal2D();
@@ -276,6 +277,7 @@ void AAreaExitBlocker::FinishSequence()
 		{
 			Bubble->HideBubble();
 		}
+		SetBubbleHeightOverridden(false);
 		SetPetLogicPaused(false);
 		if (bTeleportPetAfterLanding && Player && !Player->GetbIsDead())
 		{
@@ -372,4 +374,34 @@ void AAreaExitBlocker::SetPetLogicPaused(bool bPaused)
 	{
 		Brain->ResumeLogic(TEXT("AreaExitBlocker"));
 	}
+}
+
+// 펫 정면 카메라는 가까워서 평소 높이의 말풍선이 떠 보이므로 연출 중에만 낮춤
+void AAreaExitBlocker::SetBubbleHeightOverridden(bool bOverride)
+{
+	if (bBubbleHeightOverridden == bOverride)
+		return;
+
+	APetCharacter* Pet = ActivePet.Get();
+	USpeechBubbleComponent* Bubble = Pet ? Pet->GetSpeechBubble() : nullptr;
+	if (!Bubble)
+	{
+		bBubbleHeightOverridden = false;
+		return;
+	}
+
+	if (bOverride)
+	{
+		if (!bOverrideBubbleHeight)
+			return;
+		SavedBubbleRelativeLocation = Bubble->GetRelativeLocation();
+		FVector Location = SavedBubbleRelativeLocation;
+		Location.Z = BubbleHeightDuringFocus;
+		Bubble->SetRelativeLocation(Location);
+	}
+	else
+	{
+		Bubble->SetRelativeLocation(SavedBubbleRelativeLocation);
+	}
+	bBubbleHeightOverridden = bOverride;
 }

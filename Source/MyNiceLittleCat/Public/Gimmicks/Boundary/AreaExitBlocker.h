@@ -68,6 +68,8 @@ protected:
 	bool ResolveReturnLocation(FVector& OutLocation, FRotator& OutRotation) const;
 	APetCharacter* ResolvePet() const;
 	void SetPetLogicPaused(bool bPaused);
+	// 연출 중 말풍선 높이 적용/복구 (짝 맞춰 호출)
+	void SetBubbleHeightOverridden(bool bOverride);
 
 protected:
 	/* 컴포넌트 */
@@ -96,6 +98,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Exit Blocker|Lines")
 	TArray<FAreaExitBlockerLine> PetLines;
 
+	// 연출 중 말풍선 높이를 바꿀지 (끝나면 원래 높이로 복구)
+	// - 말풍선은 화면 고정 크기라 카메라가 가까우면 같은 월드 높이도 화면에서 더 떠 보임
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Exit Blocker|Lines")
+	bool bOverrideBubbleHeight = true;
+
+	// 연출 중 말풍선 높이 (펫 캡슐 중심 기준 Z)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Exit Blocker|Lines", meta = (EditCondition = "bOverrideBubbleHeight", Units = "cm"))
+	float BubbleHeightDuringFocus = 70.f;
+
 	/* 카메라 */
 
 	// 펫 정면 카메라 거리 / 높이 / 바라볼 높이 (펫 위치 기준)
@@ -122,7 +133,7 @@ protected:
 
 	// 포물선 최고 높이 (출발·도착 중 높은 쪽 기준 추가 높이)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Exit Blocker|Return", meta = (ClampMin = "0.0", Units = "cm"))
-	float FlightArcHeight = 1200.f;
+	float FlightArcHeight = 600.f;
 
 	// 착지 후 펫을 플레이어 옆으로 순간이동
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Exit Blocker|Return")
@@ -138,6 +149,10 @@ private:
 	bool bBusy = false;
 	bool bInputLocked = false;
 	bool bPetLogicPaused = false;
+
+	// 말풍선 높이 복구용
+	bool bBubbleHeightOverridden = false;
+	FVector SavedBubbleRelativeLocation = FVector::ZeroVector;
 
 	// 비행
 	bool bFlying = false;
