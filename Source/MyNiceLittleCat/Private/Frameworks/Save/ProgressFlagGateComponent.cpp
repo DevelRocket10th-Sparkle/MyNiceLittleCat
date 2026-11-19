@@ -53,8 +53,22 @@ void UProgressFlagGateComponent::Evaluate()
 
 	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
 	const UGameProgressSubsystem* Progress = GameInstance ? GameInstance->GetSubsystem<UGameProgressSubsystem>() : nullptr;
-	if (!Progress || Progress->HasProgressFlag(Flag) != bActWhenFlagSet)
+	if (!Progress)
 		return;
+
+	if (Progress->HasProgressFlag(Flag) != bActWhenFlagSet)
+	{
+		// 등장형: 조건 전에는 숨겨 둠
+		if (Action == EProgressFlagGateAction::RevealOwner)
+		{
+			if (AActor* Owner = GetOwner())
+			{
+				Owner->SetActorHiddenInGame(true);
+				Owner->SetActorEnableCollision(false);
+			}
+		}
+		return;
+	}
 
 	ApplyAction();
 }
@@ -67,7 +81,8 @@ void UProgressFlagGateComponent::ApplyAction()
 
 	bApplied = true;
 	UE_LOG(LogTemp, Log, TEXT("[ProgressFlagGate] %s -> %s (Flag %s)"), *Owner->GetName(),
-		Action == EProgressFlagGateAction::DestroyOwner ? TEXT("Destroy") : TEXT("Disable"), *Flag.ToString());
+		Action == EProgressFlagGateAction::DestroyOwner ? TEXT("Destroy")
+		: Action == EProgressFlagGateAction::DisableOwner ? TEXT("Disable") : TEXT("Reveal"), *Flag.ToString());
 
 	switch (Action)
 	{
@@ -78,6 +93,10 @@ void UProgressFlagGateComponent::ApplyAction()
 		Owner->SetActorHiddenInGame(true);
 		Owner->SetActorEnableCollision(false);
 		Owner->SetActorTickEnabled(false);
+		break;
+	case EProgressFlagGateAction::RevealOwner:
+		Owner->SetActorHiddenInGame(false);
+		Owner->SetActorEnableCollision(true);
 		break;
 	}
 }

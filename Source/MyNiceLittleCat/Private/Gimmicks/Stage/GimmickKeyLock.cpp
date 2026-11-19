@@ -66,5 +66,5 @@ bool AGimmickKeyLock::HasRequiredKey() const
 
 	const UGameInstance* GameInstance = GetGameInstance();
 	const UInventorySubsystem* Inventory = GameInstance ? GameInstance->GetSubsystem<UInventorySubsystem>() : nullptr;
-	return Inventory && Inventory->HasItem(RequiredKey);
+	return Inventory && Inventory->HasItem(RequiredKey, FMath::Max(1, RequiredKeyCount));
 }

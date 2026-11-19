@@ -20,6 +20,8 @@ enum class EProgressFlagGateAction : uint8
 	DestroyOwner,
 	// 숨김 + 충돌 끔 (액터는 남김)
 	DisableOwner,
+	// 조건 전에는 숨김 + 충돌 끔, 조건이 되면 보이기 + 충돌 켬 (예: 보스 처치 후 보상 상자 등장)
+	RevealOwner,
 };
 
 UCLASS(ClassGroup = (Progress), meta = (BlueprintSpawnableComponent))

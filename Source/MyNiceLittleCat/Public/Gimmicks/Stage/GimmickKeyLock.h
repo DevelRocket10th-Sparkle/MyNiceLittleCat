@@ -60,6 +60,10 @@ protected :
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|KeyLock")
 	TObjectPtr<UItemData> RequiredKey;
 
+	// 풀 때 필요한 RequiredKey 개수 (예: Stage1·Stage2 보상 열쇠 2개)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|KeyLock", meta = (ClampMin = "1"))
+	int32 RequiredKeyCount = 1;
+
 	// 열쇠 없이 상호작용할 때 소리 (덜컹)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gimmick|KeyLock")
 	TObjectPtr<USoundBase> LockedSound;
