@@ -34,7 +34,7 @@ bool ABossCharacter::CanRunEnemyAI() const
 float ABossCharacter::CalculateHealthAfterDamage(float CurrentHealth, float MaxHealth, float Damage) const
 {
 	// 전투 전, 전환 중, 실패 예약 중에는 피해 무시
-	if (!IsAlive() || !IsEncounterActive() || !PhaseComponent->IsActive())
+	if (!IsAlive() || !IsEncounterActive() || !PhaseComponent->IsPhaseActive())
 	{
 		return CurrentHealth;
 	}
@@ -146,9 +146,7 @@ void ABossCharacter::ScheduleEncounterFailure()
 
 	// 실패가 확정된 순간부터 공격, 전환, 기믹이 더 진행하지 않도록 즉시 정리
 	PhaseComponent->StopAndInvalidate();
-	GetPatternComponent()->SetRequestsBlocked(true);
-	GetPatternComponent()->CancelAllRequests();
-	StopPhaseGimmicks();
+	HaltCombatActions();
 
 	// 이 예약 이후 보스가 사망 또는 초기화되면 실행하지 않음
 	const int64 ExpectedGeneration = EncounterGeneration;
@@ -201,7 +199,7 @@ bool ABossCharacter::NotifyPhaseGimmickCompleted(UActorComponent* SourceComponen
 
 bool ABossCharacter::CanBossAct() const
 {
-	return IsEncounterActive() && IsAlive() && PhaseComponent->IsActive();
+	return IsEncounterActive() && IsAlive() && PhaseComponent->IsPhaseActive();
 }
 
 bool ABossCharacter::IsPhaseTransitionInProgress() const
@@ -293,14 +291,11 @@ void ABossCharacter::HandleTransitionRequested()
 		return;
 	}
 
-	GetPatternComponent()->SetRequestsBlocked(true);
 	// 주 패턴뿐 아니라 보조 패턴과 시작 지연 예약까지 취소 (전환 Task는 바로 IsIdle을 확인하므로 취소는 즉시 끝나야 함)
-	GetPatternComponent()->CancelAllRequests();
+	HaltCombatActions();
 
 	// 이전 페이즈의 공격 간격을 새 페이즈 첫 공격에 넘기지 않음
 	GetPatternComponent()->ResetAttackInterval();
-
-	StopPhaseGimmicks();
 
 	if (ABossAIController* AI = GetBossAIController())
 	{
@@ -361,7 +356,7 @@ void ABossCharacter::HandleTransitionFinished(int64 TransitionId, bool bSucceede
 void ABossCharacter::FinishPhaseActivation()
 {
 	// 진입 직후 다음 전환이 이미 요청된 경우(즉시 완료된 기믹)는 공격 차단 유지
-	if (!IsEncounterActive() || !PhaseComponent->IsActive())
+	if (!IsEncounterActive() || !PhaseComponent->IsPhaseActive())
 	{
 		return;
 	}
@@ -484,6 +479,14 @@ bool ABossCharacter::InitializeGimmickConnection()
 }
 
 // 정지 상태를 무효화한 뒤 호출하므로 정리 중 발생한 완료 알림도 페이즈를 진행시키지 못함
+// 새 공격 요청을 막고 진행 중인 패턴과 페이즈 기믹 정리
+void ABossCharacter::HaltCombatActions()
+{
+	GetPatternComponent()->SetRequestsBlocked(true);
+	GetPatternComponent()->CancelAllRequests();
+	StopPhaseGimmicks();
+}
+
 void ABossCharacter::StopPhaseGimmicks()
 {
 	if (HasAuthority() && IsValid(PhaseGimmickComponent))

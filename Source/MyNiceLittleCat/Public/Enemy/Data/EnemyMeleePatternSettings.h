@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.22.
-* 수정 일자: 2026.11.17. (주석 정리, 타격 연출 HitCue 추가)
+* 수정 일자: 2026.11.19. (판정 소스 이름 상수 EnemyMeleeSources와 드롭다운)
 * 근접 공격 GA(GA_Enemy_MeleeAttack)의 패턴별 실행 설정
 * - 공격 몽타주와 시작 섹션
 * - 판정 구간(AnimNotifyState) 동안 Sphere Sweep할 소켓 목록 (판정 소스별)
@@ -18,6 +18,16 @@
 class UAnimMontage;
 class USoundBase;
 
+// 근접 판정 소스 이름: 판정 설정의 SourceName과 근접 판정 컴포넌트가 자동 등록하는 소스가 같은 값을 씀
+namespace EnemyMeleeSources
+{
+	// Enemy 본체 스켈레탈 메시
+	inline const FName Body(TEXT("Body"));
+
+	// 본체에 붙은 무기 메시
+	inline const FName Weapon(TEXT("Weapon"));
+}
+
 // 데이터 에셋 내부에서 생성하는 소켓별 판정 설정. 별도 에셋 생성 불필요.
 UCLASS(BlueprintType, EditInlineNew, DefaultToInstanced, meta = (DisplayName = "Melee Trace Settings"))
 class MYNICELITTLECAT_API UEnemyMeleeTraceSettings : public UObject
@@ -29,8 +39,12 @@ public :
 	// 판정 소스: 소켓을 찾을 메시
 	// - Body: Enemy 본체 스켈레탈 메시
 	// - Weapon: 본체에 붙은 무기 메시 (아래 소켓을 모두 가진 자식 메시를 자동 탐색)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee")
-	FName SourceName = TEXT("Body");
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee", meta = (GetOptions = "GetSourceNameOptions"))
+	FName SourceName = EnemyMeleeSources::Body;
+
+	// 에디터 드롭다운: 선택할 수 있는 판정 소스 이름 (EnemyMeleeSources)
+	UFUNCTION()
+	static TArray<FName> GetSourceNameOptions() { return { EnemyMeleeSources::Body, EnemyMeleeSources::Weapon }; }
 
 #if WITH_EDITORONLY_DATA
 	// 에디터 전용: SocketNames 드롭다운에 소켓 목록을 띄우기 위한 메시 에셋 (게임 실행에는 쓰지 않음)

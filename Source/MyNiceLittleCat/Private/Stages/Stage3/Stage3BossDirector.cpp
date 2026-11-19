@@ -174,16 +174,13 @@ void AStage3BossDirector::OnPhaseStagingBegin_Implementation(FName PhaseId, ABos
 	const TArray<const AActor*> IgnoredActors = { Boss, GetAlivePlayer() };
 	BloodTrailDecals->SpawnTrail(Staging->Sequence, GetStageTransform(), Staging->BloodTrail, IgnoredActors);
 
-	if (PhaseId == TEXT("Barrier30") || Staging->bSirenWarning)
+	// 눈 발광: 컷 시작 때 바꾸도록 설정한 페이즈만 (사이렌 경고는 색을 바꾼 뒤 깜빡임)
+	if (Staging->bEyeGlowAtCutStart || Staging->bSirenWarning)
 	{
-		if (UEnemyEyeGlowComponent* EyeGlow = GetBossEyeGlow(Boss))
+		ApplyPhaseEyeGlow(Boss, *Staging, true);
+		if (UEnemyEyeGlowComponent* EyeGlow = GetBossEyeGlow(Boss); EyeGlow && Staging->bSirenWarning)
 		{
-			EyeGlow->StopWarningPulse();
-			EyeGlow->SetGlowColor(Staging->EyeGlow);
-			if (Staging->bSirenWarning)
-			{
-				EyeGlow->PlayWarningPulse(Staging->EyeGlow, SirenSeconds);
-			}
+			EyeGlow->PlayWarningPulse(Staging->EyeGlow, SirenSeconds);
 		}
 	}
 
@@ -199,21 +196,17 @@ void AStage3BossDirector::OnPhaseStagingFinished_Implementation(FName PhaseId, A
 	// 정상 종료/스킵 모두 아직 안 보인 핏자국을 즉시 표시
 	BloodTrailDecals->RevealAll();
 
-	const FStage3PhaseStaging* Staging = Phases.Find(PhaseId);
-	UEnemyEyeGlowComponent* EyeGlow = GetBossEyeGlow(Boss);
-	if (Staging && EyeGlow)
+	if (const FStage3PhaseStaging* Staging = Phases.Find(PhaseId))
 	{
-		EyeGlow->StopWarningPulse();
-		EyeGlow->SetGlowColor(Staging->EyeGlow);
+		ApplyPhaseEyeGlow(Boss, *Staging, true);
 	}
 }
 
 void AStage3BossDirector::OnStagePhaseStarted_Implementation(FName PhaseId, ABossCharacter* Boss)
 {
-	const FStage3PhaseStaging* Staging = Phases.Find(PhaseId);
-	if (UEnemyEyeGlowComponent* EyeGlow = GetBossEyeGlow(Boss); Staging && EyeGlow)
+	if (const FStage3PhaseStaging* Staging = Phases.Find(PhaseId))
 	{
-		EyeGlow->SetGlowColor(Staging->EyeGlow);
+		ApplyPhaseEyeGlow(Boss, *Staging, false);
 	}
 }
 
@@ -225,11 +218,9 @@ bool AStage3BossDirector::HandleStageMarker_Implementation(const FCinematicMarke
 	const FCinematicMarkerArgs Args(Marker.Label);
 	if (Args.IsCommand(TEXT("EyeGlow")))
 	{
-		const FStage3PhaseStaging* Staging = Phases.Find(FName(*Args.GetArg(0)));
-		if (UEnemyEyeGlowComponent* EyeGlow = GetBossEyeGlow(GetCurrentBoss()); Staging && EyeGlow)
+		if (const FStage3PhaseStaging* Staging = Phases.Find(FName(*Args.GetArg(0))))
 		{
-			EyeGlow->StopWarningPulse();
-			EyeGlow->SetGlowColor(Staging->EyeGlow);
+			ApplyPhaseEyeGlow(GetCurrentBoss(), *Staging, true);
 		}
 		return true;
 	}
@@ -535,6 +526,21 @@ void AStage3BossDirector::SetStairBlocked(bool bBlocked)
 		StairBlocker->SetActorHiddenInGame(!bBlocked);
 		StairBlocker->SetActorEnableCollision(bBlocked);
 	}
+}
+
+void AStage3BossDirector::ApplyPhaseEyeGlow(const ABossCharacter* Boss, const FStage3PhaseStaging& Staging, bool bStopWarningPulse) const
+{
+	UEnemyEyeGlowComponent* EyeGlow = GetBossEyeGlow(Boss);
+	if (!EyeGlow)
+	{
+		return;
+	}
+
+	if (bStopWarningPulse)
+	{
+		EyeGlow->StopWarningPulse();
+	}
+	EyeGlow->SetGlowColor(Staging.EyeGlow);
 }
 
 UEnemyEyeGlowComponent* AStage3BossDirector::GetBossEyeGlow(const ABossCharacter* Boss) const

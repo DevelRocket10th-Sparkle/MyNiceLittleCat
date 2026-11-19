@@ -51,19 +51,11 @@ bool UEnemyPatternComponent::InitializePatterns(UAbilitySystemComponent* InASC, 
 
 	/* 1) 부여 전에 전체 설정 검사: 하나라도 잘못되면 아무것도 부여하지 않음 */
 
-	TSet<FName> PatternIds;
-
-	for (const FEnemyPatternDefinition& Pattern : InPatternSet->Patterns)
+	FString ConfigError;
+	if (!InPatternSet->ValidateConfiguration(ConfigError))
 	{
-		FString Error;
-		if (!Pattern.Validate(Error) || PatternIds.Contains(Pattern.PatternId))
-		{
-			UE_LOG(LogEnemy, Error, TEXT("[EnemyPattern] %s: invalid pattern settings. %s"),
-				*GetNameSafe(InPatternSet), Error.IsEmpty() ? TEXT("Duplicate PatternId.") : *Error);
-			return false;
-		}
-
-		PatternIds.Add(Pattern.PatternId);
+		UE_LOG(LogEnemy, Error, TEXT("[EnemyPattern] %s: invalid pattern settings. %s"), *GetNameSafe(InPatternSet), *ConfigError);
+		return false;
 	}
 
 	/* 2) 패턴마다 GA Spec 부여 */
@@ -104,7 +96,11 @@ bool UEnemyPatternComponent::InitializePatterns(UAbilitySystemComponent* InASC, 
 	AbilityEndedDelegateHandle = InASC->OnAbilityEnded.AddUObject(this, &UEnemyPatternComponent::HandleAbilityEnded);
 
 	// 기본 상태: 모든 패턴 허용, 가중치는 패턴 기본값, 한 번에 하나
-	AvailablePatterns = MoveTemp(PatternIds);
+	AvailablePatterns.Reset();
+	for (const FEnemyPatternDefinition& Pattern : InPatternSet->Patterns)
+	{
+		AvailablePatterns.Add(Pattern.PatternId);
+	}
 	WeightOverrides.Reset();
 	Concurrency = FEnemyPatternConcurrency();
 

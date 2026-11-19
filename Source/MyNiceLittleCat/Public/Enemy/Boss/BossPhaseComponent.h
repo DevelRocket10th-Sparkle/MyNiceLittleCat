@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
-* 수정 일자: 2026.11.17. (EnemyPhaseComponent → BossPhaseComponent, 시퀀스 재생/Stage3 의존 제거)
+* 수정 일자: 2026.11.19. (IsActive → IsPhaseActive: 엔진 UActorComponent::IsActive 가림 해소)
 * 보스 페이즈 진행 관리
 * - 현재 페이즈, 체력 하한, 기믹 완료에 의한 진행, 전환 요청/완료
 * - 전환 연출은 직접 재생하지 않음: 레벨 담당자(IBossPhaseTransitionHandler)에게 맡기거나
@@ -114,7 +114,7 @@ public :
 	int64 GetCurrentPhaseExecutionId() const { return ActivePhaseExecutionId; }
 
 	// 일반 공격 및 체력 조건 평가가 가능한 상태인지 확인
-	bool IsActive() const { return RunState == EBossPhaseRunState::Active; }
+	bool IsPhaseActive() const { return RunState == EBossPhaseRunState::Active; }
 
 	// BT가 처리해야 하는 전환 요청이 있는지 확인
 	bool HasPendingTransition() const { return RunState == EBossPhaseRunState::TransitionPending; }

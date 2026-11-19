@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
-* 수정 일자: 2026.11.17. (동시 실행 설정, 상황별 패턴 선택 목록과 가중치 재정의 추가)
+* 수정 일자: 2026.11.19. (패턴 세트 검사를 ValidateConfiguration 하나로: 에디터 검사와 실행 시 검사 공용)
 * 패턴 정보 설정 및 보관용 데이터 에셋
 * - 캐릭터별 공격 목록: 실행 GA, 거리/시야 조건, 선택 가중치, 후딜, 이동 정책, 동시 실행 자원
 * - 런타임 실행 상태는 저장하지 않음 (UEnemyPatternComponent가 관리)
@@ -244,6 +244,10 @@ public :
 
 	 // 에셋 저장 형식 버전 기록 (이전 버전 에셋을 계속 읽을 수 있도록 등록 유지)
 	virtual void Serialize(FArchive& Ar) override;
+
+	// 전체 패턴 설정 검사: 패턴별 설정 오류와 패턴 ID 중복 (오류는 줄바꿈으로 모두 담음)
+	// - 에디터 저장 검사(IsDataValid)와 실행 시 GA 부여 전 검사(UEnemyPatternComponent)가 같은 규칙을 씀
+	bool ValidateConfiguration(FString& OutError) const;
 
 #if WITH_EDITOR
 	// GA별 설정 편집 처리는 각 설정 객체에 위임

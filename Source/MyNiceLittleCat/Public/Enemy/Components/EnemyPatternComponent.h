@@ -25,7 +25,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 
-#include "GameplayAbilitySpec.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "GameplayTagContainer.h"
 #include "Enemy/Data/EnemyPatternSetData.h"
 

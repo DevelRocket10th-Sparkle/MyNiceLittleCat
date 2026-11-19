@@ -117,7 +117,7 @@ EBossHealthBarLockMode UBossHealthBarWidget::GetLockMode() const
 	}
 
 	// 배리어 페이즈 진행 중
-	if (PhaseComponent && PhaseComponent->IsActive())
+	if (PhaseComponent && PhaseComponent->IsPhaseActive())
 	{
 		const FBossPhaseDefinition* Phase = PhaseComponent->GetCurrentPhase();
 		if (Phase && Phase->Kind == EBossPhaseKind::Barrier)

@@ -26,7 +26,8 @@ void ARoomMaskVolume::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (ActorHasTag(TEXT("DisableRoomMask")))
+	// 방 마스크를 끈 볼륨은 충돌만 끄고 등록하지 않음
+	if (!bRoomMaskEnabled)
 	{
 		SetActorEnableCollision(false);
 		return;

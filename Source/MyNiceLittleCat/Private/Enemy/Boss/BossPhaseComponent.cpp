@@ -125,7 +125,7 @@ void UBossPhaseComponent::StopAndInvalidate()
 void UBossPhaseComponent::EvaluateHealth(float Health, float MaxHealth)
 {
 	const FBossPhaseDefinition* Phase = GetCurrentPhase();
-	if (!IsActive() || !Phase || Phase->Kind != EBossPhaseKind::Combat)
+	if (!IsPhaseActive() || !Phase || Phase->Kind != EBossPhaseKind::Combat)
 	{
 		return;
 	}
@@ -170,7 +170,7 @@ bool UBossPhaseComponent::RequestNextPhaseFromGimmick(FName PhaseId, int64 Phase
 		return true;
 	}
 
-	if (!IsActive())
+	if (!IsPhaseActive())
 	{
 		return false;
 	}
@@ -262,7 +262,7 @@ bool UBossPhaseComponent::GetCurrentWaypoint(FVector& OutLocation) const
 	const FBossPhaseDefinition* Phase = GetCurrentPhase();
 
 	// 페이즈가 기본 이동과 패턴별 예외 어디에서도 Waypoints를 사용하지 않으면 중단
-	if (!IsActive() || !Phase || !Phase->UsesWaypoints())
+	if (!IsPhaseActive() || !Phase || !Phase->UsesWaypoints())
 	{
 		return false;
 	}
@@ -289,7 +289,7 @@ bool UBossPhaseComponent::GetCurrentWaypoint(FVector& OutLocation) const
 int64 UBossPhaseComponent::GetLocomotionContextId() const
 {
 	// 활성 페이즈가 아니면 기본 이동 없음 → 이동 Task 종료
-	return IsActive() ? ActivePhaseExecutionId : 0;
+	return IsPhaseActive() ? ActivePhaseExecutionId : 0;
 }
 
 bool UBossPhaseComponent::ResolveLocomotion(FName PatternId, FEnemyLocomotionIntent& OutIntent) const
@@ -297,7 +297,7 @@ bool UBossPhaseComponent::ResolveLocomotion(FName PatternId, FEnemyLocomotionInt
 	OutIntent = FEnemyLocomotionIntent();
 
 	const FBossPhaseDefinition* Phase = GetCurrentPhase();
-	if (!IsActive() || !Phase)
+	if (!IsPhaseActive() || !Phase)
 	{
 		return false;
 	}
@@ -329,7 +329,7 @@ void UBossPhaseComponent::NotifyLocomotionDestinationReached(int64 ContextId)
 	// 아래 조건에서 무시
 	// - 페이즈가 전환 중이거나 정지 상태
 	// - 도착 알림이 현재 페이즈의 알림이 아님
-	if (!IsActive() || ContextId == 0 || ContextId != ActivePhaseExecutionId)
+	if (!IsPhaseActive() || ContextId == 0 || ContextId != ActivePhaseExecutionId)
 	{
 		return;
 	}
@@ -380,7 +380,7 @@ void UBossPhaseComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 // 다음 페이즈 전환을 중복 없이 요청하고 즉시 보호 처리 통지
 void UBossPhaseComponent::RequestNextPhase()
 {
-	if (!IsActive() || !Config || !Config->Phases.IsValidIndex(CurrentPhaseIndex + 1))
+	if (!IsPhaseActive() || !Config || !Config->Phases.IsValidIndex(CurrentPhaseIndex + 1))
 	{
 		return;
 	}

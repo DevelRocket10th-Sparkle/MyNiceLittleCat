@@ -12,10 +12,6 @@
 
 namespace
 {
-	// 판정 소스 이름: 패턴 설정의 SourceName과 같은 값
-	const FName BodySourceName(TEXT("Body"));
-	const FName WeaponSourceName(TEXT("Weapon"));
-
 	// 등록된 Weapon 소스가 없을 때, 필요한 소켓을 모두 가진 부착 메시를 찾음 (둘 이상이면 모호하므로 실패)
 	UMeshComponent* FindAttachedWeapon(
 		USkeletalMeshComponent* BodyMesh,
@@ -30,7 +26,7 @@ namespace
 		TSet<FName> RequiredSockets;
 		for (const UEnemyMeleeTraceSettings* Definition : Definitions)
 		{
-			if (IsValid(Definition) && Definition->SourceName == WeaponSourceName)
+			if (IsValid(Definition) && Definition->SourceName == EnemyMeleeSources::Weapon)
 			{
 				RequiredSockets.Append(Definition->SocketNames);
 			}
@@ -85,7 +81,7 @@ void UEnemyMeleeTraceComponent::BeginPlay()
 
 	if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner()))
 	{
-		RegisterHitSource(BodySourceName, Enemy->GetMesh());
+		RegisterHitSource(EnemyMeleeSources::Body, Enemy->GetMesh());
 	}
 }
 
@@ -162,7 +158,7 @@ bool UEnemyMeleeTraceComponent::PrepareAttack(const TArray<TObjectPtr<UEnemyMele
 		/* 소스 메시 찾기 */
 
 		UMeshComponent* Mesh = GetHitSource(Definition->SourceName);
-		if (!IsValid(Mesh) && Definition->SourceName == WeaponSourceName)
+		if (!IsValid(Mesh) && Definition->SourceName == EnemyMeleeSources::Weapon)
 		{
 			if (!AutoWeapon)
 			{

@@ -102,6 +102,34 @@ void UEnemyPatternSetData::Serialize(FArchive& Ar)
 	Ar.UsingCustomVersion(EnemyPatternSetVersion::Guid);
 }
 
+// 패턴별 설정 오류와 패턴 ID 중복을 모두 모아 반환
+bool UEnemyPatternSetData::ValidateConfiguration(FString& OutError) const
+{
+	TArray<FString> Errors;
+	TSet<FName> PatternIds;
+
+	for (const FEnemyPatternDefinition& Pattern : Patterns)
+	{
+		// 유효하지 않은 패턴
+		FString Error;
+		if (!Pattern.Validate(Error))
+		{
+			Errors.Add(Error);
+		}
+
+		// 이미 있는 패턴 ID (중복)
+		if (PatternIds.Contains(Pattern.PatternId))
+		{
+			Errors.Add(FString::Printf(TEXT("Duplicate PatternId '%s'."), *Pattern.PatternId.ToString()));
+		}
+
+		PatternIds.Add(Pattern.PatternId);
+	}
+
+	OutError = FString::Join(Errors, TEXT("\n"));
+	return Errors.IsEmpty();
+}
+
 #if WITH_EDITOR
 void UEnemyPatternSetData::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent)
 {
@@ -118,28 +146,11 @@ EDataValidationResult UEnemyPatternSetData::IsDataValid(FDataValidationContext& 
 {
 	EDataValidationResult Result = Super::IsDataValid(Context);
 
-	TSet<FName> PatternIds;
-
-	for (const FEnemyPatternDefinition& Pattern : Patterns)
+	FString Error;
+	if (!ValidateConfiguration(Error))
 	{
-		FString Error;
-
-		// 유효하지 않은 패턴
-		if (!Pattern.Validate(Error))
-		{
-			Context.AddError(FText::FromString(Error));
-			Result = EDataValidationResult::Invalid;
-		}
-
-		// 이미 있는 패턴ID (중복)
-		if (PatternIds.Contains(Pattern.PatternId))
-		{
-			Context.AddError(FText::FromString(FString::Printf(TEXT("Duplicate PatternId '%s'."), *Pattern.PatternId.ToString())));
-			Result = EDataValidationResult::Invalid;
-		}
-
-		// 문제 없음
-		PatternIds.Add(Pattern.PatternId);
+		Context.AddError(FText::FromString(Error));
+		Result = EDataValidationResult::Invalid;
 	}
 
 	return Result;

@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.11.17. (AStage3BossCinematics 대체)
-* 수정 일자: 2026.11.19. (다음 레벨이 없을 때 엔딩 뒤 검은 화면에서 멈추지 않게 복구)
+* 수정 일자: 2026.11.19. (엔딩 뒤 검은 화면 복구, 페이즈 눈 발광 하드코딩 제거 → bEyeGlowAtCutStart)
 * Stage3 저택 보스전 연출 (AStageEncounterDirector 파생)
 * - 오프닝: 도착 컷 → 대문 자물쇠 잠김 → (자물쇠를 열쇠로 풀면) 대문 열림 컷 → 마당 → (베이스) 보스 등장 컷 → 전투
 * - 페이즈 전환 연출: 핏자국, 사이렌, 보스 효과, 컷 종료 후 눈 색
@@ -43,7 +43,11 @@ struct FStage3PhaseStaging : public FStagePhaseStaging
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Stage3")
 	FLinearColor EyeGlow = FLinearColor::Black;
 
-	// 컷 시작 시 경고 사이렌(눈 깜빡임) 재생
+	// 컷 시작 때 바로 눈 발광 색을 바꿈 (끄면 컷 종료나 시퀀스의 EyeGlow 마커에서 바꿈)
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Stage3")
+	bool bEyeGlowAtCutStart = false;
+
+	// 컷 시작 시 경고 사이렌(눈 깜빡임) 재생 (켜면 눈 색도 컷 시작 때 바꿈)
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Stage3")
 	bool bSirenWarning = false;
 
@@ -150,6 +154,9 @@ private :
 
 	// 보스의 눈 발광 컴포넌트
 	UEnemyEyeGlowComponent* GetBossEyeGlow(const ABossCharacter* Boss) const;
+
+	// 페이즈 연출 설정의 눈 발광 색 적용 (bStopWarningPulse: 사이렌 깜빡임도 멈춤)
+	void ApplyPhaseEyeGlow(const ABossCharacter* Boss, const FStage3PhaseStaging& Staging, bool bStopWarningPulse) const;
 
 protected :
 

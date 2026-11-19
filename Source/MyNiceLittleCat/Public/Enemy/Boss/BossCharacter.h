@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
-* 수정 일자: 2026.11.17. (Blackboard/AI 직접 조작을 ABossAIController로 이동, 전환을 이벤트 기반으로 변경)
+* 수정 일자: 2026.11.19. (전투 실패·페이즈 전환의 공격 정리를 HaltCombatActions로 통일)
 * 보스 전용 기능 구현을 위한 EnemyCharacter 상속 클래스
 * - 보스방 전투 세션 (시작, 정지, 실패 예약, 세대 번호)
 * - 페이즈 진행 연결 (UBossPhaseComponent), 페이즈별 공격 목록과 기믹 적용
@@ -162,6 +162,9 @@ private :
 
 	// 연결한 기믹의 실행 중지 호출
 	void StopPhaseGimmicks();
+
+	// 새 공격 요청을 막고 진행 중인 패턴(주, 보조, 시작 지연 예약, 상시)과 페이즈 기믹을 정리 (전투 실패, 페이즈 전환)
+	void HaltCombatActions();
 
 	// 페이즈 설정이 켜져 있으면 첫 Waypoint로 순간이동
 	void TeleportToFirstWaypoint(const FBossPhaseDefinition& Phase);
