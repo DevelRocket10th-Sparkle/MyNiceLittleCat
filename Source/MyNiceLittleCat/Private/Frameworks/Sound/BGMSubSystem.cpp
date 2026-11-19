@@ -1,5 +1,7 @@
 #include "Frameworks/Sound/BGMSubSystem.h"
 #include "Frameworks/Sound/BGMSetting.h"
+#include "Frameworks/Sound/AudioVolumeSetting.h"
+#include "Sound/SoundClass.h"
 #include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -181,7 +183,11 @@ void UBGMSubSystem::RefreshPlayback(float FadeTime)
 		/*bAutoDestroy*/ true);
 
 	if (CurrentComp)
+	{
+		// 옵션 메뉴 BGM 볼륨(UAudioVolumeSubsystem)이 이 클래스에 걸림
+		CurrentComp->SoundClassOverride = GetDefault<UAudioVolumeSetting>()->BGMSoundClass.LoadSynchronous();
 		CurrentComp->FadeIn(FadeTime, GetDefault<UBGMSetting>()->BGMVolume);
+	}
 }
 
 float UBGMSubSystem::GetFadeTime(float Requested) const
