@@ -4,6 +4,16 @@
 #include "Components/TextBlock.h"
 #include "Kismet/GameplayStatics.h"
 
+void USoundVolumeRowWidget::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+
+	if (LabelText && !ChannelLabel.IsEmpty())
+	{
+		LabelText->SetText(ChannelLabel);
+	}
+}
+
 void USoundVolumeRowWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();

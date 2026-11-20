@@ -22,6 +22,8 @@ class MYNICELITTLECAT_API USoundVolumeRowWidget : public UUserWidget
 	GENERATED_BODY()
 
 protected:
+	// 채널 이름 글자 반영: 디자이너 미리보기에서도 보이도록 PreConstruct에서 설정
+	virtual void NativePreConstruct() override;
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
 
@@ -37,6 +39,13 @@ protected:
 	// 이 줄이 조절하는 채널: 배치한 인스턴스마다 지정
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sound Settings")
 	EAudioVolumeChannel Channel = EAudioVolumeChannel::BGM;
+
+	// 줄 앞에 보여줄 채널 이름 (예: 배경음, 효과음): 배치한 인스턴스마다 지정
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sound Settings")
+	FText ChannelLabel;
+
+	// 채널 이름 표시 (없어도 됨)
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> LabelText;
 
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<USlider> VolumeSlider;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UButton> MuteButton;
