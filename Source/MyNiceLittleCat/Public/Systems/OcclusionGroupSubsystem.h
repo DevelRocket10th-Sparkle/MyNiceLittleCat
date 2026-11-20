@@ -1,6 +1,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.11.08.
+* 수정 일자: 2026.11.21. (고정 조각의 모양 계산 결과 캐시)
 * 가림 판정 조각을 같은 평면끼리 묶는 월드 서브시스템
 * - 벽 하나가 여러 메시로 나뉘어 있어도 한 번에 숨기고 되돌리도록 그룹을 만들어 캐시
 */
@@ -75,6 +76,8 @@ private:
 
 	// 로컬 바운드와 스케일로 조각의 법선 및 판 여부 계산
 	FPieceShape CalculatePieceShape(const UPrimitiveComponent* Piece, const FOcclusionGroupSettings& Settings) const;
+	// 고정(Static/Stationary) 조각은 한 번 계산한 모양을 재사용: 덩어리 조각은 그룹 캐시에 들어가지 않아 맞을 때마다 다시 계산했음
+	FPieceShape GetPieceShape(const UPrimitiveComponent* Piece, const FOcclusionGroupSettings& Settings) const;
 	// 두 조각이 같은 방향 및 같은 평면 위에 있는지 판정
 	bool IsSamePlane(const FPieceShape& A, const FPieceShape& B, const FOcclusionGroupSettings& Settings) const;
 	// 조각 바운드를 허용치만큼 넓혀 겹치는 다른 조각 검색
@@ -88,4 +91,6 @@ private:
 	TArray<FOcclusionGroup> Groups;
 	// 판 조각별 소속 그룹 인덱스: 같은 면의 조각이 다시 맞으면 재계산 없이 사용
 	TMap<TWeakObjectPtr<UPrimitiveComponent>, int32> GroupIndexByPiece;
+	// 고정 조각별 모양 (GetPieceShape)
+	mutable TMap<TWeakObjectPtr<const UPrimitiveComponent>, FPieceShape> ShapeByPiece;
 };

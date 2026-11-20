@@ -17,6 +17,7 @@
 
 #include "Characters/PlayerCharacter.h"
 #include "Characters/PlayerMainController.h"
+#include "Frameworks/PlayerLookup.h"
 #include "Cinematics/CinematicSubsystem.h"
 #include "Enemy/Boss/BossCharacter.h"
 #include "Enemy/Boss/BossEncounterManager.h"
@@ -264,8 +265,7 @@ void AStageEncounterDirector::PlayStageCut(ULevelSequence* Sequence, FName CutTa
 
 APlayerCharacter* AStageEncounterDirector::GetAlivePlayer() const
 {
-	APlayerCharacter* Player = Cast<APlayerCharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
-	return Player && !Player->GetbIsDead() ? Player : nullptr;
+	return PlayerLookup::GetAlivePlayer(this);
 }
 
 ABossCharacter* AStageEncounterDirector::GetCurrentBoss() const
@@ -689,7 +689,6 @@ void AStageEncounterDirector::FinishEnding()
 
 APetCharacter* AStageEncounterDirector::FindPartnerPet() const
 {
-	const APlayerCharacter* Player = GetAlivePlayer();
-	const APlayerMainController* PC = Player ? Player->GetController<APlayerMainController>() : nullptr;
-	return PC ? PC->GetPartnerPet() : nullptr;
+	// 플레이어가 죽어 있는 동안(리스폰 대기)은 펫 연출도 하지 않음
+	return GetAlivePlayer() ? PlayerLookup::GetPartnerPet(this) : nullptr;
 }
