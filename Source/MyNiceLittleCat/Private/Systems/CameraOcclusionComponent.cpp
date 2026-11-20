@@ -10,6 +10,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "TimerManager.h"
+#include "Cinematics/CinematicSubsystem.h"
 
 namespace
 {
@@ -80,6 +81,14 @@ void UCameraOcclusionComponent::SetOcclusionSuspended(bool bSuspended)
 void UCameraOcclusionComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 컷신 카메라가 벽 너머를 비출 때 플레이어 기준 가림 처리가 화면을 가리지 않도록 컷신 동안 정지
+	// - 컷신 도중 리스폰된 폰도 맞도록 현재 상태를 바로 반영
+	if (UCinematicSubsystem* Cinematics = GetWorld()->GetSubsystem<UCinematicSubsystem>())
+	{
+		CutsceneStateChangedHandle = Cinematics->OnCutsceneStateChanged.AddUObject(this, &UCameraOcclusionComponent::SetOcclusionSuspended);
+		SetOcclusionSuspended(Cinematics->IsCutscenePlaying());
+	}
 	AActor* Owner = GetOwner();
 	if (!Owner)
 	{
@@ -101,7 +110,10 @@ void UCameraOcclusionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(UpdateTimerHandle);
+		if (UCinematicSubsystem* Cinematics = World->GetSubsystem<UCinematicSubsystem>())
+			Cinematics->OnCutsceneStateChanged.Remove(CutsceneStateChangedHandle);
 	}
+	CutsceneStateChangedHandle.Reset();
 	RestoreAllPieces();
 	RestoreCulledLightShadows();
 	RoomCaches.Reset();

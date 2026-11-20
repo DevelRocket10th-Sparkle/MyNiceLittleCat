@@ -143,7 +143,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Occlusion|Debug")
 	bool bDrawDebug = false;
 
-	// Occlusion 실행 할지 말지 설정
+	// Occlusion 실행 할지 말지 설정 (컷신 동안은 시네마틱 서브시스템의 컷신 상태를 구독해 스스로 정지)
 	void SetOcclusionSuspended(bool bSuspended);
 
 protected:
@@ -191,6 +191,7 @@ private:
 	TMap<TWeakObjectPtr<UPrimitiveComponent>, FHiddenPiece> HiddenPieces;
 	// 판정 반복 타이머
 	FTimerHandle UpdateTimerHandle;
+	FDelegateHandle CutsceneStateChangedHandle;
 	// 방별 컷어웨이 후보 캐시
 	TMap<TWeakObjectPtr<ARoomMaskVolume>, FRoomCutawayCache> RoomCaches;
 

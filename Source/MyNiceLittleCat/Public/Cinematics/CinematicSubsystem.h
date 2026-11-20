@@ -19,7 +19,6 @@
 class ALevelSequenceActor;
 class ULevelSequencePlayer;
 class UMovieSceneSequence;
-class UCameraOcclusionComponent;
 class UCinematicSubsystem;
 
 // 시퀀스 플레이어의 OnFinished/OnStop은 매개변수 없는 다이나믹 델리게이트라 어느 재생이 끝났는지 알 수 없음
@@ -218,7 +217,4 @@ private :
 
 	// 재생 중인 컷신 수
 	int32 ActiveCutsceneCount = 0;
-
-	// 컷신 동안 일시 정지한 플레이어 카메라 가림 컴포넌트
-	TWeakObjectPtr<UCameraOcclusionComponent> SuspendedOcclusion;
 };

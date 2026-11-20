@@ -1,5 +1,5 @@
 #include "Widgets/Cinematics/CinematicSkipWidget.h"
-#include "Characters/PlayerMainController.h"
+#include "Cinematics/CinematicInputComponent.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
@@ -10,21 +10,40 @@
 void UCinematicSkipWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
-	SetVisibility(ESlateVisibility::HitTestInvisible);
 	SetIsFocusable(false);
+}
+
+void UCinematicSkipWidget::Wake(const UCinematicInputComponent* InInput)
+{
+	Input = InInput;
+	SetVisibility(ESlateVisibility::HitTestInvisible);
 }
 
 void UCinematicSkipWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
-	const APlayerMainController* PC = Cast<APlayerMainController>(GetOwningPlayer());
-	const bool bShow = PC && PC->IsCinematicSkipPromptVisible();
+	const UCinematicInputComponent* InputComp = Input.Get();
+	const bool bShow = InputComp && InputComp->IsSkipPromptVisible();
+	const float PrevFade = Fade, PrevProgress = Progress, PrevGlow = CompletionGlow;
+
 	Fade = FMath::FInterpConstantTo(Fade, bShow ? 1.f : 0.f, InDeltaTime, bShow ? 5.f : 7.f);
-	const float NextProgress = bShow ? PC->GetCinematicSkipProgress() : 0.f;
+	const float NextProgress = bShow ? InputComp->GetSkipProgress() : 0.f;
 	if (Progress > 0.85f && NextProgress == 0.f && !bShow) CompletionGlow = 1.f;
 	Progress = NextProgress;
 	CompletionGlow = FMath::Max(0.f, CompletionGlow - InDeltaTime * 5.f);
-	InvalidateLayoutAndVolatility();
+
+	// 다 사라졌으면 접어서 Tick·그리기를 멈춤 (다음 컷신에서 Wake)
+	if (!bShow && Fade <= 0.f && CompletionGlow <= 0.f)
+	{
+		SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	// 값이 바뀐 프레임에만 다시 그림
+	if (Fade != PrevFade || Progress != PrevProgress || CompletionGlow != PrevGlow)
+	{
+		InvalidateLayoutAndVolatility();
+	}
 }
 
 int32 UCinematicSkipWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geometry,
@@ -33,9 +52,11 @@ int32 UCinematicSkipWidget::NativePaint(const FPaintArgs& Args, const FGeometry&
 {
 	LayerId = Super::NativePaint(Args, Geometry, CullingRect, Elements, LayerId, Style, bParentEnabled);
 	if (Fade <= 0.f) return LayerId;
-	const FText Hint = NSLOCTEXT("Cinematic", "HoldEToSkip", "E를 길게 눌러 넘어가기");
-	const FSlateFontInfo Font = FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), 17);
-	const FSlateFontInfo KeyFont = FCoreStyle::GetDefaultFontStyle(TEXT("Bold"), 17);
+	const UCinematicInputComponent* InputComp = Input.Get();
+	const FText Key = InputComp && !InputComp->GetSkipKeyText().IsEmpty() ? InputComp->GetSkipKeyText() : FText::FromString(TEXT("?"));
+	const FText Hint = FText::FormatNamed(HintFormat, TEXT("Key"), Key);
+	const FSlateFontInfo Font = FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), FontSize);
+	const FSlateFontInfo KeyFont = FCoreStyle::GetDefaultFontStyle(TEXT("Bold"), FontSize);
 	const auto Measure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
 	const FVector2D TextSize = Measure->Measure(Hint, Font);
 	const FVector2D Size(TextSize.X + 88.f, 58.f);
@@ -44,10 +65,10 @@ int32 UCinematicSkipWidget::NativePaint(const FPaintArgs& Args, const FGeometry&
 	auto Color = [&](FLinearColor Value) { Value.A *= Fade; return Value * Tint; };
 	static const FSlateRoundedBoxBrush Panel(FLinearColor::White, 14.f);
 	FSlateDrawElement::MakeBox(Elements, ++LayerId, Geometry.ToPaintGeometry(Size, FSlateLayoutTransform(Position)),
-		&Panel, ESlateDrawEffect::None, Color(FLinearColor(0.025f, 0.03f, 0.045f, 0.78f)));
+		&Panel, ESlateDrawEffect::None, Color(PanelColor));
 	FSlateDrawElement::MakeText(Elements, ++LayerId,
 		Geometry.ToPaintGeometry(TextSize, FSlateLayoutTransform(Position + FVector2D(16.f, (Size.Y - TextSize.Y) * 0.5f))),
-		Hint, Font, ESlateDrawEffect::None, Color(FLinearColor(0.94f, 0.93f, 0.89f)));
+		Hint, Font, ESlateDrawEffect::None, Color(TextColor));
 	const FVector2D Center = Position + FVector2D(Size.X - 29.f, 29.f);
 	auto Ring = [&](float Amount, float Radius, float Thickness, FLinearColor RingColor)
 	{
@@ -66,10 +87,9 @@ int32 UCinematicSkipWidget::NativePaint(const FPaintArgs& Args, const FGeometry&
 	const float DisplayProgress = CompletionGlow > 0.f ? 1.f : Progress;
 	if (DisplayProgress > 0.f)
 	{
-		Ring(DisplayProgress, 19.f, 6.f, FLinearColor(1.f, 0.78f, 0.38f, 0.12f));
-		Ring(DisplayProgress, 19.f, 2.5f, FLinearColor(1.f, 0.83f, 0.48f));
+		Ring(DisplayProgress, 19.f, 6.f, FLinearColor(ProgressColor.R, ProgressColor.G, ProgressColor.B, 0.12f));
+		Ring(DisplayProgress, 19.f, 2.5f, ProgressColor);
 	}
-	const FText Key = FText::FromString(TEXT("E"));
 	const FVector2D KeySize = Measure->Measure(Key, KeyFont);
 	FSlateDrawElement::MakeText(Elements, ++LayerId,
 		Geometry.ToPaintGeometry(KeySize, FSlateLayoutTransform(Center - KeySize * 0.5f)),
