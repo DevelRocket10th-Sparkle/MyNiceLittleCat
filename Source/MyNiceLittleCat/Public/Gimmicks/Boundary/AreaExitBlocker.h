@@ -2,6 +2,7 @@
 * 작성자: 전선현
 * 작성 일자: 2026.11.19.
 * 수정 일자: 2026.11.19. (입력 잠금을 컷신 처리로 통일, 레벨 언로드 시에도 정리)
+* 수정 일자: 2026.11.21. (플레이어 판정을 대상 인터페이스로, 막는 채널을 BlockedChannels로 지정)
 * 아직 나가면 안 되는 출구(마을 입구 등)를 막는 액터
 * - BlockingBox: 보이지 않는 벽 (Pawn만 막음). 트리거를 피해 가도 못 나가게 하는 안전장치
 * - TriggerBox: 벽 앞의 감지 영역. 플레이어가 들어오면
@@ -21,7 +22,7 @@ class UBoxComponent;
 class UCameraComponent;
 class UPrimitiveComponent;
 class UProgressFlagGateComponent;
-class APlayerCharacter;
+class ACharacter;
 class APlayerController;
 class APetCharacter;
 
@@ -48,6 +49,9 @@ public:
 
 	virtual void Tick(float DeltaSeconds) override;
 
+	// 에디터 배치·값 변경 시 막는 채널 적용
+	virtual void OnConstruction(const FTransform& Transform) override;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -57,7 +61,7 @@ protected:
 		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
 	// 단계
-	void BeginSequence(APlayerCharacter* Player);
+	void BeginSequence(ACharacter* Player);
 	void FocusPetCamera();
 	void PlayNextLine();
 	void BeginFlight();
@@ -72,15 +76,25 @@ protected:
 	// 연출 중 말풍선 높이 적용/복구 (짝 맞춰 호출)
 	void SetBubbleHeightOverridden(bool bOverride);
 
+	// 벽이 BlockedChannels만 막고 나머지는 통과 (가시 경계 벽과 같은 방식)
+	void ApplyBlockedChannels();
+
+	// 살아 있는 캐릭터인지: 대상 인터페이스를 구현하면 그 판정을 따름 (플레이어 클래스에 묶이지 않음)
+	static bool IsAliveCharacter(const ACharacter* Character);
+
 protected:
 	/* 컴포넌트 */
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Exit Blocker")
 	TObjectPtr<USceneComponent> SceneRoot;
 
-	// 보이지 않는 벽 (Pawn만 막음)
+	// 보이지 않는 벽 (BlockedChannels만 막음)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Exit Blocker")
 	TObjectPtr<UBoxComponent> BlockingBox;
+
+	// 벽이 막는 채널: 기본 Pawn (투사체·카메라는 통과)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Exit Blocker")
+	TArray<TEnumAsByte<ECollisionChannel>> BlockedChannels = { ECC_Pawn };
 
 	// 감지 영역: 벽보다 안쪽(마을 쪽)에 두어 벽에 닿기 전에 발동
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Exit Blocker")
@@ -141,7 +155,7 @@ protected:
 	bool bTeleportPetAfterLanding = true;
 
 private:
-	TWeakObjectPtr<APlayerCharacter> ActivePlayer;
+	TWeakObjectPtr<ACharacter> ActivePlayer;
 	TWeakObjectPtr<APlayerController> ActiveController;
 	TWeakObjectPtr<APetCharacter> ActivePet;
 
