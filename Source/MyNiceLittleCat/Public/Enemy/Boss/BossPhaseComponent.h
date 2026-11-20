@@ -47,6 +47,9 @@ DECLARE_MULTICAST_DELEGATE(FOnBossPhaseTransitionRequested);
 // 전환 완료(다음 페이즈 적용) 또는 실패 알림
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBossPhaseTransitionFinished, int64 /*TransitionId*/, bool /*bSucceeded*/);
 
+// 진행 상태(Stopped·TransitionPending·Transitioning·Active)가 바뀔 때 알림: 체력바 잠금 표시 등
+DECLARE_MULTICAST_DELEGATE(FOnBossPhaseRunStateChanged);
+
 UCLASS(ClassGroup = (Boss), meta = (BlueprintSpawnableComponent))
 class MYNICELITTLECAT_API UBossPhaseComponent : public UActorComponent, public IEnemyLocomotionProvider
 {
@@ -149,6 +152,8 @@ public :
 	// 전환 완료/실패 알림
 	FOnBossPhaseTransitionFinished OnTransitionFinished;
 
+	FOnBossPhaseRunStateChanged OnRunStateChanged;
+
 	// 보스가 페이즈별 공격 목록과 기믹을 적용하는 함수
 	FApplyBossPhase ApplyPhase;
 
@@ -209,8 +214,10 @@ private :
 
 	/* 페이즈 상태 */
 
-	// 진행 상태
+	// 진행 상태 (SetRunState로만 바꿈)
 	EBossPhaseRunState RunState = EBossPhaseRunState::Stopped;
+
+	void SetRunState(EBossPhaseRunState NewState);
 
 	// 현재 적용된 페이즈 인덱스
 	int32 CurrentPhaseIndex = INDEX_NONE;

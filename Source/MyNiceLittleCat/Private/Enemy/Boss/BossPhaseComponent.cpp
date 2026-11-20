@@ -49,6 +49,17 @@ void UBossPhaseComponent::SetMovementRoutes(const TMap<FName, FBossMovementRoute
 	MovementRoutes = InRoutes;
 }
 
+void UBossPhaseComponent::SetRunState(EBossPhaseRunState NewState)
+{
+	if (RunState == NewState)
+	{
+		return;
+	}
+
+	RunState = NewState;
+	OnRunStateChanged.Broadcast();
+}
+
 bool UBossPhaseComponent::IsWaitingForPlayer() const
 {
 	if (!IsTransitioning())
@@ -82,14 +93,14 @@ bool UBossPhaseComponent::StartPhases()
 	CurrentPhaseIndex = 0;
 
 	// 설정 적용 중에는 피해가 허용되지 않도록 Active 전환을 나중에 수행
-	RunState = EBossPhaseRunState::Transitioning;
+	SetRunState(EBossPhaseRunState::Transitioning);
 	if (!ApplyCurrentPhase())
 	{
 		StopAndInvalidate();
 		return false;
 	}
 
-	RunState = EBossPhaseRunState::Active;
+	SetRunState(EBossPhaseRunState::Active);
 
 	// 첫 페이즈 진입 중 즉시 완료된 기믹은 활성화 이후 처리
 	if (bPendingGimmickCompletion)
@@ -111,7 +122,7 @@ void UBossPhaseComponent::StopAndInvalidate()
 	PendingPhaseIndex = INDEX_NONE;
 	bApplyingPhase = false;
 	bPendingGimmickCompletion = false;
-	RunState = EBossPhaseRunState::Stopped;
+	SetRunState(EBossPhaseRunState::Stopped);
 
 	CancelTransitionPresentation(StoppedTransitionId);
 
@@ -217,7 +228,7 @@ bool UBossPhaseComponent::BeginPendingTransition()
 		return false;
 	}
 
-	RunState = EBossPhaseRunState::Transitioning;
+	SetRunState(EBossPhaseRunState::Transitioning);
 	StartTransitionPresentation();
 
 	return true;
@@ -391,7 +402,7 @@ void UBossPhaseComponent::RequestNextPhase()
 
 	PendingPhaseIndex = CurrentPhaseIndex + 1;
 	ActiveTransitionId = ++NextTransitionId;
-	RunState = EBossPhaseRunState::TransitionPending;
+	SetRunState(EBossPhaseRunState::TransitionPending);
 
 	OnTransitionRequested.Broadcast();
 }
@@ -564,7 +575,7 @@ void UBossPhaseComponent::CompleteTransition()
 		return;
 	}
 
-	RunState = EBossPhaseRunState::Active;
+	SetRunState(EBossPhaseRunState::Active);
 	ActiveTransitionId = 0;
 
 	// 진입 중 즉시 완료된 기믹은 완료 통지 전에 다음 전환으로 이어서 요청

@@ -2,8 +2,10 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.30.
+* 수정 일자: 2026.11.20. (BP Tick 연출을 C++로, 잠금 상태는 페이즈 진행 상태 알림으로 갱신)
 * 보스 체력바 위젯 (메인 HUD에 포함)
 * - 보스 이름, 페이즈 구간 표시, 잠금(무적) 문구와 깜빡임
+* - 연출: 등장 채움, 피격 번쩍임, 흔들림, 위험 체력 맥박 (진행 중인 연출이 있을 때만 계산)
 */
 
 #pragma once
@@ -15,6 +17,7 @@
 
 class ABossCharacter;
 class UEnemyAttributeSet;
+class UBossPhaseComponent;
 class UBossPhaseConfigData;
 class UResourceBarWidget;
 class UTextBlock;
@@ -133,7 +136,13 @@ protected :
 private :
 
 	void HandleHealthChanged(float NewHealth, float MaxHealth);
+	void HandlePhaseRunStateChanged();
 	void RefreshLockDisplay(float DeltaTime = 0.f);
+
+	/* 연출 */
+	void PlayHealthChangedFx(float NewRatio, float OldRatio);
+	void PlayPhasePassedFx();
+	void TickFx(float DeltaTime);
 	void RebuildMarkers();
 	void RebuildPips();
 	void RefreshPips();
@@ -191,6 +200,63 @@ protected :
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UHorizontalBox> PhasePipBox = nullptr;
 
+	// 피격·페이즈 경계 통과 때 번쩍이는 이미지 (위험 체력일 때 맥박도 여기에)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> HitFlash = nullptr;
+
+	// 흔들림을 줄 테두리 묶음
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> FrameOverlay = nullptr;
+
+	/* 연출 설정 */
+
+	// 체력바가 다시 보일 때 바가 0에서 채워지는 시간 (이만큼 Tick이 끊겼다가 돌아오면 다시 보인 것으로 봄)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Effects", meta = (ClampMin = "0.0", Units = "s"))
+	float IntroSeconds = 1.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Effects", meta = (ClampMin = "0.0", Units = "s"))
+	float IntroReshowGapSeconds = 0.3f;
+
+	// 피격 번쩍임이 꺼지는 시간
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Effects", meta = (ClampMin = "0.01", Units = "s"))
+	float FlashFadeSeconds = 0.12f;
+
+	// 이 비율 이상 한 번에 줄면 흔들림
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Effects", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ShakeMinRatioDrop = 0.05f;
+
+	// 피격 흔들림 시간 (흔들림 세기의 기준 시간이기도 함)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Effects", meta = (ClampMin = "0.01", Units = "s"))
+	float HitShakeSeconds = 0.18f;
+
+	// 페이즈 경계 통과 흔들림 시간
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Effects", meta = (ClampMin = "0.0", Units = "s"))
+	float PhaseShakeSeconds = 0.3f;
+
+	// 흔들림 진동 속도(라디안/초)와 최대 이동량(px)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Effects", meta = (ClampMin = "0.0"))
+	float ShakeFrequency = 140.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Effects", meta = (ClampMin = "0.0"))
+	float ShakeAmplitude = 5.f;
+
+	// 이 비율 이하(0 초과)면 위험 체력: 바 색 변경 + 번쩍임 이미지 맥박
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Effects", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float LowHealthRatio = 0.3f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Effects")
+	FLinearColor NormalBarColor = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Effects")
+	FLinearColor LowHealthBarColor = FLinearColor(1.f, 0.45f, 0.6f, 1.f);
+
+	// 위험 체력 맥박: 불투명도 Amount × (1 + sin(t × Speed))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Effects", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float LowHealthPulseAmount = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health Bar|Effects", meta = (ClampMin = "0.0"))
+	float LowHealthPulseSpeed = 6.981f;
+
 private :
 
 	// 현재 연결된 보스의 스탯
@@ -198,6 +264,13 @@ private :
 
 	// 현재 연결된 보스 (잠금 상태 조회용)
 	TWeakObjectPtr<ABossCharacter> ObservedBoss;
+
+	// 진행 상태 알림을 구독한 페이즈 컴포넌트
+	TWeakObjectPtr<UBossPhaseComponent> ObservedPhase;
+	FDelegateHandle PhaseRunStateHandle;
+
+	// 마지막으로 판정한 잠금 상태: 전환 중(Transition·FollowBoss)일 때만 매 프레임 다시 판정
+	EBossHealthBarLockMode CachedLockMode = EBossHealthBarLockMode::None;
 
 	// 현재 적용된 경계 (내림차순, 0~1 사이)
 	TArray<float> CurrentMarkers;
@@ -210,5 +283,12 @@ private :
 
 	// 잠금 문구 깜빡임 진행 시간 (잠금이 풀리면 0으로 초기화)
 	float LockBlinkTime = 0.f;
+
+	/* 연출 진행 값 */
+	double LastTickRealTime = 0.0;
+	float IntroTime = 0.f;
+	float ShakeTime = 0.f;
+	float PulseTime = 0.f;
+	bool bLowHealth = false;
 
 };
