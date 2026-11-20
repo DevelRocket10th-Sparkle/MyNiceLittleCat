@@ -11,7 +11,6 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "LevelSequence.h"
-#include "NiagaraFunctionLibrary.h"
 #include "TimerManager.h"
 
 #include "Characters/PlayerCharacter.h"
@@ -182,12 +181,6 @@ void AStage3BossDirector::OnPhaseStagingBegin_Implementation(FName PhaseId, ABos
 		{
 			EyeGlow->PlayWarningPulse(Staging->EyeGlow, SirenSeconds);
 		}
-	}
-
-	if (Staging->BossEffect)
-	{
-		UNiagaraFunctionLibrary::SpawnSystemAttached(Staging->BossEffect, Boss->GetMesh(), NAME_None,
-			FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset, true);
 	}
 }
 

@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.11.17. (AStage3BossCinematics 대체)
-* 수정 일자: 2026.11.19. (엔딩 뒤 검은 화면 복구, 페이즈 눈 발광 하드코딩 제거 → bEyeGlowAtCutStart)
+* 수정 일자: 2026.11.20. (BossEffect → Cue 마커로 통일, 엔딩 뒤 검은 화면 복구, 페이즈 눈 발광 하드코딩 제거 → bEyeGlowAtCutStart)
 * Stage3 저택 보스전 연출 (AStageEncounterDirector 파생)
 * - 오프닝: 도착 컷 → 대문 자물쇠 잠김 → (자물쇠를 열쇠로 풀면) 대문 열림 컷 → 마당 → (베이스) 보스 등장 컷 → 전투
 * - 페이즈 전환 연출: 핏자국, 사이렌, 보스 효과, 컷 종료 후 눈 색
@@ -27,7 +27,6 @@ class APetCharacter;
 class USoundBase;
 class UCinematicTrailDecalComponent;
 class UEnemyEyeGlowComponent;
-class UNiagaraSystem;
 
 // Stage3 페이즈 연출 설정: 공통 설정(컷, 보스 시작점, 진입 영역, 닫을 문) + Stage3 전용 연출
 USTRUCT(BlueprintType)
@@ -50,10 +49,6 @@ struct FStage3PhaseStaging : public FStagePhaseStaging
 	// 컷 시작 시 경고 사이렌(눈 깜빡임) 재생 (켜면 눈 색도 컷 시작 때 바꿈)
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Stage3")
 	bool bSirenWarning = false;
-
-	// 컷 시작 시 보스 메시에 붙일 효과 (옥상 탈출 연출 등)
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Stage3")
-	TObjectPtr<UNiagaraSystem> BossEffect;
 };
 
 // 베이스의 공통 페이즈 맵(Phase Staging)은 쓰지 않으므로 숨기고 Stage3 전용 Phases 사용

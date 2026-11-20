@@ -7,12 +7,19 @@
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 
-void FEnemyFeedbackInstance::Stop(float SoundFadeOutSeconds)
+void FEnemyFeedbackInstance::Stop(float SoundFadeOutSeconds, bool bDestroyEffect)
 {
-	// 자동 제거 설정으로 생성했으므로 비활성화만 하면 입자가 사라진 뒤 정리됨
+	// 자동 제거 설정으로 생성했으므로 비활성화만 하면 입자가 사라진 뒤 정리됨 (바로 지워야 하면 제거)
 	if (UNiagaraComponent* EffectComponent = Effect.Get())
 	{
-		EffectComponent->Deactivate();
+		if (bDestroyEffect)
+		{
+			EffectComponent->DestroyComponent();
+		}
+		else
+		{
+			EffectComponent->Deactivate();
+		}
 	}
 
 	if (UAudioComponent* SoundComponent = Sound.Get())

@@ -84,7 +84,8 @@ struct MYNICELITTLECAT_API FEnemyFeedbackInstance
 	TWeakObjectPtr<UAudioComponent> Sound;
 
 	// 이펙트는 새 입자 생성만 멈추고(남은 입자는 자연 소멸), 소리는 짧게 페이드아웃
-	void Stop(float SoundFadeOutSeconds = 0.15f);
+	// - bDestroyEffect: 남은 입자를 기다리지 않고 이펙트를 바로 제거 (발사 순간 사라져야 하는 충전 이펙트 등)
+	void Stop(float SoundFadeOutSeconds = 0.15f, bool bDestroyEffect = false);
 };
 
 namespace EnemyFeedback

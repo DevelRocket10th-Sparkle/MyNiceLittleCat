@@ -1,17 +1,5 @@
 #include "Enemy/Data/EnemyMeleePatternSettings.h"
 
-// 예전 SwingSound 값을 SwingCue로 옮김: 이미 큐에 소리가 있으면 덮어쓰지 않음
-void UEnemyMeleePatternSettings::PostLoad()
-{
-	Super::PostLoad();
-
-	if (SwingSound && !SwingCue.Sound)
-	{
-		SwingCue.Sound = SwingSound;
-	}
-	SwingSound = nullptr;
-}
-
 #if WITH_EDITOR
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"

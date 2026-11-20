@@ -99,17 +99,9 @@ public :
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee|Feedback")
 	FEnemyFeedbackCue SwingCue;
 
-	// 옮기기: 예전 SwingSound 값을 SwingCue로 옮기고 비움
-	virtual void PostLoad() override;
-
 	// 배열에 항목을 추가하면 판정 설정 객체를 생성
 #if WITH_EDITOR
 	virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
 #endif
 
-private :
-
-	// 옮기기용 (2026.11.20.): PostLoad에서 SwingCue로 옮긴 뒤 비움. 에셋을 다시 저장한 뒤 삭제
-	UPROPERTY()
-	TObjectPtr<USoundBase> SwingSound;
 };

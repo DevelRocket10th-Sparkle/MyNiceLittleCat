@@ -19,6 +19,7 @@
 
 #include "CoreMinimal.h"
 #include "Enemy/GAS/Abilities/EnemyPatternAbility.h"
+#include "Enemy/Combat/EnemyFeedback.h"
 #include "GA_BossLaserBeam.generated.h"
 
 class ULaserBeamComponent;
@@ -97,7 +98,7 @@ protected:
 	void HideAimWarning();
 
 	void StartChargeEffect();
-	void StopChargeEffect();
+	void StopChargeEffect(float SoundFadeOutSeconds = 0.f);
 	void SetStaffEyeGlow(bool bEnabled);
 
 	bool IsExecutionValid() const;
@@ -120,14 +121,11 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<AAttackWarningDecal> Warning;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UNiagaraComponent> ChargeEffectComponent;
+	// 충전 연출 (추적·확정 동안, 발사 시 즉시 정리)
+	FEnemyFeedbackInstance ChargeFeedback;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UAudioComponent> ChargeAudio;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UAudioComponent> FireAudio;
+	// 발사 연출 (발사가 끝나면 정지)
+	FEnemyFeedbackInstance FireFeedback;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> StaffEyeMaterial;

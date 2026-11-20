@@ -12,6 +12,7 @@
 
 #include "CoreMinimal.h"
 #include "Enemy/Data/EnemyPatternExecutionSettings.h"
+#include "Enemy/Combat/EnemyFeedback.h"
 #include "BossLaserPatternSettings.generated.h"
 
 class UAnimMontage;
@@ -82,22 +83,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Animation")
 	TObjectPtr<UAnimMontage> ChargeMontage;
 
-	// 추적 시작부터 발사 직전까지 레이저 발사점에 부착할 충전 이펙트
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual")
-	TObjectPtr<UNiagaraSystem> ChargeEffect;
+	// 추적 시작부터 발사 직전까지 레이저 발사점에 붙여 재생할 충전 연출 (소리 반복 여부는 Sound Cue에서 편집)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Feedback")
+	FEnemyFeedbackCue ChargeCue;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual")
+	// 충전 연출을 붙일 위치 (레이저 발사점 기준)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Feedback")
 	FVector ChargeEffectOffset = FVector::ZeroVector;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual", meta = (ClampMin = "0.01"))
-	float ChargeEffectScale = 1.f;
+	// 충전 진행도(0~1)를 넘길 나이아가라 사용자 파라미터 이름 (비우면 넘기지 않음)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Feedback")
+	FName ChargeProgressParameter = TEXT("User.ChargeProgress");
 
-	// 추적/확정 동안 재생하고 발사 시 정지. 반복 여부는 Sound Cue에서 편집.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Sound")
-	TObjectPtr<USoundBase> ChargeSound;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Sound")
-	TObjectPtr<USoundBase> FireSound;
+	// 발사 순간 레이저에 붙여 재생하고 발사가 끝나면 정지
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Feedback")
+	FEnemyFeedbackCue FireCue;
 
 	// LaserEyeGlow 태그를 가진 무기 메시의 눈 발광 색. 발사 중에만 적용.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual")

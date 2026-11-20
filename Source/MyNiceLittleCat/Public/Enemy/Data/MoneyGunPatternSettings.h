@@ -30,9 +30,6 @@ public:
 	// 등장 + 장전 + 발사 준비 + 연사 + 퇴장 전체 시간: 패턴 MaxExecutionSeconds보다 짧아야 함
 	float GetExecutionSeconds() const;
 
-	// 옮기기: 예전 소리·이펙트 필드 값을 LoadedCue, ShotCue로 옮기고 비움
-	virtual void PostLoad() override;
-
 public :
 	
 	/* 사용 클래스 */
@@ -118,19 +115,4 @@ public :
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aiming")
 	FVector TargetOffset = FVector::ZeroVector;
 
-private :
-
-	/* 옮기기용 (2026.11.20.): 저장된 값을 PostLoad에서 LoadedCue, ShotCue로 옮긴 뒤 비움. 에셋을 다시 저장한 뒤 삭제 */
-
-	UPROPERTY()
-	TObjectPtr<USoundBase> LoadedSound;
-
-	UPROPERTY()
-	TObjectPtr<USoundBase> ShotSound;
-
-	UPROPERTY()
-	TObjectPtr<UNiagaraSystem> LoadedEffect;
-
-	UPROPERTY()
-	TObjectPtr<UNiagaraSystem> MuzzleEffect;
 };
