@@ -1,6 +1,6 @@
 /*
 * 작성자: 전선현
-* 수정 일자: 2026.11.17. (몸 점유 자원 기본 지정: 동시 실행 시 다른 몸 사용 패턴과 겹치지 않음)
+* 수정 일자: 2026.11.20. (휘두르는 소리를 SwingCue 연출로 재생)
 * 패턴 설정의 몽타주를 재생하고 Notify 구간 동안 소켓 판정으로 피해를 주는 근접 공격
 * - 판정 구간: AnimNotifyState_EnemyMeleeTrace -> GameplayEvent(Begin/End) -> UEnemyMeleeTraceComponent
 * - 원거리, 아레나 공격은 UEnemyPatternAbility를 직접 상속한 별도 GA로 구현
@@ -10,11 +10,11 @@
 
 #include "CoreMinimal.h"
 #include "Enemy/GAS/Abilities/EnemyPatternAbility.h"
+#include "Enemy/Combat/EnemyFeedback.h"
 #include "GA_Enemy_MeleeAttack.generated.h"
 
 class UEnemyMeleePatternSettings;
 class UEnemyMeleeTraceComponent;
-class UAudioComponent;
 struct FGameplayEventData;
 
 UCLASS()
@@ -68,8 +68,8 @@ protected :
 	UPROPERTY(Transient)
 	TObjectPtr<UEnemyMeleePatternSettings> MeleeSettings;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UAudioComponent> SwingAudio;
+	// 판정 구간 동안 붙여 재생하는 휘두르는 연출 (구간 종료, 패턴 정리 시 정지)
+	FEnemyFeedbackInstance SwingFeedback;
 
 	// 소켓 판정 컴포넌트
 	TWeakObjectPtr<UEnemyMeleeTraceComponent> MeleeTraceComponent;

@@ -3,8 +3,6 @@
 #include "Enemy/Data/MoneyGunPatternSettings.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
-#include "Kismet/GameplayStatics.h"
-#include "NiagaraFunctionLibrary.h"
 
 #include "Enemy/Combat/EnemyFeedback.h"
 
@@ -151,14 +149,8 @@ bool AMoneyGun::UpdateLoading(float DeltaSeconds)
 		bLoadFinished = true;
 		LoadingFeedback.Stop(0.04f);
 		ClearLoadingVisuals();
-		if (Settings->LoadedSound)
-		{
-			UGameplayStatics::PlaySoundAtLocation(this, Settings->LoadedSound, GetActorLocation());
-		}
-		if (Settings->LoadedEffect)
-		{
-			UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, Settings->LoadedEffect, LoadPoint->GetComponentLocation(), GetActorRotation());
-		}
+		// 장전 완료: LoadPoint에서 소리와 이펙트
+		EnemyFeedback::PlayAtLocation(this, Settings->LoadedCue, LoadPoint->GetComponentLocation(), GetActorRotation());
 	}
 	return true;
 }
@@ -219,16 +211,8 @@ bool AMoneyGun::Fire()
 	}
 	Projectiles.Add(Projectile);
 	Projectile->Launch(MuzzlePoint->GetForwardVector(), Settings->ProjectileSpeed, Damage, Settings->ProjectileLifeSeconds);
-	if (Settings->ShotSound)
-	{
-		UGameplayStatics::PlaySoundAtLocation(this, Settings->ShotSound, MuzzlePoint->GetComponentLocation());
-	}
-	if (Settings->MuzzleEffect)
-	{
-		FEnemyFeedbackCue MuzzleCue;
-		MuzzleCue.Effect = Settings->MuzzleEffect;
-		EnemyFeedback::PlayAtLocation(this, MuzzleCue, MuzzlePoint->GetComponentLocation(), MuzzlePoint->GetComponentRotation());
-	}
+	// 발사: 총구 위치에서 소리와 이펙트
+	EnemyFeedback::PlayAtLocation(this, Settings->ShotCue, MuzzlePoint->GetComponentLocation(), MuzzlePoint->GetComponentRotation());
 	OnShot();
 	return true;
 }

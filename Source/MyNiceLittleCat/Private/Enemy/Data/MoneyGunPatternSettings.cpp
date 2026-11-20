@@ -31,3 +31,26 @@ float UMoneyGunPatternSettings::GetExecutionSeconds() const
 	// 등장 + 장전 + 발사 준비 + (탄 수 - 1) * 연사 간격 + 퇴장(등장과 같은 시간)
 	return AppearSeconds + LoadSeconds + PreFireSeconds + (ProjectileCount - 1) * ShotInterval + AppearSeconds;
 }
+
+// 예전 필드 값을 큐로 옮김: 이미 큐에 값이 있으면 덮어쓰지 않음
+void UMoneyGunPatternSettings::PostLoad()
+{
+	Super::PostLoad();
+
+	const auto MoveToCue = [](FEnemyFeedbackCue& Cue, TObjectPtr<USoundBase>& OldSound, TObjectPtr<UNiagaraSystem>& OldEffect)
+	{
+		if (OldSound && !Cue.Sound)
+		{
+			Cue.Sound = OldSound;
+		}
+		if (OldEffect && !Cue.Effect)
+		{
+			Cue.Effect = OldEffect;
+		}
+		OldSound = nullptr;
+		OldEffect = nullptr;
+	};
+
+	MoveToCue(LoadedCue, LoadedSound, LoadedEffect);
+	MoveToCue(ShotCue, ShotSound, MuzzleEffect);
+}

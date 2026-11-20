@@ -1,6 +1,6 @@
 /*
 * 작성자: 전선현
-* 수정 일자: 2026.11.17. (등장/장전/발사/퇴장 연출 슬롯 추가)
+* 수정 일자: 2026.11.20. (장전 완료·발사의 소리와 이펙트를 LoadedCue, ShotCue로 통일)
 * GA_Enemy_MoneyGun 전용 실행 설정 (패턴 데이터 에셋 안에서 인라인 생성)
 * - 메시와 재질은 총/탄환 BP에서 지정
 */
@@ -29,6 +29,9 @@ public:
 
 	// 등장 + 장전 + 발사 준비 + 연사 + 퇴장 전체 시간: 패턴 MaxExecutionSeconds보다 짧아야 함
 	float GetExecutionSeconds() const;
+
+	// 옮기기: 예전 소리·이펙트 필드 값을 LoadedCue, ShotCue로 옮기고 비움
+	virtual void PostLoad() override;
 
 public :
 	
@@ -69,15 +72,7 @@ public :
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loading", meta = (ClampMin = "0", Units = "s"))
 	float PreFireSeconds = 0.2f;
 
-	/* 소리 */
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sound")
-	TObjectPtr<USoundBase> LoadedSound;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sound")
-	TObjectPtr<USoundBase> ShotSound;
-
-	/* 연출 (소리 + 이펙트): 장전 완료/발사 소리는 위 Sound 항목, 여기의 이펙트와 함께 재생 */
+	/* 연출 (소리 + 이펙트) */
 
 	// 총이 나타나기 시작할 때 총 위치에서 재생
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
@@ -87,13 +82,13 @@ public :
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
 	FEnemyFeedbackCue LoadStartCue;
 
-	// 장전 완료(LoadedSound) 순간 LoadPoint에서 함께 재생할 이펙트
+	// 장전 완료 순간 LoadPoint에서 재생
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
-	TObjectPtr<UNiagaraSystem> LoadedEffect;
+	FEnemyFeedbackCue LoadedCue;
 
-	// 발사(ShotSound) 순간 총구(MuzzlePoint)에 붙여 재생할 이펙트
+	// 발사 순간 총구(MuzzlePoint) 위치에서 재생
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
-	TObjectPtr<UNiagaraSystem> MuzzleEffect;
+	FEnemyFeedbackCue ShotCue;
 
 	// 마지막 발사 후 총이 사라지기 시작할 때 총 위치에서 재생
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
@@ -122,5 +117,20 @@ public :
 	// 조준점 보정: 높은 부착 지점에서도 아래쪽 플레이어를 맞힐 수 있도록 높이 차이 포함
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Aiming")
 	FVector TargetOffset = FVector::ZeroVector;
-	
+
+private :
+
+	/* 옮기기용 (2026.11.20.): 저장된 값을 PostLoad에서 LoadedCue, ShotCue로 옮긴 뒤 비움. 에셋을 다시 저장한 뒤 삭제 */
+
+	UPROPERTY()
+	TObjectPtr<USoundBase> LoadedSound;
+
+	UPROPERTY()
+	TObjectPtr<USoundBase> ShotSound;
+
+	UPROPERTY()
+	TObjectPtr<UNiagaraSystem> LoadedEffect;
+
+	UPROPERTY()
+	TObjectPtr<UNiagaraSystem> MuzzleEffect;
 };

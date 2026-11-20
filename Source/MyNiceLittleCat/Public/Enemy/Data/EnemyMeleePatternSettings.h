@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.22.
-* 수정 일자: 2026.11.19. (판정 소스 이름 상수 EnemyMeleeSources와 드롭다운)
+* 수정 일자: 2026.11.20. (휘두르는 소리를 SwingCue로 통일, 판정 소스 이름 상수 EnemyMeleeSources)
 * 근접 공격 GA(GA_Enemy_MeleeAttack)의 패턴별 실행 설정
 * - 공격 몽타주와 시작 섹션
 * - 판정 구간(AnimNotifyState) 동안 Sphere Sweep할 소켓 목록 (판정 소스별)
@@ -90,17 +90,26 @@ public :
 	TArray<TObjectPtr<UEnemyMeleeTraceSettings>> MeleeTraceSettings;
 
 	// 대상에게 맞은 지점에서 재생할 타격 소리와 이펙트 (대상당 1회, 돌진 판정 포함)
-	// - 휘두르는 소리, 내려찍는 먼지처럼 "맞든 안 맞든" 나는 연출은 몽타주의 Play Sound / Play Niagara Effect 노티파이로 배치
+	// - 내려찍는 먼지처럼 정해진 프레임에 나는 연출은 몽타주의 Enemy Feedback Cue 노티파이로 배치
 	// - 플레이어 자신의 피격 소리는 플레이어 쪽(HitSoundComponent)에서 재생하므로 여기는 무기/몸 충돌음
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee|Feedback")
 	FEnemyFeedbackCue HitCue;
 
-	// 무기 판정 구간 시작 시 재생, 구간 종료/패턴 취소 시 정지.
+	// 판정 구간 동안 메시에 붙여 재생 (휘두르는 소리 등), 구간 종료/패턴 취소 시 정지
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee|Feedback")
-	TObjectPtr<USoundBase> SwingSound;
+	FEnemyFeedbackCue SwingCue;
+
+	// 옮기기: 예전 SwingSound 값을 SwingCue로 옮기고 비움
+	virtual void PostLoad() override;
 
 	// 배열에 항목을 추가하면 판정 설정 객체를 생성
 #if WITH_EDITOR
 	virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
 #endif
+
+private :
+
+	// 옮기기용 (2026.11.20.): PostLoad에서 SwingCue로 옮긴 뒤 비움. 에셋을 다시 저장한 뒤 삭제
+	UPROPERTY()
+	TObjectPtr<USoundBase> SwingSound;
 };

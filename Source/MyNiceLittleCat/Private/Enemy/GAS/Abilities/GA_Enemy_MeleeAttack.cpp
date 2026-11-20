@@ -97,8 +97,7 @@ bool UGA_Enemy_MeleeAttack::StartPattern()
 
 void UGA_Enemy_MeleeAttack::StopPattern(bool bWasCancelled)
 {
-	if (IsValid(SwingAudio)) { SwingAudio->Stop(); }
-	SwingAudio = nullptr;
+	SwingFeedback.Stop(0.f);
 	if (MeleeTraceComponent.IsValid())
 	{
 		MeleeTraceComponent->OnTargetHit.Remove(TargetHitHandle);
@@ -178,9 +177,10 @@ void UGA_Enemy_MeleeAttack::HandleWindowBegin(FGameplayEventData Payload)
 		return;
 
 	MeleeTraceComponent->BeginWindow(Payload.OptionalObject.Get());
-	if (MeleeSettings->SwingSound && !IsValid(SwingAudio))
+	// 휘두르는 연출: 이미 재생 중이면 다시 붙이지 않음
+	if (MeleeSettings->SwingCue.IsSet() && !SwingFeedback.Sound.IsValid() && !SwingFeedback.Effect.IsValid() && !SwingFeedback.Visual.IsValid())
 	{
-		SwingAudio = UGameplayStatics::SpawnSoundAttached(MeleeSettings->SwingSound, Enemy->GetMesh());
+		SwingFeedback = EnemyFeedback::PlayAttached(MeleeSettings->SwingCue, Enemy->GetMesh());
 	}
 }
 
@@ -191,7 +191,6 @@ void UGA_Enemy_MeleeAttack::HandleWindowEnd(FGameplayEventData Payload)
 		&& Payload.OptionalObject2 == Enemy->GetMesh())
 	{
 		MeleeTraceComponent->EndWindow(Payload.OptionalObject.Get());
-		if (IsValid(SwingAudio)) { SwingAudio->FadeOut(0.03f, 0.f); }
-		SwingAudio = nullptr;
+		SwingFeedback.Stop(0.03f);
 	}
 }

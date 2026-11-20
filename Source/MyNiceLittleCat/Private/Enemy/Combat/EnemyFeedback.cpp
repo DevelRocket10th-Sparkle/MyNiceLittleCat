@@ -30,7 +30,7 @@ void FEnemyFeedbackInstance::Stop(float SoundFadeOutSeconds)
 }
 
 void EnemyFeedback::PlayAtLocation(const UObject* WorldContext, const FEnemyFeedbackCue& Cue,
-	const FVector& Location, const FRotator& Rotation, FName StageCue)
+	const FVector& Location, const FRotator& Rotation)
 {
 	if (!WorldContext)
 		return;
@@ -40,17 +40,16 @@ void EnemyFeedback::PlayAtLocation(const UObject* WorldContext, const FEnemyFeed
 		UGameplayStatics::PlaySoundAtLocation(WorldContext, Cue.Sound, Location, Rotation, 1.f, 1.f, 0.f, Cue.Attenuation);
 	}
 
-	const EFeedbackVisual Style = StageCue.IsNone()
-		? ResolveFeedbackVisual(Cue.Effect) : ResolveStageFeedbackVisual(StageCue, Cue.Effect);
+	// 절차적 연출을 지정했으면 그것만, 아니면 나이아가라 이펙트
 	const FTransform Transform(Rotation, Location, FVector(Cue.EffectScale));
-	if (!AFeedbackVisual::Play(WorldContext, Style, Transform) && Cue.Effect)
+	if (!AFeedbackVisual::Play(WorldContext, Cue.ProceduralVisual, Transform) && Cue.Effect)
 	{
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(WorldContext, Cue.Effect, Location, Rotation, FVector(Cue.EffectScale));
 	}
 }
 
 FEnemyFeedbackInstance EnemyFeedback::PlayAttached(const FEnemyFeedbackCue& Cue, USceneComponent* AttachTo,
-	FName Socket, const FVector& Offset, FName StageCue)
+	FName Socket, const FVector& Offset)
 {
 	FEnemyFeedbackInstance Instance;
 	if (!IsValid(AttachTo))
@@ -62,11 +61,10 @@ FEnemyFeedbackInstance EnemyFeedback::PlayAttached(const FEnemyFeedbackCue& Cue,
 			EAttachLocation::SnapToTarget, true, 1.f, 1.f, 0.f, Cue.Attenuation);
 	}
 
-	const EFeedbackVisual Style = StageCue.IsNone()
-		? ResolveFeedbackVisual(Cue.Effect) : ResolveStageFeedbackVisual(StageCue, Cue.Effect);
+	// 절차적 연출을 지정했으면 그것만 붙여 재생, 아니면 나이아가라 이펙트
 	const FTransform Base = AttachTo->GetSocketTransform(Socket);
 	const FTransform Transform(Base.GetRotation(), Base.TransformPosition(Offset), FVector(Cue.EffectScale));
-	Instance.Visual = AFeedbackVisual::Play(AttachTo, Style, Transform, AttachTo, Socket);
+	Instance.Visual = AFeedbackVisual::Play(AttachTo, Cue.ProceduralVisual, Transform, AttachTo, Socket);
 	if (!Instance.Visual.IsValid() && Cue.Effect)
 	{
 		UNiagaraComponent* Effect = UNiagaraFunctionLibrary::SpawnSystemAttached(Cue.Effect, AttachTo, Socket,

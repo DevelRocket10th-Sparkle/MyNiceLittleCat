@@ -1,11 +1,24 @@
 #include "Enemy/Data/EnemyMeleePatternSettings.h"
 
+// 예전 SwingSound 값을 SwingCue로 옮김: 이미 큐에 소리가 있으면 덮어쓰지 않음
+void UEnemyMeleePatternSettings::PostLoad()
+{
+	Super::PostLoad();
+
+	if (SwingSound && !SwingCue.Sound)
+	{
+		SwingCue.Sound = SwingSound;
+	}
+	SwingSound = nullptr;
+}
+
 #if WITH_EDITOR
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshSocket.h"
 #include "UObject/UnrealType.h"
+
 
 // 에디터에서 판정 항목을 추가하면 별도 에셋 없이 인라인 설정 생성
 void UEnemyMeleePatternSettings::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent)
