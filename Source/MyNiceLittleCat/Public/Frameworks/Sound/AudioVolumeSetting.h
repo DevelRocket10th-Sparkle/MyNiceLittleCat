@@ -1,6 +1,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.11.19.
+* 수정 일자: 2026.11.21. (채널별 사운드 클래스 조회 GetSoundClass)
 * 소리 설정 기본값 (프로젝트 설정 → Game → Audio Volume, DefaultGame.ini)
 * - BGM, 효과음 사운드 클래스와 사운드 믹스 지정
 */
@@ -10,6 +11,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
+#include "Frameworks/Sound/AudioVolumeSubsystem.h"
 #include "AudioVolumeSetting.generated.h"
 
 class USoundMix;
@@ -33,6 +35,12 @@ public:
 	// BGMSoundClass는 이 클래스의 자식이면 안 됩니다 (SFX 볼륨이 BGM에도 걸림)
 	UPROPERTY(Config, EditAnywhere, Category = "Audio Volume")
 	TSoftObjectPtr<USoundClass> SFXSoundClass;
+
+	// 채널별 사운드 클래스: 채널을 늘리면 여기에 하나 추가
+	TSoftObjectPtr<USoundClass> GetSoundClass(EAudioVolumeChannel Channel) const
+	{
+		return Channel == EAudioVolumeChannel::BGM ? BGMSoundClass : SFXSoundClass;
+	}
 
 	virtual FName GetCategoryName() const override { return TEXT("Game"); }
 };
