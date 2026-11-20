@@ -3,6 +3,7 @@
 * 작성자: 전선현
 * 작성 일자: 2026.10.27.
 * 수정 일자: 2026.11.17. (주석 정리, 비행/충돌 연출 슬롯 추가)
+* 수정 일자: 2026.11.20. (발사한 보스가 움직일 때 자기 탄환에 막히지 않게 함)
 * MoneyGun이 쏘는 지폐 탄환
 * - 충돌은 ProjectileMovement 직선 궤도, 메시만 Roll 흔들림 (Tick)
 * - 첫 유효 충돌에서 1회만 피해를 주고 제거
@@ -36,6 +37,9 @@ public :
 
 	// 메시 흔들림 갱신
 	virtual void Tick(float DeltaSeconds) override;
+
+	// 발사한 보스의 이동 무시 목록에서 이 탄환 제거
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 protected :
 

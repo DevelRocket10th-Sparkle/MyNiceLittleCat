@@ -3,6 +3,7 @@
 #include "Enemy/Combat/EnemyTargetUtils.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 
 AMoneyProjectile::AMoneyProjectile()
@@ -30,6 +31,16 @@ AMoneyProjectile::AMoneyProjectile()
 	InitialLifeSpan = 5.f;
 }
 
+void AMoneyProjectile::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (APawn* Shooter = GetInstigator())
+	{
+		Shooter->MoveIgnoreActorRemove(this);
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void AMoneyProjectile::Launch(const FVector& Direction, float Speed, float Damage, float LifeSeconds)
 {
 	HitDamage = Damage;
@@ -40,6 +51,12 @@ void AMoneyProjectile::Launch(const FVector& Direction, float Speed, float Damag
 	Collision->IgnoreActorWhenMoving(GetOwner(), true);
 	Collision->IgnoreActorWhenMoving(GetInstigator(), true);
 	Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+
+	// 반대 방향도 무시: 보스가 움직이다 자기 탄환에 막혀 멈추는 것 방지 (EndPlay에서 해제)
+	if (APawn* Shooter = GetInstigator())
+	{
+		Shooter->MoveIgnoreActorAdd(this);
+	}
 	Movement->InitialSpeed = Movement->MaxSpeed = Speed;
 	Movement->Velocity = Direction.GetSafeNormal() * Speed;
 	Movement->Activate();

@@ -3,6 +3,7 @@
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
 * 수정 일자: 2026.11.20. (패턴 목록·선택은 FEnemyPatternCatalog, 점유 계산은 EnemyPatternOccupancy, 상시 패턴은 _Persistent.cpp로 분리)
+* 수정 일자: 2026.11.20. (주 패턴 요청 종료 알림 OnPrimaryRequestFinished: 공격 Task가 매 Tick 결과를 확인하지 않음)
 * 잡몹, 보스 공통 공격 실행 및 관리
 * - 패턴 GA 부여, 실행 조건 검사, 가중치 추첨, 요청 번호 발급
 * - 동시 실행: 주 패턴 1개(BT가 고르고 결과를 기다림) + 보조 패턴(자원이 겹치지 않는 독립 패턴)
@@ -38,6 +39,10 @@ struct FAbilityEndedData;
 
 // 후딜 시작 알림: 이동 Task가 주기 갱신을 기다리지 않고 소유한 추격 경로를 즉시 정리
 DECLARE_MULTICAST_DELEGATE(FEnemyRecoveryStarted);
+
+// 주 패턴 요청 종료 알림 (요청 번호, 결과): 공격 Task가 매 Tick 결과를 확인하지 않고 끝나는 순간 받음
+// - 받는 쪽은 요청 번호로 자기 요청인지 확인 (늦게 온 이전 요청 알림 무시)
+DECLARE_MULTICAST_DELEGATE_TwoParams(FEnemyPrimaryRequestFinished, int64 /*RequestId*/, EEnemyPatternResult /*Result*/);
 
 // 실행 슬롯 하나: 예약 → 실행 → (후딜) → 결과
 USTRUCT()
@@ -262,6 +267,9 @@ public :
 
 	// 주 패턴 후딜 시작 알림
 	FEnemyRecoveryStarted OnRecoveryStarted;
+
+	// 주 패턴 요청 종료 알림: 완료(후딜까지 끝남), 실패, 취소, 무효화(사망, 플레이 종료)
+	FEnemyPrimaryRequestFinished OnPrimaryRequestFinished;
 
 protected :
 

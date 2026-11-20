@@ -277,6 +277,9 @@ void UEnemyPatternComponent::StopAndInvalidate()
 		ClearSlotTimers(Slot);
 	}
 
+	// 무효화하는 주 패턴 요청: 정리가 끝난 뒤 기다리는 공격 Task에 알림
+	const int64 InvalidatedPrimaryId = PrimaryRequestId;
+
 	Slots.Reset();
 	LingeringHazards.Reset();
 	PrimaryRequestId = 0;
@@ -289,6 +292,11 @@ void UEnemyPatternComponent::StopAndInvalidate()
 		{
 			ASC->CancelAbilityHandle(Pair.Value);
 		}
+	}
+
+	if (InvalidatedPrimaryId != 0)
+	{
+		OnPrimaryRequestFinished.Broadcast(InvalidatedPrimaryId, EEnemyPatternResult::Invalid);
 	}
 }
 
@@ -844,8 +852,9 @@ void UEnemyPatternComponent::FinishSlot(int64 RequestId, EEnemyPatternResult Res
 	Slot->Result = Result;
 
 	const bool bPersistent = Slot->bPersistent;
+	const bool bPrimary = Slot->bPrimary;
 
-	if (!Slot->bPrimary)
+	if (!bPrimary)
 	{
 		RemoveSlot(RequestId);
 	}
@@ -854,6 +863,13 @@ void UEnemyPatternComponent::FinishSlot(int64 RequestId, EEnemyPatternResult Res
 	if (bPersistent)
 	{
 		HandlePersistentSlotFinished(RequestId, Result);
+	}
+
+	// 주 패턴: 기다리는 공격 Task에 알림
+	// - 맨 마지막에 방송: 받는 쪽이 요청을 해제하면서 이 슬롯을 지울 수 있음
+	if (bPrimary)
+	{
+		OnPrimaryRequestFinished.Broadcast(RequestId, Result);
 	}
 }
 
