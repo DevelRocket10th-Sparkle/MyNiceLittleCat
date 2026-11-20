@@ -1,6 +1,7 @@
 ﻿/*
 * 작성자: 전선현
 * 수정 일자: 2026.11.13. (대상 판정을 EnemyTargetUtils로 이동, 이벤트 이름 OnPlayerHit -> OnTargetHit)
+* 수정 일자: 2026.11.20. (구 Sweep 디버그 그리기를 공용 함수로, 디버그 표시 기본값 끔)
 * 근접 공격의 소켓 Sweep 판정 실행 상태 (캐릭터별)
 * - 판정 소스: "Body"는 캐릭터 메시 자동 등록, "Weapon" 등은 RegisterHitSource로 등록하거나 부착 메시에서 자동 검색
 * - 판정 구간(BeginWindow ~ EndWindow) 동안 매 프레임 소켓의 이전 위치 -> 현재 위치를 구로 Sweep
@@ -121,8 +122,11 @@ public:
 
 	FEnemyMeleeTargetHit OnTargetHit;
 
-	// 활성 소켓 Sweep(청록) 및 RushAttack 돌진 Sweep(주황)을 표시: 캐릭터 BP에서 끌 수 있음
+	// 구를 Start → End로 옮기며 검사한 영역(캡슐)과 끝 위치의 구를 그림: 소켓 판정과 돌진 판정 표시에서 함께 사용
+	static void DrawSphereSweep(const UWorld* World, const FVector& Start, const FVector& End, float Radius, const FColor& Color);
+
+	// 활성 소켓 Sweep(청록) 및 RushAttack 돌진 Sweep(주황)을 표시: 판정을 조정할 때 캐릭터 BP에서 켬
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Melee")
-	bool bDrawDebugTraces = true;
+	bool bDrawDebugTraces = false;
 
 };

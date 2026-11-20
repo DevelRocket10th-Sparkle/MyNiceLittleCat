@@ -4,6 +4,7 @@
 * 작성 일자: 2026.10.14.
 * 수정 일자: 2026.11.17. (중복 주석 정리, 사망/시체 사라짐 연출 슬롯 추가)
 * 수정 일자: 2026.11.20. (활동 단계: 멀리 있거나 안 보이는 적의 갱신 줄이기)
+* 수정 일자: 2026.11.20. (BeginPlay 초기화 단계와 사망 시 이동·캡슐 정리를 함수로 분리)
 * 잡몹/보스 캐릭터의 기본 클래스
 * - GAS 연결
 */
@@ -144,8 +145,18 @@ protected:
 	UFUNCTION(CallInEditor)
 	virtual void ApplyEnemyConfig();
 
+	// BeginPlay 1단계: ASC 소유자 설정, AttributeSet 등록, 설정 데이터 능력치 적용, 체력 변경 구독
+	void InitializeAbilitySystem();
+
+	// BeginPlay 2단계: 설정 데이터의 패턴 세트와 공격 간격을 패턴 컴포넌트에 전달
+	// - 실패하면 false (설정 데이터가 없으면 할 일이 없으므로 true)
+	bool InitializePatternExecution();
+
 	// 사망 판정 직후: 중복 사망을 막고 공격과 AI를 정리한 뒤 사망 연출 시작
 	virtual void BeginDeath();
+
+	// 현재 움직임을 멈추고 이동 불가로 바꾼 뒤 캡슐 충돌 해제: 사망 시작과 시체 전환에서 함께 사용
+	void StopMovementAndDisableCapsule();
 
 	/* 델리게이트 반응 함수 */
 

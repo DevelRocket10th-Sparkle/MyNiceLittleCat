@@ -383,29 +383,34 @@ void UEnemyMeleeTraceComponent::SampleSockets()
 	}
 }
 
-void UEnemyMeleeTraceComponent::DrawSweepDebug(const FTracePoint& Point, const FVector& Current) const
+void UEnemyMeleeTraceComponent::DrawSphereSweep(const UWorld* World, const FVector& Start, const FVector& End, float Radius, const FColor& Color)
 {
-	UWorld* World = GetWorld();
-	const FVector SweepDelta = Current - Point.PreviousPosition;
-	
+	const FVector SweepDelta = End - Start;
+
 	// 구를 직선으로 이동하며 검사한 영역은 캡슐 모양
-	DrawDebugSphere(GetWorld(), Current, Point.Radius, 16, FColor::Cyan, false, 0.f);
+	DrawDebugSphere(World, End, Radius, 16, Color, false, 0.f);
 	if (!SweepDelta.IsNearlyZero())
 	{
 		DrawDebugCapsule(
-			GetWorld(),
-			(Point.PreviousPosition + Current) * 0.5f,
-			Point.Radius + SweepDelta.Size() * 0.5f, Point.Radius,
+			World,
+			(Start + End) * 0.5f,
+			Radius + SweepDelta.Size() * 0.5f, Radius,
 			FQuat::FindBetweenNormals(FVector::UpVector, SweepDelta.GetSafeNormal()),
-			FColor::Cyan,
+			Color,
 			false,
 			0.f
 		);
 	}
+}
 
-	DrawDebugLine(GetWorld(), Point.PreviousPosition, Current, FColor::Cyan, false, 0.f);
+void UEnemyMeleeTraceComponent::DrawSweepDebug(const FTracePoint& Point, const FVector& Current) const
+{
+	UWorld* World = GetWorld();
+
+	DrawSphereSweep(World, Point.PreviousPosition, Current, Point.Radius, FColor::Cyan);
+	DrawDebugLine(World, Point.PreviousPosition, Current, FColor::Cyan, false, 0.f);
 	DrawDebugString(
-		GetWorld(),
+		World,
 		Current + FVector(0.f, 0.f, Point.Radius + 8.f),
 		FString::Printf(TEXT("%s.%s (%.1f cm)"),*Point.SourceName.ToString(), *Point.Socket.ToString(), Point.Radius),
 		nullptr,

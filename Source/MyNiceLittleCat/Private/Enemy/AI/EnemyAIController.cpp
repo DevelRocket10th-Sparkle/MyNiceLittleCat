@@ -155,10 +155,8 @@ void AEnemyAIController::SetCombatTarget(AActor* NewTarget)
 		return;
 	}
 
-	// BT 시작 전(튜토리얼처럼 빙의 직후 지정)에도 동작하도록 캐시가 없으면 이름으로 찾음
-	const FBlackboard::FKey Key = TargetActorKey != FBlackboard::InvalidKey
-		? TargetActorKey
-		: BlackboardComp->GetKeyID(EnemyBlackboardKeys::TargetActor);
+	// BT 시작 전(튜토리얼처럼 빙의 직후 지정)에도 동작
+	const FBlackboard::FKey Key = ResolveTargetActorKey(*BlackboardComp);
 	if (Key == FBlackboard::InvalidKey)
 	{
 		return;
@@ -175,9 +173,7 @@ void AEnemyAIController::ClearCombatTarget()
 {
 	if (UBlackboardComponent* BlackboardComp = GetBlackboardComponent())
 	{
-		const FBlackboard::FKey Key = TargetActorKey != FBlackboard::InvalidKey
-			? TargetActorKey
-			: BlackboardComp->GetKeyID(EnemyBlackboardKeys::TargetActor);
+		const FBlackboard::FKey Key = ResolveTargetActorKey(*BlackboardComp);
 		if (Key != FBlackboard::InvalidKey)
 		{
 			BlackboardComp->ClearValue(Key);
@@ -195,10 +191,7 @@ AActor* AEnemyAIController::GetCombatTarget() const
 		return nullptr;
 	}
 
-	const FBlackboard::FKey Key = TargetActorKey != FBlackboard::InvalidKey
-		? TargetActorKey
-		: BlackboardComp->GetKeyID(EnemyBlackboardKeys::TargetActor);
-
+	const FBlackboard::FKey Key = ResolveTargetActorKey(*BlackboardComp);
 	return Key != FBlackboard::InvalidKey
 		? Cast<AActor>(BlackboardComp->GetValue<UBlackboardKeyType_Object>(Key))
 		: nullptr;
@@ -233,9 +226,7 @@ void AEnemyAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulu
 	}
 
 	// 현재 타깃을 놓친 경우에만 해제 → BT가 복귀 분기 선택
-	const UBlackboardComponent* BlackboardComp = GetBlackboardComponent();
-	if (IsValid(BlackboardComp) && TargetActorKey != FBlackboard::InvalidKey
-		&& BlackboardComp->GetValue<UBlackboardKeyType_Object>(TargetActorKey) == DetectedPawn)
+	if (GetCombatTarget() == DetectedPawn)
 	{
 		ClearCombatTarget();
 	}
@@ -319,6 +310,13 @@ FBlackboard::FKey AEnemyAIController::FindKey(const UBlackboardComponent& Blackb
 	}
 
 	return KeyId;
+}
+
+FBlackboard::FKey AEnemyAIController::ResolveTargetActorKey(const UBlackboardComponent& BlackboardComp) const
+{
+	return TargetActorKey != FBlackboard::InvalidKey
+		? TargetActorKey
+		: BlackboardComp.GetKeyID(EnemyBlackboardKeys::TargetActor);
 }
 
 void AEnemyAIController::SetBlackboardBool(FBlackboard::FKey KeyId, bool bValue)

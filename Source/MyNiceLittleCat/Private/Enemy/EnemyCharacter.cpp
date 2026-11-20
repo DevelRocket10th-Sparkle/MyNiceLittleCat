@@ -98,42 +98,15 @@ void AEnemyCharacter::BeginPlay()
 		MeshComp->SetAllBodiesPhysicsBlendWeight(0.f);
 	}
 
-	if (IsValid(ASC))
-	{
-		// 컴포넌트 초기화 순서와 무관하게 능력치 적용 전에 AttributeSet 등록 보장
-		ASC->AddAttributeSetSubobject(AttributeSet.Get());
-		ASC->InitAbilityActorInfo(this, this);	// GAS 소유자와 실제 행동 소유자 일치
-		
-		// Attributes 초기화
-		if (EnemyConfig)
-		{
-			ApplyEnemyConfig();
-		}
-	}
-	
-	// Health 변경 델리게이트 구독
-	AttributeSet->OnHealthChange.AddUObject(this, &AEnemyCharacter::HandleHealthChanged);
-	
+	InitializeAbilitySystem();
+
 	if (UEnemyCharacterMovementComponent* Movement = Cast<UEnemyCharacterMovementComponent>(GetCharacterMovement()))
 	{
 		Movement->InitializeHoverHeight();
 	}
 
-	// 공격은 잡몹과 보스 모두 패턴 컴포넌트에서 실행
-	if (HasAuthority() && EnemyConfig && EnemyConfig->PatternSet
-		&& !PatternComponent->InitializePatterns(ASC, EnemyConfig->PatternSet))
-	{
-		UE_LOG(LogEnemy, Error, TEXT("%s: pattern initialization failed"), *GetName());
-		return;
-	}
-	// 보스 여부와 관계없이 데이터 에셋의 설정을 개체별 실행 컴포넌트에 전달한다.
-	if (HasAuthority() && EnemyConfig
-		&& !PatternComponent->ConfigureAttackInterval(EnemyConfig->MinAttackInterval, EnemyConfig->MaxAttackInterval))
-	{
-		UE_LOG(LogEnemy, Error, TEXT("%s: attack interval configuration failed"), *GetName());
-		return;
-	}
-	if (!HasAuthority() || !InitializeEnemyExtensions())
+	// 공격은 잡몹과 보스 모두 패턴 컴포넌트에서 실행 (서버에서만 초기화)
+	if (!HasAuthority() || !InitializePatternExecution() || !InitializeEnemyExtensions())
 	{
 		return;
 	}
@@ -155,6 +128,50 @@ void AEnemyCharacter::BeginPlay()
 	{
 		EnemyAI->TryStartEnemyAI();
 	}
+}
+
+// ASC 소유자 설정, AttributeSet 등록, 설정 데이터 능력치 적용, 체력 변경 구독
+void AEnemyCharacter::InitializeAbilitySystem()
+{
+	if (IsValid(ASC))
+	{
+		// 컴포넌트 초기화 순서와 무관하게 능력치 적용 전에 AttributeSet 등록 보장
+		ASC->AddAttributeSetSubobject(AttributeSet.Get());
+		ASC->InitAbilityActorInfo(this, this);	// GAS 소유자와 실제 행동 소유자 일치
+
+		// Attributes 초기화
+		if (EnemyConfig)
+		{
+			ApplyEnemyConfig();
+		}
+	}
+
+	// Health 변경 델리게이트 구독
+	AttributeSet->OnHealthChange.AddUObject(this, &AEnemyCharacter::HandleHealthChanged);
+}
+
+// 설정 데이터의 패턴 세트와 공격 간격을 패턴 컴포넌트에 전달
+bool AEnemyCharacter::InitializePatternExecution()
+{
+	if (!EnemyConfig)
+	{
+		return true;
+	}
+
+	if (EnemyConfig->PatternSet && !PatternComponent->InitializePatterns(ASC, EnemyConfig->PatternSet))
+	{
+		UE_LOG(LogEnemy, Error, TEXT("%s: pattern initialization failed"), *GetName());
+		return false;
+	}
+
+	// 보스 여부와 관계없이 데이터 에셋의 설정을 개체별 실행 컴포넌트에 전달한다.
+	if (!PatternComponent->ConfigureAttackInterval(EnemyConfig->MinAttackInterval, EnemyConfig->MaxAttackInterval))
+	{
+		UE_LOG(LogEnemy, Error, TEXT("%s: attack interval configuration failed"), *GetName());
+		return false;
+	}
+
+	return true;
 }
 
 // 설정 데이터의 능력치 및 이동 속도를 캐릭터에 적용
@@ -221,12 +238,9 @@ void AEnemyCharacter::BeginDeath()
 		ASC->CancelAllAbilities();
 	}
 
-	// 사망 중 이동 충돌 및 메시 피격 충돌 해제
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// 사망 중 이동 충돌 및 메시 피격 충돌 해제, 사망 시점 움직임 제거
+	StopMovementAndDisableCapsule();
 	GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-	GetCharacterMovement()->StopMovementImmediately();	// 현재 움직임 제거
-	GetCharacterMovement()->DisableMovement();	// 사망 시점 움직임 제거
 
 	// 사망 시 카메라 셰이크 실행
 	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
@@ -278,11 +292,8 @@ void AEnemyCharacter::FinishDeath()
 
 	LifeState = EEnemyLifeState::Dead;
 
-	GetCharacterMovement()->StopMovementImmediately();	// 현재 움직임 제거
-	GetCharacterMovement()->DisableMovement();	// 움직임 제한 설정
-
-	// 캡슐 충돌 무시
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// 움직임 제한, 캡슐 충돌 무시
+	StopMovementAndDisableCapsule();
 
 	USkeletalMeshComponent* MeshComp = GetMesh();
 
@@ -313,6 +324,14 @@ void AEnemyCharacter::FinishDeath()
 	{
 		LifeSpanExpired();
 	}
+}
+
+// 현재 움직임을 멈추고 이동 불가로 바꾼 뒤 캡슐 충돌 해제
+void AEnemyCharacter::StopMovementAndDisableCapsule()
+{
+	GetCharacterMovement()->StopMovementImmediately();	// 현재 움직임 제거
+	GetCharacterMovement()->DisableMovement();	// 움직임 제한 설정
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void AEnemyCharacter::LifeSpanExpired()
