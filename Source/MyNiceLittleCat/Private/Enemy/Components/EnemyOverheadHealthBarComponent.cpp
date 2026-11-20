@@ -143,8 +143,8 @@ void UEnemyOverheadHealthBarComponent::TickComponent(float DeltaTime, ELevelTick
 	if (!GetWorld() || !GetWorld()->IsGameWorld())
 		return;
 
-	// 위젯이 항상 플레이어 카메라 방향을 향하도록 회전 갱신
-	if (bFaceCamera && IsVisible())
+	// 위젯이 항상 플레이어 카메라 방향을 향하도록 회전 갱신 (화면에 안 그려지는 체력바는 건너뜀)
+	if (bFaceCamera && IsVisible() && WasRecentlyRendered(0.1f))
 	{
 		UpdateWidgetRotation();
 	}

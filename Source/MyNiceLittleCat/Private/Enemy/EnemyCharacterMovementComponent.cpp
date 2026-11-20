@@ -279,7 +279,8 @@ bool UEnemyCharacterMovementComponent::IsYieldingToPush() const
 {
 	const AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(CharacterOwner);
 
-	return Enemy && Enemy->CanReceivePlayerPush() && PushHoldRemaining > 0.f;
+	// 남은 양보 시간을 먼저 확인 (CanReceivePlayerPush는 패턴 상태까지 조회해서 비쌈)
+	return PushHoldRemaining > 0.f && Enemy && Enemy->CanReceivePlayerPush();
 }
 
 void UEnemyCharacterMovementComponent::BeginPlay()

@@ -30,6 +30,9 @@ AEnemyCharacter::AEnemyCharacter(const FObjectInitializer& ObjectInitializer)
 	// 캐릭터의 프레임 갱신을 활성화한다.
 	PrimaryActorTick.bCanEverTick = true;
 
+	// 최적화 (2026.11.20., 전선현): 화면에 안 보이면 몽타주만 갱신 (멀리 배치된 적의 애니메이션 비용 절감, 보스는 ABossCharacter에서 항상 갱신)
+	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
+
 	/* 컴포넌트 추가 */
 
 	// GAS 관련

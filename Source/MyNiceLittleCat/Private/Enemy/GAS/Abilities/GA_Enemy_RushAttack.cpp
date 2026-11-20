@@ -63,7 +63,11 @@ void UGA_Enemy_RushAttack::OnMontageStarted()
 	MontageSetNextSectionName(RushSection, AttackSection);
 
 	LastUpdateTime = GetWorld()->GetTimeSeconds();
-	GetWorld()->GetTimerManager().SetTimer(RushTimer, this, &UGA_Enemy_RushAttack::UpdateRush, RushUpdateInterval, true);
+	// 짧은 반복 간격이라도 한 프레임에 한 번만 갱신 (SweepRushHits가 이동 경로 전체를 쓸어 판정하므로 누락 없음)
+	FTimerManagerTimerParameters RushTimerParams;
+	RushTimerParams.bLoop = true;
+	RushTimerParams.bMaxOncePerFrame = true;
+	GetWorld()->GetTimerManager().SetTimer(RushTimer, this, &UGA_Enemy_RushAttack::UpdateRush, RushUpdateInterval, RushTimerParams);
 	UpdateRush();
 }
 
