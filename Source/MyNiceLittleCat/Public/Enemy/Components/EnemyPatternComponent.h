@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
-* 수정 일자: 2026.11.17. (동시 실행 슬롯, 상황별 가중치 재정의, 패턴별 GA Spec)
+* 수정 일자: 2026.11.20. (패턴 목록·선택은 FEnemyPatternCatalog, 점유 계산은 EnemyPatternOccupancy, 상시 패턴은 _Persistent.cpp로 분리)
 * 잡몹, 보스 공통 공격 실행 및 관리
 * - 패턴 GA 부여, 실행 조건 검사, 가중치 추첨, 요청 번호 발급
 * - 동시 실행: 주 패턴 1개(BT가 고르고 결과를 기다림) + 보조 패턴(자원이 겹치지 않는 독립 패턴)
@@ -28,11 +28,12 @@
 #include "GameplayAbilitySpecHandle.h"
 #include "GameplayTagContainer.h"
 #include "Enemy/Data/EnemyPatternSetData.h"
+#include "Enemy/Components/EnemyPatternCatalog.h"
 
 #include "EnemyPatternComponent.generated.h"
 
+class AEnemyCharacter;
 class UAbilitySystemComponent;
-class UGameplayAbility;
 struct FAbilityEndedData;
 
 // 후딜 시작 알림: 이동 Task가 주기 갱신을 기다리지 않고 소유한 추격 경로를 즉시 정리
@@ -92,6 +93,34 @@ struct FEnemyPatternLingeringHazard
 	int32 Threat = 0;
 };
 
+// 공통 공격 간격: 주 패턴이 정상 완료될 때만 다음 허용 시각을 추첨
+struct FEnemyAttackPacing
+{
+	float MinInterval = 0.f;
+	float MaxInterval = 0.f;
+
+	// 다음 공격 허용 월드 시각: 일시 정지와 시간 배율을 따르며, BT 재진입 시 재추첨하지 않음
+	double NextAllowedTime = 0.0;
+
+	// 간격 범위 검사 후 적용 (0초면 추가 대기 없음)
+	bool Configure(float InMin, float InMax)
+	{
+		if (!FMath::IsFinite(InMin) || !FMath::IsFinite(InMax) || InMin < 0.f || InMax < InMin)
+		{
+			return false;
+		}
+		MinInterval = InMin;
+		MaxInterval = InMax;
+		return true;
+	}
+
+	void Reset() { NextAllowedTime = 0.0; }
+
+	float GetRemaining(double Now) const { return static_cast<float>(FMath::Max(0.0, NextAllowedTime - Now)); }
+
+	void Roll(double Now) { NextAllowedTime = Now + static_cast<double>(FMath::FRandRange(MinInterval, MaxInterval)); }
+};
+
 // 상시 패턴 하나의 진행 상태: 시작 대기 → 실행 → (재시작 대기)
 struct FEnemyPersistentPatternState
 {
@@ -137,9 +166,6 @@ public :
 	UFUNCTION(BlueprintPure, Category = "Pattern|Attack Interval")
 	bool CanStartAttack() const;
 
-	// 다음 공격까지 남은 시간
-	float GetAttackIntervalRemaining() const;
-
 	// 거리, 높이만 검사: 쿨다운과 시야 때문에 접근 여부가 바뀌지 않도록 분리
 	bool HasPatternInRange(AActor* Target) const;
 
@@ -158,9 +184,6 @@ public :
 	// - 직접 지정은 가중치 0인 패턴도 실행 (가중치는 자동 선택 빈도만 조절)
 	bool TryStartPattern(FName PatternId, AActor* Target, int64& OutRequestId);
 
-	// 요청 번호가 일치하는 실행만 취소 (주 패턴은 Cancelled 결과 유지, 보조 패턴은 자리 반환)
-	void CancelRequest(int64 RequestId);
-
 	// 주 패턴, 보조 패턴, 시작 지연 예약, 상시 패턴을 모두 취소 (페이즈 전환)
 	void CancelAllRequests();
 
@@ -170,9 +193,6 @@ public :
 	// - 랜덤 선택, 가중치, 동시 실행 수, 공격 간격과 별개로 동작
 	// - 보조 실행 규칙을 따름: Can Run As Companion이 꺼져 있거나 GA가 몸을 쓰면 경고 후 건너뜀
 	void SetPersistentPatterns(const TArray<FEnemyPersistentPatternEntry>& Entries);
-
-	// 상시 패턴 정지: 실행 중인 상시 패턴 취소, 시작·재시작 예약 해제
-	void StopPersistentPatterns();
 
 	// 주 패턴 요청 해제: 실행 중이면 먼저 취소하고 결과와 타깃 해제
 	void ReleaseRequest(int64 RequestId);
@@ -212,9 +232,6 @@ public :
 	// Getter: 후딜용 이동 잠금을 이 컴포넌트가 가지고 있는지
 	bool OwnsRecoveryMovementLock() const { return bOwnsRecoveryMovementLock; }
 
-	// 지금 동시 실행 수에 들어가는 슬롯 수 (상시 패턴 제외)
-	int32 GetRunningSlotCount() const;
-
 	/* 남은 위험 생성물 (GA용) */
 
 	// 이 요청이 만든 액터가 살아 있는 동안 위험 태그와 위험도를 계속 점유
@@ -227,13 +244,10 @@ public :
 	bool HasPattern(FName PatternId) const;
 
 	// 등록된 패턴이 있는지 확인
-	bool HasPatterns() const { return !bStopped && PatternSet && !PatternSet->Patterns.IsEmpty(); }
+	bool HasPatterns() const { return !bStopped && Catalog.HasPatterns(); }
 
 	// 지정한 패턴의 설정 복사
 	bool GetPatternDefinition(FName PatternId, FEnemyPatternDefinition& OutDefinition) const;
-
-	// 현재 선택 상황의 유효 가중치 (재정의가 없으면 패턴 기본값)
-	float GetSelectionWeight(const FEnemyPatternDefinition& Pattern) const;
 
 	// 이동 모드 결정용 패턴 ID: 주 패턴 실행 중(후딜 포함) → 선택만 된 패턴 → None
 	FName GetActivePatternId() const;
@@ -256,41 +270,43 @@ protected :
 
 private :
 
+	/* 공통 */
+
+	AEnemyCharacter* GetEnemy() const;
+
+	// 다음 공격까지 남은 시간
+	float GetAttackIntervalRemaining() const;
+
+	// 지금 동시 실행 수에 들어가는 슬롯 수 (상시 패턴 제외)
+	int32 GetRunningSlotCount() const;
+
 	/* 후보 검사 */
 
-	// DataAsset에서 ID가 일치하는 설정의 주소 조회
-	const FEnemyPatternDefinition* FindPattern(FName PatternId) const;
-
 	// 실행 주체, 허용 목록, 타깃 생존 및 선택적인 거리 조건 확인
-	// - bIgnorePhaseList: 페이즈 랜덤 목록(AvailablePatterns) 검사 생략 (상시 패턴은 랜덤 목록 밖에서 실행)
+	// - bIgnorePhaseList: 페이즈 랜덤 목록 검사 생략 (상시 패턴은 랜덤 목록 밖에서 실행)
 	bool MatchesGeometry(const FEnemyPatternDefinition& Pattern, AActor* Target, bool bIgnorePhaseList = false) const;
 
 	// 거리 조건에 행동 가능 여부, 시야 및 GAS 활성화 조건을 추가 검사
-	bool CanExecutePattern(const FEnemyPatternDefinition& Pattern, AActor* Target, bool bIgnorePhaseList = false) const;
+	// - LineOfSightCache: 같은 타깃의 시야를 한 번만 계산 (여러 후보를 평가할 때)
+	bool CanExecutePattern(const FEnemyPatternDefinition& Pattern, AActor* Target, bool bIgnorePhaseList = false,
+		TOptional<bool>* LineOfSightCache = nullptr) const;
 
 	// 살아 있는 슬롯과 남은 생성물이 점유한 자원·위험 태그와 위험도 합
 	void CollectOccupied(FGameplayTagContainer& OutResources, int32& OutThreat) const;
-
-	// 자동 선택 후보 수집: 가중치 > 0, 실행 조건, 자원·위험도 통과 (보조 후보는 보조 가능 패턴만)
-	void CollectCandidates(AActor* Target, bool bCompanion, const TSet<FName>& Excluded,
-		TArray<const FEnemyPatternDefinition*>& OutCandidates) const;
 
 	// 점유 중인 자원·위험도와 겹치지 않고 함께 실행할 수 있는지 (보조면 보조 실행 자원으로 판정)
 	bool CanJoin(const FEnemyPatternDefinition& Pattern, const FGameplayTagContainer& Occupied, int32 OccupiedThreat,
 		bool bAsCompanion = false) const;
 
-	// 패턴이 몸(Resource.Body)을 쓰는지
-	bool UsesBody(FName PatternId) const;
+	// 지금 점유 상태 기준으로 함께 실행할 수 있는지
+	bool CanJoinNow(const FEnemyPatternDefinition& Pattern, bool bAsCompanion = false) const;
+
+	// 자동 선택 후보 수집: 싼 검사부터 (가중치 → 역할 → 실행 중 → 자원·위험도 → 실행 조건)
+	void CollectCandidates(AActor* Target, bool bCompanion, const TSet<FName>& Excluded,
+		TArray<const FEnemyPatternDefinition*>& OutCandidates) const;
 
 	// 이 패턴이 이미 어떤 슬롯(주, 보조, 상시)에서 실행 중인지: 패턴마다 GA Spec이 하나라 중복 실행 불가
 	bool IsPatternRunning(FName PatternId) const;
-
-	// 가중치 추첨: 후보 중 하나 (후보가 없으면 nullptr)
-	const FEnemyPatternDefinition* PickWeighted(TConstArrayView<const FEnemyPatternDefinition*> Candidates) const;
-
-	// 패턴의 유효 자원 계산: GA 기본 자원 + 패턴 추가 자원 + 몸 사용 자동 판정
-	// - bAsCompanion이면 보조 실행용: 패턴 설정에 따른 몸 사용은 붙이지 않음 (보조는 몸 설정을 쓰지 않음)
-	FGameplayTagContainer ResolvePatternResources(const FEnemyPatternDefinition& Pattern, bool bAsCompanion = false) const;
 
 	/* 슬롯 관리 */
 
@@ -300,6 +316,13 @@ private :
 	// 요청 번호로 슬롯 검색
 	FEnemyPatternSlot* FindSlot(int64 RequestId);
 	const FEnemyPatternSlot* FindSlot(int64 RequestId) const;
+
+	// 이 Spec으로 활성화해 실행 중인 슬롯 (후딜 제외, 패턴마다 Spec이 따로라 하나뿐)
+	FEnemyPatternSlot* FindActiveSlotForAbility(const FGameplayAbilitySpecHandle& AbilityHandle);
+	const FEnemyPatternSlot* FindActiveSlotForAbility(const FGameplayAbilitySpecHandle& AbilityHandle) const;
+
+	// 요청 번호가 일치하는 실행만 취소 (주 패턴은 Cancelled 결과 유지, 보조 패턴은 자리 반환)
+	void CancelRequest(int64 RequestId);
 
 	// 슬롯의 GA 활성화: 실패하면 슬롯을 실패 처리하고 false
 	bool ActivateSlot(int64 RequestId);
@@ -319,7 +342,10 @@ private :
 	// 사라진 생성물 기록 정리
 	void PruneLingeringHazards();
 
-	/* 상시 패턴 */
+	/* 상시 패턴 (EnemyPatternComponent_Persistent.cpp) */
+
+	// 상시 패턴 정지: 실행 중인 상시 패턴 취소, 시작·재시작 예약 해제
+	void StopPersistentPatterns();
 
 	// 상시 패턴 시작 예약 (Delay초 뒤 StartPersistentPattern)
 	void SchedulePersistentStart(int32 StateIndex, float Delay);
@@ -343,12 +369,12 @@ private :
 	void HandleExecutionTimeout(int64 RequestId);
 	void HandleRecoveryFinished(int64 RequestId);
 
+	// 후딜 타이머 시작 (주·보조 공통)
+	void StartRecoveryTimer(FEnemyPatternSlot& Slot);
+
 	// 주 패턴 후딜 시작 (이동 잠금 포함)
 	void StartPrimaryRecovery(FEnemyPatternSlot& Slot);
 	void ReleaseRecoveryMovementLock();
-
-	// 주 패턴 정상 완료 시 다음 공격 허용 시각 추첨
-	void RollNextAttackTime();
 
 	// 이 컴포넌트가 부여한 GA 제거와 종료 이벤트 구독 해제
 	void ClearGrantedAbilities();
@@ -357,32 +383,18 @@ private :
 
 	/* 설정 */
 
-	// 캐릭터별 공유 패턴 설정: 실행 중 원본을 변경하지 않음
+	// 패턴 목록, 패턴별 GA Spec과 자원, 현재 선택
 	UPROPERTY(Transient)
-	TObjectPtr<UEnemyPatternSetData> PatternSet;
+	FEnemyPatternCatalog Catalog;
 
 	// 능력을 부여하고 실행할 ASC
 	TWeakObjectPtr<UAbilitySystemComponent> ASC;
 
-	// 패턴 ID와 이 패턴 전용 GA Spec (같은 GA 클래스여도 패턴마다 따로 부여)
-	TMap<FName, FGameplayAbilitySpecHandle> PatternHandles;
-
-	// 패턴 ID와 유효 자원·위험 태그 (초기화 때 계산)
-	TMap<FName, FGameplayTagContainer> PatternResources;
-
-	// 보조로 실행할 수 있는 패턴 ID와 보조 실행 때의 자원 (bCanRunAsCompanion이고 GA가 몸을 쓰지 않는 패턴만)
-	TMap<FName, FGameplayTagContainer> CompanionResources;
-
-	// 현재 상황에서 실행을 허용한 패턴 ID와 가중치 재정의
-	TSet<FName> AvailablePatterns;
-	TMap<FName, float> WeightOverrides;
-
 	// 동시 실행 설정 (기본값 = 한 번에 하나)
 	FEnemyPatternConcurrency Concurrency;
 
-	// 공통 공격 간격 범위
-	float MinAttackInterval = 0.f;
-	float MaxAttackInterval = 0.f;
+	// 공통 공격 간격
+	FEnemyAttackPacing Pacing;
 
 	// 모든 패턴 GA의 종료 이벤트 구독
 	FDelegateHandle AbilityEndedDelegateHandle;
@@ -418,7 +430,4 @@ private :
 
 	// 후딜용 이동 잠금 소유
 	bool bOwnsRecoveryMovementLock = false;
-
-	// 다음 공격 허용 월드 시각: 일시 정지와 시간 배율을 따르며, BT 재진입 시 재추첨하지 않음
-	double NextAttackAllowedTime = 0.0;
 };
