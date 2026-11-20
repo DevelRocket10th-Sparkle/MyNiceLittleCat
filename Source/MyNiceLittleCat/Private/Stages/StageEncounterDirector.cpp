@@ -49,41 +49,6 @@ AStageEncounterDirector::AStageEncounterDirector()
 	MarkerEffects = CreateDefaultSubobject<UCinematicMarkerEffectsComponent>(TEXT("MarkerEffects"));
 }
 
-void AStageEncounterDirector::PostLoad()
-{
-	Super::PostLoad();
-
-	// 2026.11.20. 문·이벤트 대상·큐 설정을 컴포넌트로 옮김: 예전 레벨의 값을 한 번 옮기고 비움 (기본값과 같은 값은 저장되지 않아 옮길 필요 없음)
-	if (!Doors.IsEmpty() && DoorControl->Doors.IsEmpty())
-	{
-		DoorControl->Doors = MoveTemp(Doors);
-	}
-	Doors.Reset();
-
-	if (!FMath::IsNearlyEqual(PhaseDoorCloseSeconds, 0.18f))
-	{
-		DoorControl->PhaseDoorCloseSeconds = PhaseDoorCloseSeconds;
-		PhaseDoorCloseSeconds = 0.18f;
-	}
-	if (!bPlayerControlsDoorsAfterClear)
-	{
-		DoorControl->bPlayerControlsDoorsAfterClear = false;
-		bPlayerControlsDoorsAfterClear = true;
-	}
-
-	if (!EventReceivers.IsEmpty() && MarkerEffects->EventReceivers.IsEmpty())
-	{
-		MarkerEffects->EventReceivers = MoveTemp(EventReceivers);
-	}
-	EventReceivers.Reset();
-
-	if (!CinematicCues.IsEmpty() && MarkerEffects->CinematicCues.IsEmpty())
-	{
-		MarkerEffects->CinematicCues = MoveTemp(CinematicCues);
-	}
-	CinematicCues.Reset();
-}
-
 /* 엔진 이벤트 */
 
 void AStageEncounterDirector::BeginPlay()

@@ -4,6 +4,7 @@
 * 작성 일자: 2026.11.17.
 * 수정 일자: 2026.11.20. (문은 UStageDoorControlComponent, Event·Cue 마커는 UCinematicMarkerEffectsComponent로 분리,
 *            처치 후 엔딩 컷·첫 페이즈 시작 훅·등장 전 보스 숨기기를 Stage3에서 베이스로)
+* 수정 일자: 2026.11.21. (옮기기 전 설정과 PostLoad 삭제: 연출 담당자가 있는 레벨을 모두 새 형식으로 다시 저장)
 * 보스방 레벨 연출 담당의 공통 베이스 (레벨 배치 액터, 보스방 하나당 하나)
 * - 보스방 매니저에 연출 담당자로 등록, 등장 컷 → 전투 시작, 페이즈 전환 컷 → 아레나 진입 대기 → 다음 페이즈
 * - 공통 마커: Door:<번호>:…(DoorControl), Event:<이름>[:Off]·Cue:<이름>(MarkerEffects), Collapse:Player
@@ -159,9 +160,6 @@ protected :
 
 	// 재생 중인 컷과 타이머 정리
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-
-	// 컴포넌트로 옮긴 예전 설정(문, 이벤트 대상, 큐)을 옮김
-	virtual void PostLoad() override;
 
 	/* 페이즈 설정 조회 */
 
@@ -339,23 +337,6 @@ protected :
 	// 엔딩 컷이 끝난 뒤(페이드 아웃 상태) 다음 레벨로 넘어가기 전 대기 시간
 	UPROPERTY(EditInstanceOnly, Category = "Stage|Ending", meta = (ClampMin = "0.0", Units = "s"))
 	float EndingBlackHoldSeconds = 1.f;
-
-	/* 옮기기 전 설정 (2026.11.20. 컴포넌트로 이동: 예전 레벨을 열면 PostLoad에서 옮김, 레벨을 다시 저장한 뒤 삭제) */
-
-	UPROPERTY()
-	TArray<TObjectPtr<AGimmickDoor>> Doors;
-
-	UPROPERTY()
-	float PhaseDoorCloseSeconds = 0.18f;
-
-	UPROPERTY()
-	bool bPlayerControlsDoorsAfterClear = true;
-
-	UPROPERTY()
-	TMap<FName, TObjectPtr<AActor>> EventReceivers;
-
-	UPROPERTY()
-	TMap<FName, FStageCinematicCue> CinematicCues;
 
 private :
 

@@ -56,31 +56,6 @@ bool FBossPhaseDefinition::UsesWaypoints() const
 
 /* UBossPhaseConfigData */
 
-void UBossPhaseConfigData::PostLoad()
-{
-	Super::PostLoad();
-
-	// 이전 형식 이전: 가중치 재정의 없이 옮기므로 기존 가중치와 선택 확률이 그대로 유지됨
-	for (FBossPhaseDefinition& Phase : Phases)
-	{
-		if (Phase.AllowedPatternIds.IsEmpty())
-		{
-			continue;
-		}
-
-		if (Phase.Patterns.IsEmpty())
-		{
-			for (const FName PatternId : Phase.AllowedPatternIds)
-			{
-				FEnemyPatternSelectionEntry& Entry = Phase.Patterns.AddDefaulted_GetRef();
-				Entry.PatternId = PatternId;
-			}
-		}
-
-		Phase.AllowedPatternIds.Empty();
-	}
-}
-
 // 페이즈 순서, 중복 ID, 체력 하한 감소, 이동 설정 검사
 bool UBossPhaseConfigData::ValidateConfiguration(FString& OutError) const
 {
