@@ -3,6 +3,7 @@
 * 작성자: 전선현
 * 작성 일자: 2026.10.14.
 * 수정 일자: 2026.11.17. (중복 주석 정리, 사망/시체 사라짐 연출 슬롯 추가)
+* 수정 일자: 2026.11.20. (활동 단계: 멀리 있거나 안 보이는 적의 갱신 줄이기)
 * 잡몹/보스 캐릭터의 기본 클래스
 * - GAS 연결
 */
@@ -24,6 +25,7 @@ class UEnemyConfigData;
 
 class UEnemyPatternComponent;
 class UEnemyMeleeTraceComponent;
+class UEnemyOverheadHealthBarComponent;
 
 class UCameraShakeBase;
 
@@ -117,6 +119,21 @@ public:
 	// - true: 플레이어가 직접 밀기
 	// - false: 다른 Enemy에게 공간 양보
 	void ApplyPlayerPush(const FVector& PushVelocity, bool bDirectPush = true);
+
+	/* 활동 단계 (UEnemyActivitySubsystem) */
+
+	// Getter: 현재 활동 단계
+	EEnemyActivityTier GetActivityTier() const { return ActivityTier; }
+
+	// 활동 단계 적용: Active를 떠날 때 원래 Tick 설정을 기록하고, 돌아오면 복원
+	// - ReducedTickInterval: Reduced, Dormant에서 쓸 Tick 간격
+	void ApplyActivityTier(EEnemyActivityTier NewTier, float ReducedTickInterval = 0.f);
+
+	// 단계를 낮추면 안 되는 상태: 단계 미사용, 준비 전·사망, 패턴 실행 중, 전투 타깃 있음, 최근 체력 변화
+	bool ShouldStayActive(float RecentHealthChangeSeconds) const;
+
+	// 쉬는 중인지 (경로 이동 없음, 거의 멈춤): Dormant 조건
+	bool IsResting() const;
 
 protected:
 
@@ -216,8 +233,35 @@ protected :
 	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float PlayerPushMultiplier = 1.f;	// 보스는 0으로 설정하기
 
+	/* 활동 단계 */
+
+	// 멀리 있거나 안 보일 때 갱신을 줄일지 (보스는 전투 매니저가 직접 다루므로 끔)
+	UPROPERTY(EditDefaultsOnly, Category = "Activity")
+	bool bAllowActivityTiers = true;
+
 private :
 	
 	float BaseMoveSpeed = 0.f;	// ApplyEnemyConfig에서 EnemyConfig->MoveSpeed 저장
+
+	/* 활동 단계 */
+
+	// 현재 활동 단계
+	EEnemyActivityTier ActivityTier = EEnemyActivityTier::Active;
+
+	// 마지막으로 체력이 바뀐 시각 (피해 직후 Active 유지)
+	double LastHealthChangedTime = -1.0;
+
+	// Active를 떠나기 전의 Tick 간격 (Active로 돌아오면 복원)
+	float ActiveActorTickInterval = 0.f;
+	float ActiveMovementTickInterval = 0.f;
+	float ActiveControllerTickInterval = 0.f;
+
+	// Dormant에서 멈춘 것 (이 단계가 멈춘 것만 되돌림)
+	bool bActivityStoppedMovementTick = false;
+	bool bActivityPausedLogic = false;
+
+	// 머리 위 체력바 (BP에서 붙인 경우만, 없으면 nullptr)
+	UPROPERTY(Transient)
+	TObjectPtr<UEnemyOverheadHealthBarComponent> OverheadHealthBar;
 
 };

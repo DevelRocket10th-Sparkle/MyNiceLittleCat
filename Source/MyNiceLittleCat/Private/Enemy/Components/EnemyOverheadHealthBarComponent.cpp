@@ -41,6 +41,14 @@ void UEnemyOverheadHealthBarComponent::SetShowHealthText(bool bShow)
 	RequestRedraw();
 }
 
+void UEnemyOverheadHealthBarComponent::SetActivityTickEnabled(bool bEnabled)
+{
+	const AEnemyCharacter* Enemy = OwnerEnemy.Get();
+	const bool bCanTick = Enemy && Enemy->IsAlive() && IsValid(HealthBarWidget);
+
+	SetComponentTickEnabled(bEnabled && bCanTick);
+}
+
 void UEnemyOverheadHealthBarComponent::HandleHealthChanged(float NewHealth, float MaxHealth)
 {
 	RequestRedraw();

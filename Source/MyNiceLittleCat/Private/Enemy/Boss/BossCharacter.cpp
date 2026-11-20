@@ -20,6 +20,9 @@ ABossCharacter::ABossCharacter(const FObjectInitializer& ObjectInitializer)
 	// 보스는 화면 밖에서도 레이저 발사점·연출 소켓이 정확해야 하므로 항상 포즈와 본 갱신 (Enemy 기본값은 화면 밖이면 몽타주만)
 	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
 
+	// 활동 단계 제외: 보스방 매니저가 전투 시작과 끝을 직접 다룸
+	bAllowActivityTiers = false;
+
 	// 보스 전용 컨트롤러가 Blackboard와 Focus를 담당 (BP에서 다른 컨트롤러로 바꿀 수 있음)
 	AIControllerClass = ABossAIController::StaticClass();
 
