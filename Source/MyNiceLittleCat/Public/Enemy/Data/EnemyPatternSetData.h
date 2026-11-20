@@ -3,6 +3,7 @@
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
 * 수정 일자: 2026.11.19. (패턴 세트 검사를 ValidateConfiguration 하나로: 에디터 검사와 실행 시 검사 공용)
+* 수정 일자: 2026.11.20. (에셋 검사에 GA별 실행 설정의 값 범위·실행 시간 추가)
 * 패턴 정보 설정 및 보관용 데이터 에셋
 * - 캐릭터별 공격 목록: 실행 GA, 거리/시야 조건, 선택 가중치, 후딜, 이동 정책, 동시 실행 자원
 * - 런타임 실행 상태는 저장하지 않음 (UEnemyPatternComponent가 관리)
@@ -254,6 +255,7 @@ public :
 	virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
 
 	// 패턴 ID 중복, GA 누락, 거리/시간 범위를 저장/검사 시점에 표시
+	// - GA별 실행 설정의 값 범위와 실행 시간(MaxExecutionSeconds가 짧음)도 표시: 실행 시에는 각 GA가 시작 전에 같은 함수로 검사
 	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
 #endif
 

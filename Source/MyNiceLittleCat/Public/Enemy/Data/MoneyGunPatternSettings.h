@@ -1,6 +1,7 @@
 /*
 * 작성자: 전선현
 * 수정 일자: 2026.11.20. (장전 완료·발사의 소리와 이펙트를 LoadedCue, ShotCue로 통일)
+* 수정 일자: 2026.11.20. (값 범위·실행 시간 검사를 부모 가상 함수로)
 * GA_Enemy_MoneyGun 전용 실행 설정 (패턴 데이터 에셋 안에서 인라인 생성)
 * - 메시와 재질은 총/탄환 BP에서 지정
 */
@@ -25,7 +26,10 @@ class MYNICELITTLECAT_API UMoneyGunPatternSettings : public UEnemyPatternExecuti
 public:
 
 	// 모든 값이 실행 가능한 범위인지 검사
-	bool IsValidConfiguration() const;
+	virtual bool IsValidConfiguration() const override;
+
+	// 전체 시간 + 0.1초가 패턴 MaxExecutionSeconds보다 짧은지: 총 퇴장이 시간 초과보다 먼저 끝나야 함
+	virtual bool FitsExecutionTime(float MaxExecutionSeconds) const override;
 
 	// 등장 + 장전 + 발사 준비 + 연사 + 퇴장 전체 시간: 패턴 MaxExecutionSeconds보다 짧아야 함
 	float GetExecutionSeconds() const;

@@ -153,6 +153,30 @@ EDataValidationResult UEnemyPatternSetData::IsDataValid(FDataValidationContext& 
 		Result = EDataValidationResult::Invalid;
 	}
 
+	// GA별 실행 설정: 실행 시에는 패턴 하나만 시작 실패하므로 세트 검사(ValidateConfiguration)에는 넣지 않고 에셋 검사에서만 표시
+	for (const FEnemyPatternDefinition& Pattern : Patterns)
+	{
+		const UEnemyPatternExecutionSettings* Settings = Pattern.ExecutionSettings;
+		if (!Settings)
+		{
+			continue;
+		}
+
+		const FString Name = Pattern.PatternId.ToString();
+		if (!Settings->IsValidConfiguration())
+		{
+			Context.AddError(FText::FromString(FString::Printf(TEXT("Pattern '%s': %s has invalid values."),
+				*Name, *Settings->GetClass()->GetName())));
+			Result = EDataValidationResult::Invalid;
+		}
+		else if (!Settings->FitsExecutionTime(Pattern.MaxExecutionSeconds))
+		{
+			Context.AddError(FText::FromString(FString::Printf(TEXT("Pattern '%s': MaxExecutionSeconds %.1f is too short for %s."),
+				*Name, Pattern.MaxExecutionSeconds, *Settings->GetClass()->GetName())));
+			Result = EDataValidationResult::Invalid;
+		}
+	}
+
 	return Result;
 }
 #endif

@@ -2,7 +2,6 @@
 
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
@@ -227,14 +226,7 @@ void UGA_Enemy_RushAttack::SweepRushHits(const FVector& Start, const FVector& En
 	// 판정 디버그 표시: 근접 판정 컴포넌트의 디버그 설정을 함께 사용 (주황)
 	if (const UEnemyMeleeTraceComponent* Trace = Enemy->GetMeleeTraceComponent(); Trace && Trace->bDrawDebugTraces)
 	{
-		const FVector SweepDelta = End - Start;
-		DrawDebugSphere(GetWorld(), End, RushHitRadius, 20, FColor::Orange, false, 0.f);
-		if (!SweepDelta.IsNearlyZero())
-		{
-			DrawDebugCapsule(GetWorld(), (Start + End) * 0.5f, RushHitRadius + SweepDelta.Size() * 0.5f,
-				RushHitRadius, FQuat::FindBetweenNormals(FVector::UpVector, SweepDelta.GetSafeNormal()),
-				FColor::Orange, false, 0.f);
-		}
+		UEnemyMeleeTraceComponent::DrawSphereSweep(GetWorld(), Start, End, RushHitRadius, FColor::Orange);
 	}
 
 	for (const FHitResult& Hit : Hits)

@@ -3,6 +3,12 @@
 #include "Enemy/Boss/Objects/MoneyGun.h"
 #include "Enemy/Boss/Objects/MoneyProjectile.h"
 
+namespace
+{
+	// 총의 전체 연출 시간이 패턴 제한 시간보다 이만큼 짧아야 정상 종료가 시간 초과보다 먼저 옴
+	constexpr float ExecutionTimeMargin = 0.1f;
+}
+
 bool UMoneyGunPatternSettings::IsValidConfiguration() const
 {
 	// 사용 클래스와 앵커
@@ -24,6 +30,11 @@ bool UMoneyGunPatternSettings::IsValidConfiguration() const
 		&& !TargetOffset.ContainsNaN();
 
 	return bValidSetup && bValidLoading && bValidFiring;
+}
+
+bool UMoneyGunPatternSettings::FitsExecutionTime(float MaxExecutionSeconds) const
+{
+	return GetExecutionSeconds() + ExecutionTimeMargin < MaxExecutionSeconds;
 }
 
 float UMoneyGunPatternSettings::GetExecutionSeconds() const
