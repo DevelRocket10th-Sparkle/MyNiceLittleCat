@@ -3,7 +3,7 @@
 ///
 /// 상호작용 안내 UI(프롬프트) 위젯 베이스 구현
 
-#include "WIdgets/Interaction/InteractionPromptWidget.h"
+#include "Widgets/Interaction/InteractionPromptWidget.h"
 #include "Components/TextBlock.h"
 
 void UInteractionPromptWidget::SetPrompt(const FText& InKeyText, const FText& InActionText)

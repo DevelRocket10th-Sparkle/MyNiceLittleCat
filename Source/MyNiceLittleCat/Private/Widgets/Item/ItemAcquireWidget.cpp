@@ -3,7 +3,7 @@
 ///
 /// 아이템 획득 UI 위젯 구현
 
-#include "WIdgets/Item/ItemAcquireWidget.h"
+#include "Widgets/Item/ItemAcquireWidget.h"
 #include "Items/ItemData.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"

@@ -10,7 +10,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/GameInstance.h"
-#include "WIdgets/Item/ItemAcquireWidget.h"
+#include "Widgets/Item/ItemAcquireWidget.h"
 #include "Components/InputComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
