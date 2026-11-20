@@ -5,26 +5,20 @@
 #include "Cinematics/CinematicLog.h"
 #include "Systems/TimeOfDaySubsystem.h"
 
-#include "Animation/AnimInstance.h"
-#include "Camera/PlayerCameraManager.h"
-#include "Components/SkeletalMeshComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "LevelSequence.h"
 #include "TimerManager.h"
 
 #include "Characters/PlayerCharacter.h"
-#include "Characters/PlayerMainController.h"
 #include "Cinematics/CinematicTrailDecalComponent.h"
 #include "Enemy/Boss/BossCharacter.h"
 #include "Enemy/Boss/BossEncounterManager.h"
 #include "Enemy/Components/EnemyEyeGlowComponent.h"
 #include "Frameworks/Save/GameProgressSubsystem.h"
-#include "Frameworks/Sound/BGMSubSystem.h"
 #include "Gimmicks/Stage/GimmickDoor.h"
 #include "Gimmicks/Stage/GimmickKeyLock.h"
-#include "Pet/PetAIController.h"
-#include "Pet/PetCharacter.h"
+#include "Stages/StageDoorControlComponent.h"
 
 namespace
 {
@@ -39,23 +33,19 @@ namespace
 
 const FName AStage3BossDirector::ArrivalCutTag(TEXT("Arrival"));
 const FName AStage3BossDirector::UnlockCutTag(TEXT("Unlock"));
-const FName AStage3BossDirector::EndingCutTag(TEXT("Ending"));
 
 AStage3BossDirector::AStage3BossDirector()
 {
 	BloodTrailDecals = CreateDefaultSubobject<UCinematicTrailDecalComponent>(TEXT("BloodTrailDecals"));
+
+	// 보스는 오프닝(도착 → 대문 → 마당) 동안 이미 생성되어 있으므로 등장 컷 전까지 숨김
+	bHideBossUntilIntro = true;
 }
 
 void AStage3BossDirector::BeginPlay()
 {
-	// 베이스: 보스방에 연출 담당자로 등록
+	// 베이스: 보스방에 연출 담당자로 등록, 엔딩 설정 확인
 	Super::BeginPlay();
-
-	// 엔딩이 있는데 다음 레벨이 없으면 엔딩 뒤 검은 화면에서 멈추므로 설정 오류를 미리 알림
-	if (EndingSequence && !HasLevelAfterEnding())
-	{
-		UE_LOG(LogStage, Warning, TEXT("[Stage3] EndingSequence is set but the encounter has no LevelAfterDefeat"));
-	}
 
 	SetStairBlocked(true);
 
@@ -87,16 +77,6 @@ const FStagePhaseStaging* AStage3BossDirector::FindPhaseStaging(FName PhaseId) c
 
 void AStage3BossDirector::AddCutBindings(FName CutTag, FCinematicRequest& Request) const
 {
-	// 엔딩 컷: 펫 연결 (보스는 시퀀스 안의 대역이 연기하므로 실제 보스 바인딩은 쓰지 않음)
-	if (CutTag == EndingCutTag)
-	{
-		if (APetCharacter* Pet = EndingPet.Get())
-		{
-			Request.Bindings.Emplace(PetBindingTag, Pet);
-		}
-		return;
-	}
-
 	// 대문 열림 컷: 다른 레벨 기준으로 작업된 자물쇠 장치 바인딩을 현재 레벨의 컴포넌트로 연결
 	if (CutTag != UnlockCutTag)
 	{
@@ -110,11 +90,6 @@ void AStage3BossDirector::AddCutBindings(FName CutTag, FCinematicRequest& Reques
 }
 
 /* AStageEncounterDirector: 등장 */
-
-void AStage3BossDirector::OnBossReady_Implementation(ABossCharacter* Boss)
-{
-	HideBossBeforeIntro();
-}
 
 bool AStage3BossDirector::CanBeginIntro_Implementation(APlayerCharacter* Player) const
 {
@@ -130,12 +105,6 @@ void AStage3BossDirector::OnIntroStarting_Implementation(ABossCharacter* Boss)
 		EyeGlow->StopWarningPulse();
 		EyeGlow->SetGlowColor(FLinearColor::Black);
 	}
-
-	// 숨겨 두었던 보스를 등장 컷부터 보이게 함
-	if (Boss)
-	{
-		Boss->SetActorHiddenInGame(false);
-	}
 }
 
 void AStage3BossDirector::OnIntroFinished_Implementation()
@@ -149,11 +118,7 @@ void AStage3BossDirector::OnIntroFinished_Implementation()
 
 void AStage3BossDirector::OnEncounterStarted_Implementation()
 {
-	if (ABossCharacter* Boss = GetCurrentBoss())
-	{
-		OnStagePhaseStarted(Boss->GetCurrentPhaseId(), Boss);
-	}
-
+	// 첫 페이즈 눈 발광은 베이스가 OnStagePhaseStarted로 처리
 	bEntranceClosed = false;
 	GetWorldTimerManager().SetTimer(EntranceCheckTimer, this, &AStage3BossDirector::UpdateEntranceCheck, EntranceCheckInterval, true);
 }
@@ -216,15 +181,6 @@ bool AStage3BossDirector::HandleStageMarker_Implementation(const FCinematicMarke
 		}
 		return true;
 	}
-	// Collapse:Player → 엔딩: 플레이어가 힘이 풀리며 쓰러짐 (쓰러지는 동작은 시퀀스 애님, 여기서는 조작/몽타주만 정리)
-	if (Args.IsCommand(TEXT("Collapse")) && Args.ArgEquals(0, TEXT("Player")))
-	{
-		if (APlayerCharacter* Player = GetAlivePlayer())
-		{
-			Player->BeginCinematicCollapse();
-		}
-		return true;
-	}
 	if (Args.IsCommand(TEXT("Stair")) && Args.ArgEquals(0, TEXT("Break")))
 	{
 		// 계단이 부서지면 시간대 전환 (메인 맵의 시간대 컨트롤러가 적용)
@@ -242,14 +198,6 @@ bool AStage3BossDirector::HandleStageMarker_Implementation(const FCinematicMarke
 
 void AStage3BossDirector::OnCutFinished_Implementation(FName CutTag)
 {
-	// 엔딩: 페이드 아웃(KeepState)된 화면을 잠시 유지한 뒤 다음 레벨
-	if (CutTag == EndingCutTag)
-	{
-		GetWorldTimerManager().SetTimer(EndingTimer, this, &AStage3BossDirector::FinishEnding,
-			FMath::Max(EndingBlackHoldSeconds, KINDA_SMALL_NUMBER), false);
-		return;
-	}
-
 	if (CutTag == ArrivalCutTag)
 	{
 		CompleteArrival();
@@ -260,9 +208,6 @@ void AStage3BossDirector::OnCutFinished_Implementation(FName CutTag)
 		SetDoor(GateDoorIndex, true, 0.f);
 		OpeningStep = EOpeningStep::Courtyard;
 	}
-
-	// 등장 컷 전의 컷(RestoreState)이 보스 가시성을 되돌려도 다시 숨김
-	HideBossBeforeIntro();
 }
 
 /* AStageEncounterDirector: 초기화와 처치 */
@@ -292,113 +237,12 @@ void AStage3BossDirector::OnStageReset_Implementation()
 	{
 		OpeningStep = IsGateUnlocked() ? EOpeningStep::Courtyard : EOpeningStep::GateLocked;
 	}
-
-	HideBossBeforeIntro();
 }
 
 void AStage3BossDirector::OnStageCleared_Implementation()
 {
-	// 출구 개방은 베이스가 처리 (모든 문 열기)
+	// 출구 개방과 엔딩 컷은 베이스가 처리
 	GetWorldTimerManager().ClearTimer(EntranceCheckTimer);
-
-	// 엔딩은 다음 틱에 시작: 지금은 피해 적용 → BeginDeath → OnDefeated 방송 콜스택 안이라
-	// 여기서 컷을 시작하고 보스를 숨기면 남은 사망 처리와 순서가 섞임
-	if (EndingSequence && !bEndingStarted)
-	{
-		bEndingStarted = true;
-		GetWorldTimerManager().SetTimerForNextTick(this, &AStage3BossDirector::StartEnding);
-	}
-}
-
-/* 엔딩 */
-
-bool AStage3BossDirector::HoldsLevelAfterDefeat() const
-{
-	return EndingSequence != nullptr;
-}
-
-bool AStage3BossDirector::HasLevelAfterEnding() const
-{
-	return Encounter && Encounter->HasLevelAfterDefeat();
-}
-
-void AStage3BossDirector::StartEnding()
-{
-	APlayerCharacter* Player = GetAlivePlayer();
-	if (!Player)
-	{
-		// 플레이어가 없으면 연출 없이 다음 레벨
-		FinishEnding();
-		return;
-	}
-
-	// 실제 보스는 숨기고 사망 처리(래그돌, 제거)는 그대로 진행: 시퀀스의 보스 대역이 연기
-	if (ABossCharacter* Boss = GetCurrentBoss())
-	{
-		Boss->SetActorHiddenInGame(true);
-	}
-
-	// 펫: StateTree 이동과 능력이 시퀀스 위치를 덮어쓰지 않도록 정지
-	EndingPet = FindPartnerPet();
-	if (APetCharacter* Pet = EndingPet.Get())
-	{
-		Pet->RequestMode(EPetMode::Basic);
-		Pet->CancelNavigationRecovery();
-		if (APetAIController* PetAI = Pet->GetController<APetAIController>())
-		{
-			PetAI->StopPetLogic();
-		}
-	}
-
-	// 공격·회복 등 진행 중인 몽타주가 시퀀스 애님 위에 남지 않게 정리
-	if (UAnimInstance* AnimInstance = Player->GetMesh()->GetAnimInstance())
-	{
-		AnimInstance->StopAllMontages(0.1f);
-	}
-
-	// 엔딩 BGM: 이벤트 스택 맨 위라 컷이 다른 BGM 존(마을)으로 넘어가도 곡이 이어짐
-	if (EndingBGM)
-	{
-		if (UGameInstance* GI = GetGameInstance())
-		{
-			if (UBGMSubSystem* BGM = GI->GetSubsystem<UBGMSubSystem>())
-			{
-				BGM->PushEventBGM(this, EndingBGM);
-			}
-		}
-	}
-
-	PlayStageCut(EndingSequence, EndingCutTag);
-}
-
-void AStage3BossDirector::FinishEnding()
-{
-	if (HasLevelAfterEnding())
-	{
-		Encounter->OpenLevelAfterDefeat();
-		return;
-	}
-
-	// 다음 레벨이 없으면 엔딩의 검은 화면(KeepState 페이드)에 갇히므로 화면과 펫을 되돌림
-	UE_LOG(LogStage, Error, TEXT("[Stage3] Ending finished but the encounter has no LevelAfterDefeat; restoring view"));
-	if (APlayerController* PC = GetWorld()->GetFirstPlayerController(); PC && PC->PlayerCameraManager)
-	{
-		PC->PlayerCameraManager->StopCameraFade();
-	}
-	if (APetCharacter* Pet = EndingPet.Get())
-	{
-		if (APetAIController* PetAI = Pet->GetController<APetAIController>())
-		{
-			PetAI->StartPetLogic();
-		}
-	}
-}
-
-APetCharacter* AStage3BossDirector::FindPartnerPet() const
-{
-	const APlayerCharacter* Player = GetAlivePlayer();
-	const APlayerMainController* PC = Player ? Player->GetController<APlayerMainController>() : nullptr;
-	return PC ? PC->GetPartnerPet() : nullptr;
 }
 
 /* 오프닝 */
@@ -428,7 +272,7 @@ void AStage3BossDirector::UpdateArrivalCheck()
 
 	// 대문 자물쇠(없으면 대문 액터) 근처에 오면 도착 컷
 	const AActor* Anchor = IsValid(GateLock) ? static_cast<const AActor*>(GateLock.Get())
-		: (Doors.IsValidIndex(GateDoorIndex) ? Doors[GateDoorIndex].Get() : nullptr);
+		: static_cast<const AActor*>(GetDoorControl()->GetDoor(GateDoorIndex));
 
 	if (Anchor && FVector::DistSquared(Player->GetActorLocation(), Anchor->GetActorLocation()) <= FMath::Square(ArrivalTriggerRadius))
 	{
@@ -490,26 +334,12 @@ void AStage3BossDirector::UpdateEntranceCheck()
 	}
 
 	// 문 기준 스테이지 로컬 X로 통과 판정 (레벨 인스턴스 회전과 무관)
-	const FVector Delta = Player->GetActorLocation() - Doors[EntranceDoorIndex]->GetActorLocation();
+	const FVector Delta = Player->GetActorLocation() - GetDoorControl()->GetDoor(EntranceDoorIndex)->GetActorLocation();
 	if (GetStageTransform().InverseTransformVector(Delta).X > EntranceCloseDistance)
 	{
 		bEntranceClosed = true;
 		SetDoor(EntranceDoorIndex, false, EntranceCloseSeconds);
 		GetWorldTimerManager().ClearTimer(EntranceCheckTimer);
-	}
-}
-
-void AStage3BossDirector::HideBossBeforeIntro()
-{
-	const bool bBeforeIntro = OpeningStep == EOpeningStep::WaitingForArrival
-		|| OpeningStep == EOpeningStep::GateLocked
-		|| OpeningStep == EOpeningStep::Unlocking
-		|| OpeningStep == EOpeningStep::Courtyard;
-
-	ABossCharacter* Boss = GetCurrentBoss();
-	if (bBeforeIntro && Boss && !Boss->IsHidden())
-	{
-		Boss->SetActorHiddenInGame(true);
 	}
 }
 
