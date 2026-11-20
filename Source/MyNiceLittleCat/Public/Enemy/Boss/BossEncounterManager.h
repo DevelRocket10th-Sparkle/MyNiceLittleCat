@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 /*
 * 작성자: 전선현
-* 수정 일자: 2026.11.19. (다음 레벨 지정 여부 조회 추가)
+* 수정 일자: 2026.11.20. (정리 한 곳 TearDownEncounter, 상태 변경 한 곳 SetEncounterState, 체력바·BGM을 표시 컴포넌트로 분리)
 * 보스방 전투 진행 관리 (레벨 배치 액터)
 * - 보스 생성/제거, 전투 시작, 플레이어 사망 시 대기, 전환 실패 시 재생성, 클리어
 * - 등장 연출, 문, 출구처럼 스테이지마다 다른 처리는 연출 담당자(IBossEncounterDirector)에게 위임
@@ -20,9 +20,9 @@
 class ABossCharacter;
 class AController;
 class AMainGameMode;
-class AMainHUD;
 class APawn;
 class APlayerCharacter;
+class UBossEncounterPresentationComponent;
 class IBossEncounterDirector;
 class USceneComponent;
 class USoundBase;
@@ -138,13 +138,14 @@ private :
 	// 등록된 연출 담당자
 	IBossEncounterDirector* GetDirector() const;
 
-	// 보스 체력바 표시/숨김
-	void ShowEncounterHealthBar();
-	void HideEncounterHealthBar();
+	// 연출 담당자가 전환 연출도 맡으면 보스에 연결할 전환 담당자 (아니면 nullptr)
+	UObject* GetDirectorTransitionHandler() const;
 
-	// 보스 BGM을 BGM 서브시스템 이벤트 스택에 Push/Pop (BossBGM이 비어 있으면 Push 안 함)
-	void PushBossBGM();
-	void PopBossBGM();
+	// 상태 변경: 모든 상태 전환이 여기를 거침
+	void SetEncounterState(EBossEncounterState NewState);
+
+	// 전투 정리: 지연 콜백 무효화, 타이머·부활 대기·플레이어·보스 정리, 체력바 숨김, 보스 BGM 종료
+	void TearDownEncounter();
 
 protected :
 
@@ -199,6 +200,10 @@ protected :
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Boss")
 	EBossEncounterState EncounterState = EBossEncounterState::Resetting;
 
+	// 보스 체력바와 보스 BGM 표시 담당
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss")
+	TObjectPtr<UBossEncounterPresentationComponent> Presentation;
+
 private :
 
 	// 연출 담당자 (IBossEncounterDirector 구현 객체)
@@ -219,7 +224,4 @@ private :
 
 	// 새 전투 및 초기화 시 증가하는 세션 번호: 이전 전투의 지연 콜백 무시
 	int64 EncounterGeneration = 0;
-
-	// 보스 체력바를 표시한 HUD: 유효할 때만 사용
-	TWeakObjectPtr<AMainHUD> EncounterHUD;
 };

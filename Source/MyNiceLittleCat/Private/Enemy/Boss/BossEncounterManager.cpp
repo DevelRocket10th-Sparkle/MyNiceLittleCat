@@ -14,13 +14,12 @@
 #include "Characters/PlayerCharacter.h"
 #include "Enemy/AI/EnemyAIController.h"
 #include "Enemy/Boss/BossCharacter.h"
+#include "Enemy/Boss/BossEncounterPresentationComponent.h"
 #include "Enemy/Interfaces/BossEncounterDirector.h"
 #include "Enemy/Interfaces/BossPhaseTransitionHandler.h"
 #include "Frameworks/GameMode/MainGameMode.h"
 #include "Frameworks/Save/GameProgressSubsystem.h"
-#include "Frameworks/Sound/BGMSubSystem.h"
 #include "Engine/GameInstance.h"
-#include "Widgets/MainHUD.h"
 
 namespace
 {
@@ -34,6 +33,9 @@ ABossEncounterManager::ABossEncounterManager()
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
+
+	// 체력바와 보스 BGM 표시
+	Presentation = CreateDefaultSubobject<UBossEncounterPresentationComponent>(TEXT("Presentation"));
 }
 
 void ABossEncounterManager::BeginPlay()
@@ -44,17 +46,8 @@ void ABossEncounterManager::BeginPlay()
 
 void ABossEncounterManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	++EncounterGeneration;
-	GetWorldTimerManager().ClearTimer(PlayerCheckHandle);
-	GetWorldTimerManager().ClearTimer(ResetTimerHandle);
-
-	StopWaitForRespawn();
-	ClearEncounterPlayer();
-	RemoveCurrentBoss();
-	HideEncounterHealthBar();
-
-	// 매니저가 사라지는데 스택에 남아 있으면 보스 곡이 계속 재생되므로 정리
-	PopBossBGM();
+	// 매니저가 사라지는데 스택에 남아 있으면 보스 곡이 계속 재생되므로 BGM까지 정리
+	TearDownEncounter();
 
 	EncounterDirector.Reset();
 
@@ -107,7 +100,7 @@ bool ABossEncounterManager::StartEncounter(APlayerCharacter* Player)
 		return false;
 	}
 
-	EncounterState = EBossEncounterState::Running;
+	SetEncounterState(EBossEncounterState::Running);
 	AI->SetCombatTarget(EncounterPlayer);
 
 	// 타이머가 만들어진 전투 번호를 저장하여 이전 전투의 호출 무시
@@ -123,9 +116,9 @@ bool ABossEncounterManager::StartEncounter(APlayerCharacter* Player)
 		PlayerCheckInterval, true);
 
 	// 등장 연출 종료 후 담당자가 StartEncounter를 호출하므로, 이 시점에 보스 곡으로 전환
-	PushBossBGM();
+	Presentation->PushBGM(BossBGM);
 
-	ShowEncounterHealthBar();
+	Presentation->ShowHealthBar(EncounterPlayer, CurrentBoss);
 	return true;
 }
 
@@ -137,15 +130,8 @@ void ABossEncounterManager::ResetEncounter()
 	const UGameProgressSubsystem* Progress = GameInstance ? GameInstance->GetSubsystem<UGameProgressSubsystem>() : nullptr;
 	if (!DefeatedProgressFlag.IsNone() && Progress && Progress->HasProgressFlag(DefeatedProgressFlag))
 	{
-		++EncounterGeneration;
-		GetWorldTimerManager().ClearTimer(PlayerCheckHandle);
-		GetWorldTimerManager().ClearTimer(ResetTimerHandle);
-		StopWaitForRespawn();
-		ClearEncounterPlayer();
-		RemoveCurrentBoss();
-		HideEncounterHealthBar();
-		PopBossBGM();
-		EncounterState = EBossEncounterState::Cleared;
+		TearDownEncounter();
+		SetEncounterState(EBossEncounterState::Cleared);
 		return;
 	}
 
@@ -156,22 +142,12 @@ void ABossEncounterManager::ResetEncounter()
 	}
 
 	// 재도전/실패로 리셋되면 보스 곡을 빼서 존 곡으로 복귀 (다음 시도 때 StartEncounter에서 다시 Push)
-	PopBossBGM();
-
-	HideEncounterHealthBar();
-
-	++EncounterGeneration;
-	EncounterState = EBossEncounterState::Resetting;
-	GetWorldTimerManager().ClearTimer(PlayerCheckHandle);
-	GetWorldTimerManager().ClearTimer(ResetTimerHandle);
-
-	StopWaitForRespawn();
-	ClearEncounterPlayer();
-	RemoveCurrentBoss();
+	SetEncounterState(EBossEncounterState::Resetting);
+	TearDownEncounter();
 
 	if (SpawnBoss())
 	{
-		EncounterState = EBossEncounterState::Ready;
+		SetEncounterState(EBossEncounterState::Ready);
 	}
 	else
 	{
@@ -194,8 +170,7 @@ void ABossEncounterManager::SetEncounterDirector(UObject* Director)
 	// 담당자보다 매니저 BeginPlay가 먼저 실행되어 보스가 이미 있는 경우에도 연결
 	if (IsValid(CurrentBoss))
 	{
-		CurrentBoss->SetPhaseTransitionHandler(
-			Director && Director->GetClass()->ImplementsInterface(UBossPhaseTransitionHandler::StaticClass()) ? Director : nullptr);
+		CurrentBoss->SetPhaseTransitionHandler(GetDirectorTransitionHandler());
 
 		if (IBossEncounterDirector* NewDirector = GetDirector())
 		{
@@ -207,6 +182,33 @@ void ABossEncounterManager::SetEncounterDirector(UObject* Director)
 IBossEncounterDirector* ABossEncounterManager::GetDirector() const
 {
 	return Cast<IBossEncounterDirector>(EncounterDirector.Get());
+}
+
+UObject* ABossEncounterManager::GetDirectorTransitionHandler() const
+{
+	UObject* Director = EncounterDirector.Get();
+	return Director && Director->GetClass()->ImplementsInterface(UBossPhaseTransitionHandler::StaticClass()) ? Director : nullptr;
+}
+
+/* 상태와 정리 */
+
+void ABossEncounterManager::SetEncounterState(EBossEncounterState NewState)
+{
+	EncounterState = NewState;
+}
+
+// EndPlay, 저장된 처치 기록, 일반 리셋이 같은 순서로 정리
+void ABossEncounterManager::TearDownEncounter()
+{
+	++EncounterGeneration;
+	GetWorldTimerManager().ClearTimer(PlayerCheckHandle);
+	GetWorldTimerManager().ClearTimer(ResetTimerHandle);
+
+	StopWaitForRespawn();
+	ClearEncounterPlayer();
+	RemoveCurrentBoss();
+	Presentation->HideHealthBar();
+	Presentation->PopBGM();
 }
 
 /* 보스 이벤트 */
@@ -221,7 +223,7 @@ void ABossEncounterManager::HandleBossDefeated(ABossCharacter* Boss)
 	++EncounterGeneration;
 	GetWorldTimerManager().ClearTimer(PlayerCheckHandle);
 	ClearEncounterPlayer();
-	EncounterState = EBossEncounterState::Cleared;
+	SetEncounterState(EBossEncounterState::Cleared);
 
 	// 진행 기록: 게임 흐름(트리거 제거 등)은 플래그를 구독하는 쪽이 처리
 	if (!DefeatedProgressFlag.IsNone())
@@ -239,9 +241,9 @@ void ABossEncounterManager::HandleBossDefeated(ABossCharacter* Boss)
 	}
 
 	// 처치 시 보스 곡 종료 → 존 곡으로 크로스페이드
-	PopBossBGM();
+	Presentation->PopBGM();
 
-	HideEncounterHealthBar();
+	Presentation->HideHealthBar();
 }
 
 void ABossEncounterManager::TryOpenLevelAfterDefeat(ABossCharacter* Boss)
@@ -286,8 +288,8 @@ void ABossEncounterManager::HandleBossFailed(ABossCharacter* Boss)
 		return;
 	}
 
-	HideEncounterHealthBar();
-	EncounterState = EBossEncounterState::Resetting;
+	Presentation->HideHealthBar();
+	SetEncounterState(EBossEncounterState::Resetting);
 	GetWorldTimerManager().ClearTimer(PlayerCheckHandle);
 
 	// 실패 통지를 실행 중인 보스는 다음 Tick 이후 제거
@@ -351,10 +353,7 @@ bool ABossEncounterManager::SpawnBoss()
 	Boss->SetLevelMovementRoutes(MovementRoutes);
 
 	// 연출 담당자가 전환 연출도 맡으면 보스에 연결
-	UObject* Director = EncounterDirector.Get();
-	const bool bDirectorHandlesTransitions = Director
-		&& Director->GetClass()->ImplementsInterface(UBossPhaseTransitionHandler::StaticClass());
-	Boss->SetPhaseTransitionHandler(bDirectorHandlesTransitions ? Director : nullptr);
+	Boss->SetPhaseTransitionHandler(GetDirectorTransitionHandler());
 
 	Boss->FinishSpawning(SpawnTransform);
 
@@ -416,7 +415,7 @@ void ABossEncounterManager::CheckPlayer()
 
 void ABossEncounterManager::EnterWaitingState()
 {
-	HideEncounterHealthBar();
+	Presentation->HideHealthBar();
 
 	// 사망 연출 중 보스를 삭제하거나 재배치하지 않고 현재 위치에서 전투만 종료
 	++EncounterGeneration;
@@ -424,7 +423,7 @@ void ABossEncounterManager::EnterWaitingState()
 	GetWorldTimerManager().ClearTimer(ResetTimerHandle);
 
 	ClearEncounterPlayer();
-	EncounterState = EBossEncounterState::Waiting;
+	SetEncounterState(EBossEncounterState::Waiting);
 
 	if (IsValid(CurrentBoss))
 	{
@@ -507,66 +506,3 @@ void ABossEncounterManager::ScheduleReset()
 		}));
 }
 
-/* 체력바 */
-
-void ABossEncounterManager::ShowEncounterHealthBar()
-{
-	// 이전 전투의 UI가 남아 있으면 먼저 정리
-	HideEncounterHealthBar();
-
-	if (!IsValid(EncounterPlayer) || !IsValid(CurrentBoss))
-	{
-		return;
-	}
-
-	APlayerController* PlayerController = Cast<APlayerController>(EncounterPlayer->GetController());
-	AMainHUD* HUD = PlayerController && PlayerController->IsLocalController() ? Cast<AMainHUD>(PlayerController->GetHUD()) : nullptr;
-	if (!IsValid(HUD))
-	{
-		return;
-	}
-
-	EncounterHUD = HUD;
-	HUD->ShowBossHealthBar(CurrentBoss);
-}
-
-void ABossEncounterManager::HideEncounterHealthBar()
-{
-	if (AMainHUD* HUD = EncounterHUD.Get())
-	{
-		HUD->HideBossHealthBar();
-	}
-
-	EncounterHUD.Reset();
-}
-
-/* BGM */
-
-void ABossEncounterManager::PushBossBGM()
-{
-	if (nullptr == BossBGM)
-	{
-		return;
-	}
-
-	if (UGameInstance* GI = GetGameInstance())
-	{
-		if (UBGMSubSystem* BGM = GI->GetSubsystem<UBGMSubSystem>())
-		{
-			// Owner = 이 매니저: 같은 Owner로 다시 Push해도 중복 없이 교체됨
-			BGM->PushEventBGM(this, BossBGM, 0.5f); // 마지막 인자는 크로스페이드 초 (추후로 변수로 빼야함)
-		}
-	}
-}
-
-void ABossEncounterManager::PopBossBGM()
-{
-	if (UGameInstance* GI = GetGameInstance())
-	{
-		if (UBGMSubSystem* BGM = GI->GetSubsystem<UBGMSubSystem>())
-		{
-			// 스택에 없으면 아무 일도 안 일어나므로 여러 번 불러도 안전
-			BGM->PopEventBGM(this, 0.5f); // 마지막 인자는 크로스페이드 초 (추후로 변수로 빼야함)
-		}
-	}
-}
