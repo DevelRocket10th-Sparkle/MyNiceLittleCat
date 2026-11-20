@@ -11,6 +11,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
+#include "GameplayTagContainer.h"
 #include "GameProgressSaveGame.generated.h"
 
 // 마지막으로 상호작용한 체크포인트
@@ -38,9 +39,9 @@ struct FCheckpointSaveData
 	UPROPERTY(BlueprintReadOnly, Category = "Checkpoint")
 	FTransform RespawnTransform;
 
-	// 해당 체크포인트로 복귀할 때의 시간대. 이전 세이브는 아침으로 시작.
+	// 해당 체크포인트로 복귀할 때의 시간대 (빈 태그 = 기본 시간대, 예전 세이브는 기본으로 시작)
 	UPROPERTY(BlueprintReadOnly, Category = "Checkpoint")
-	bool bEvening = false;
+	FGameplayTag TimeOfDay;
 };
 
 UCLASS()

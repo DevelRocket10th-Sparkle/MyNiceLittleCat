@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.11.17. (AStage3BossCinematics 대체)
-* 수정 일자: 2026.11.20. (BossEffect → Cue 마커로 통일, 엔딩 뒤 검은 화면 복구, 페이즈 눈 발광 하드코딩 제거 → bEyeGlowAtCutStart)
+* 수정 일자: 2026.11.20. (저녁 조명을 시간대 시스템으로, BossEffect → Cue 마커로 통일, 엔딩 뒤 검은 화면 복구, 페이즈 눈 발광 하드코딩 제거 → bEyeGlowAtCutStart)
 * Stage3 저택 보스전 연출 (AStageEncounterDirector 파생)
 * - 오프닝: 도착 컷 → 대문 자물쇠 잠김 → (자물쇠를 열쇠로 풀면) 대문 열림 컷 → 마당 → (베이스) 보스 등장 컷 → 전투
 * - 페이즈 전환 연출: 핏자국, 사이렌, 보스 효과, 컷 종료 후 눈 색
@@ -18,6 +18,7 @@
 
 #include "CoreMinimal.h"
 #include "Stages/StageEncounterDirector.h"
+#include "GameplayTagContainer.h"
 
 #include "Stage3BossDirector.generated.h"
 
@@ -216,6 +217,10 @@ protected :
 	// 마커 Stair:Break에서 사라지는 계단 막이
 	UPROPERTY(EditInstanceOnly, Category = "Stage3|Staging")
 	TObjectPtr<AActor> StairBlocker;
+
+	// 마커 Stair:Break에서 바꿀 시간대 (비우면 바꾸지 않음)
+	UPROPERTY(EditInstanceOnly, Category = "Stage3|Staging", meta = (Categories = "TimeOfDay"))
+	FGameplayTag StairBreakTimeOfDay;
 
 	// 사이렌 경고 길이. 깜빡임 색은 해당 페이즈의 EyeGlow 사용.
 	UPROPERTY(EditInstanceOnly, Category = "Stage3|Siren", meta = (ClampMin = "0.0", Units = "s"))

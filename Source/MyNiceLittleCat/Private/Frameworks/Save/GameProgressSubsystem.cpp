@@ -6,7 +6,7 @@
 #include "Frameworks/Save/GameProgressSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
-#include "Stages/Stage3/MansionLightingSubsystem.h"
+#include "Systems/TimeOfDaySubsystem.h"
 
 void UGameProgressSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -32,8 +32,8 @@ void UGameProgressSubsystem::SetCheckpoint(const UObject* WorldContextObject, FN
 	Data.CheckpointId = CheckpointId;
 	Data.RespawnTransform = RespawnTransform;
 	const UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
-	const UMansionLightingSubsystem* Lighting = World ? World->GetSubsystem<UMansionLightingSubsystem>() : nullptr;
-	Data.bEvening = Lighting && Lighting->IsEvening();
+	const UTimeOfDaySubsystem* TimeOfDay = World ? World->GetSubsystem<UTimeOfDaySubsystem>() : nullptr;
+	Data.TimeOfDay = TimeOfDay ? TimeOfDay->GetTimeOfDay() : FGameplayTag();
 
 	OnCheckpointChanged.Broadcast(CheckpointId);
 
@@ -58,8 +58,8 @@ bool UGameProgressSubsystem::DiscoverCheckpoint(const UObject* WorldContextObjec
 	Data.DisplayName = DisplayName;
 	Data.RespawnTransform = RespawnTransform;
 	const UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
-	const UMansionLightingSubsystem* Lighting = World ? World->GetSubsystem<UMansionLightingSubsystem>() : nullptr;
-	Data.bEvening = Lighting && Lighting->IsEvening();
+	const UTimeOfDaySubsystem* TimeOfDay = World ? World->GetSubsystem<UTimeOfDaySubsystem>() : nullptr;
+	Data.TimeOfDay = TimeOfDay ? TimeOfDay->GetTimeOfDay() : FGameplayTag();
 	return Found == nullptr;
 }
 
@@ -86,9 +86,9 @@ void UGameProgressSubsystem::SetCheckpointData(const FCheckpointSaveData& Data, 
 	CurrentSave->LastCheckpoint = Data;
 	if (UWorld* World = GetWorld())
 	{
-		if (UMansionLightingSubsystem* Lighting = World->GetSubsystem<UMansionLightingSubsystem>())
+		if (UTimeOfDaySubsystem* TimeOfDay = World->GetSubsystem<UTimeOfDaySubsystem>())
 		{
-			Lighting->RestoreCheckpointLighting();
+			TimeOfDay->RestoreFromCheckpoint();
 		}
 	}
 	OnCheckpointChanged.Broadcast(Data.CheckpointId);

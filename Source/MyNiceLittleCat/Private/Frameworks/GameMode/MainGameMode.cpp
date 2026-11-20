@@ -5,7 +5,7 @@
 
 #include "Frameworks/GameMode/MainGameMode.h"
 #include "Frameworks/Save/GameProgressSubsystem.h"
-#include "Stages/Stage3/MansionLightingSubsystem.h"
+#include "Systems/TimeOfDaySubsystem.h"
 #include "Pet/PetCharacter.h"
 #include "Characters/PlayerMainController.h"
 #include "Characters/PlayerCharacter.h"
@@ -156,7 +156,10 @@ bool AMainGameMode::RespawnPlayer(AController* Controller)
 	}
 
 	bRespawning = true;
-	GetWorld()->GetSubsystem<UMansionLightingSubsystem>()->RestoreCheckpointLighting();
+	if (UTimeOfDaySubsystem* TimeOfDay = GetWorld()->GetSubsystem<UTimeOfDaySubsystem>())
+	{
+		TimeOfDay->RestoreFromCheckpoint();
+	}
 	RestartPlayer(Controller);
 	bRespawning = false;
 

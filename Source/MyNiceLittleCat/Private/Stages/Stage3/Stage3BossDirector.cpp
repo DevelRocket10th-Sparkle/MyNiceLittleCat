@@ -3,7 +3,7 @@
 
 #include "Stages/Stage3/Stage3BossDirector.h"
 #include "Cinematics/CinematicLog.h"
-#include "Stages/Stage3/MansionLightingSubsystem.h"
+#include "Systems/TimeOfDaySubsystem.h"
 
 #include "Animation/AnimInstance.h"
 #include "Camera/PlayerCameraManager.h"
@@ -48,7 +48,6 @@ AStage3BossDirector::AStage3BossDirector()
 
 void AStage3BossDirector::BeginPlay()
 {
-	GetWorld()->GetSubsystem<UMansionLightingSubsystem>()->InitializeForStage();
 	// 베이스: 보스방에 연출 담당자로 등록
 	Super::BeginPlay();
 
@@ -228,7 +227,11 @@ bool AStage3BossDirector::HandleStageMarker_Implementation(const FCinematicMarke
 	}
 	if (Args.IsCommand(TEXT("Stair")) && Args.ArgEquals(0, TEXT("Break")))
 	{
-		GetWorld()->GetSubsystem<UMansionLightingSubsystem>()->SetEvening(true);
+		// 계단이 부서지면 시간대 전환 (메인 맵의 시간대 컨트롤러가 적용)
+		if (UTimeOfDaySubsystem* TimeOfDay = GetWorld()->GetSubsystem<UTimeOfDaySubsystem>(); TimeOfDay && StairBreakTimeOfDay.IsValid())
+		{
+			TimeOfDay->SetTimeOfDay(StairBreakTimeOfDay);
+		}
 		SetStairBlocked(false);
 		return true;
 	}
