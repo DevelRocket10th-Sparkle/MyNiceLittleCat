@@ -12,8 +12,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 
-#include "Characters/PlayerMainController.h"
 #include "Cinematics/CinematicSubsystem.h"
+#include "Frameworks/PlayerLookup.h"
 #include "Frameworks/Save/ProgressFlagGateComponent.h"
 #include "Interfaces/TargetableInterface.h"
 #include "Pet/PetCharacter.h"
@@ -360,10 +360,9 @@ bool AAreaExitBlocker::ResolveReturnLocation(FVector& OutLocation, FRotator& Out
 
 APetCharacter* AAreaExitBlocker::ResolvePet() const
 {
-	if (const APlayerMainController* MainController = Cast<APlayerMainController>(ActiveController.Get()))
+	if (APetCharacter* Pet = PlayerLookup::GetPartnerPet(this))
 	{
-		if (APetCharacter* Pet = MainController->GetPartnerPet())
-			return Pet;
+		return Pet;
 	}
 	return Cast<APetCharacter>(UGameplayStatics::GetActorOfClass(this, APetCharacter::StaticClass()));
 }

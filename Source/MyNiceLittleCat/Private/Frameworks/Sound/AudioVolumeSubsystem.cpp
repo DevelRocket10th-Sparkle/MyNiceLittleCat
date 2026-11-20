@@ -16,6 +16,7 @@ void UAudioVolumeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 void UAudioVolumeSubsystem::Deinitialize()
 {
 	FWorldDelegates::OnWorldInitializedActors.Remove(ActorsInitializedHandle);
+	SaveIfDirty();
 	Super::Deinitialize();
 }
 
@@ -29,33 +30,53 @@ void UAudioVolumeSubsystem::HandleWorldActorsInitialized(const FActorsInitialize
 
 void UAudioVolumeSubsystem::SetVolume(EAudioVolumeChannel Channel, float InVolume)
 {
-	const float Clamped = FMath::Clamp(InVolume, 0.f, 1.f);
-	(Channel == EAudioVolumeChannel::BGM ? BGMVolume : SFXVolume) = Clamped;
+	VolumeOf(Channel) = FMath::Clamp(InVolume, 0.f, 1.f);
+	bDirty = true;
 	Apply(Channel);
-	SaveConfig();
 }
 
 float UAudioVolumeSubsystem::GetVolume(EAudioVolumeChannel Channel) const
 {
-	return Channel == EAudioVolumeChannel::BGM ? BGMVolume : SFXVolume;
+	return VolumeOf(Channel);
 }
 
 void UAudioVolumeSubsystem::SetMuted(EAudioVolumeChannel Channel, bool bInMuted)
 {
-	(Channel == EAudioVolumeChannel::BGM ? bBGMMuted : bSFXMuted) = bInMuted;
+	MutedOf(Channel) = bInMuted;
+	bDirty = true;
 	Apply(Channel);
-	SaveConfig();
 }
 
 bool UAudioVolumeSubsystem::IsMuted(EAudioVolumeChannel Channel) const
+{
+	return MutedOf(Channel);
+}
+
+void UAudioVolumeSubsystem::SaveIfDirty()
+{
+	if (bDirty)
+	{
+		bDirty = false;
+		SaveConfig();
+	}
+}
+
+float& UAudioVolumeSubsystem::VolumeOf(EAudioVolumeChannel Channel)
+{
+	return Channel == EAudioVolumeChannel::BGM ? BGMVolume : SFXVolume;
+}
+
+bool& UAudioVolumeSubsystem::MutedOf(EAudioVolumeChannel Channel)
 {
 	return Channel == EAudioVolumeChannel::BGM ? bBGMMuted : bSFXMuted;
 }
 
 void UAudioVolumeSubsystem::ApplyAll()
 {
-	Apply(EAudioVolumeChannel::BGM);
-	Apply(EAudioVolumeChannel::SFX);
+	for (const EAudioVolumeChannel Channel : TEnumRange<EAudioVolumeChannel>())
+	{
+		Apply(Channel);
+	}
 }
 
 void UAudioVolumeSubsystem::Apply(EAudioVolumeChannel Channel)
@@ -63,7 +84,7 @@ void UAudioVolumeSubsystem::Apply(EAudioVolumeChannel Channel)
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
 	const UAudioVolumeSetting* Settings = GetDefault<UAudioVolumeSetting>();
 	USoundMix* Mix = Settings->VolumeMix.LoadSynchronous();
-	USoundClass* Class = (Channel == EAudioVolumeChannel::BGM ? Settings->BGMSoundClass : Settings->SFXSoundClass).LoadSynchronous();
+	USoundClass* Class = Settings->GetSoundClass(Channel).LoadSynchronous();
 	if (!World || !Mix || !Class)
 	{
 		return;
@@ -71,5 +92,11 @@ void UAudioVolumeSubsystem::Apply(EAudioVolumeChannel Channel)
 
 	const float Volume = IsMuted(Channel) ? 0.f : GetVolume(Channel);
 	UGameplayStatics::SetSoundMixClassOverride(World, Mix, Class, Volume, 1.f, 0.f, true);
-	UGameplayStatics::PushSoundMixModifier(World, Mix);
+
+	// 클래스 값 변경은 이미 Push된 믹스에도 바로 반영되므로 월드마다 한 번만 Push
+	if (MixPushedWorld.Get() != World)
+	{
+		UGameplayStatics::PushSoundMixModifier(World, Mix);
+		MixPushedWorld = World;
+	}
 }

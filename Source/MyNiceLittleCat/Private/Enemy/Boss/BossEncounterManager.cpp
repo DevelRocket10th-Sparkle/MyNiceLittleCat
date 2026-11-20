@@ -12,6 +12,7 @@
 #include "TimerManager.h"
 
 #include "Characters/PlayerCharacter.h"
+#include "Frameworks/PlayerLookup.h"
 #include "Enemy/AI/EnemyAIController.h"
 #include "Enemy/Boss/BossCharacter.h"
 #include "Enemy/Boss/BossEncounterPresentationComponent.h"
@@ -464,8 +465,7 @@ void ABossEncounterManager::BeginWaitForRespawn()
 	GameMode->OnPlayerRespawned.AddUniqueDynamic(this, &ABossEncounterManager::HandlePlayerRespawned);
 
 	// 이미 살아 있는 새 Pawn이 있다면(사망 이벤트보다 부활이 먼저 처리된 경우) 바로 초기화
-	const APlayerCharacter* Player = Cast<APlayerCharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
-	if (Player && !Player->GetbIsDead())
+	if (PlayerLookup::GetAlivePlayer(this))
 	{
 		StopWaitForRespawn();
 		ScheduleReset();
