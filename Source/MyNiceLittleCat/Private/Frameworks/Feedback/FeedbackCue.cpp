@@ -1,5 +1,5 @@
-#include "Enemy/Combat/EnemyFeedback.h"
-#include "Enemy/Combat/FeedbackVisual.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
+#include "Frameworks/Feedback/FeedbackVisual.h"
 
 #include "Components/AudioComponent.h"
 #include "Components/SceneComponent.h"
@@ -7,7 +7,7 @@
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 
-void FEnemyFeedbackInstance::Stop(float SoundFadeOutSeconds, bool bDestroyEffect)
+void FFeedbackInstance::Stop(float SoundFadeOutSeconds, bool bDestroyEffect)
 {
 	// 자동 제거 설정으로 생성했으므로 비활성화만 하면 입자가 사라진 뒤 정리됨 (바로 지워야 하면 제거)
 	if (UNiagaraComponent* EffectComponent = Effect.Get())
@@ -36,7 +36,7 @@ void FEnemyFeedbackInstance::Stop(float SoundFadeOutSeconds, bool bDestroyEffect
 	Sound.Reset();
 }
 
-void EnemyFeedback::PlayAtLocation(const UObject* WorldContext, const FEnemyFeedbackCue& Cue,
+void FeedbackCue::PlayAtLocation(const UObject* WorldContext, const FFeedbackCue& Cue,
 	const FVector& Location, const FRotator& Rotation)
 {
 	if (!WorldContext)
@@ -55,10 +55,10 @@ void EnemyFeedback::PlayAtLocation(const UObject* WorldContext, const FEnemyFeed
 	}
 }
 
-FEnemyFeedbackInstance EnemyFeedback::PlayAttached(const FEnemyFeedbackCue& Cue, USceneComponent* AttachTo,
+FFeedbackInstance FeedbackCue::PlayAttached(const FFeedbackCue& Cue, USceneComponent* AttachTo,
 	FName Socket, const FVector& Offset)
 {
-	FEnemyFeedbackInstance Instance;
+	FFeedbackInstance Instance;
 	if (!IsValid(AttachTo))
 		return Instance;
 

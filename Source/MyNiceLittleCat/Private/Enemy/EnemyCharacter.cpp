@@ -249,7 +249,7 @@ void AEnemyCharacter::BeginDeath()
 	}
 
 	// 사망 소리와 이펙트: 몸 중심(캡슐 중심)에서 재생
-	EnemyFeedback::PlayAtLocation(this, DeathCue, GetActorLocation(), GetActorRotation());
+	FeedbackCue::PlayAtLocation(this, DeathCue, GetActorLocation(), GetActorRotation());
 
 	// 사망 연출
 	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
@@ -343,7 +343,7 @@ void AEnemyCharacter::LifeSpanExpired()
 	// 숨긴 시체(연출 대역이 대신 연기 중인 보스 등)는 사라짐 연출 없이 제거
 	if (!IsHidden())
 	{
-		EnemyFeedback::PlayAtLocation(this, CorpseVanishCue, Location);
+		FeedbackCue::PlayAtLocation(this, CorpseVanishCue, Location);
 	}
 
 	Super::LifeSpanExpired();

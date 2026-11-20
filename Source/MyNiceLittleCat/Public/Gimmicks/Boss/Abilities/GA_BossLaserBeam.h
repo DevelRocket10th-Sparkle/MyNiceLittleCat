@@ -19,7 +19,7 @@
 
 #include "CoreMinimal.h"
 #include "Enemy/GAS/Abilities/EnemyPatternAbility.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "GA_BossLaserBeam.generated.h"
 
 class ULaserBeamComponent;
@@ -122,10 +122,10 @@ protected:
 	TObjectPtr<AAttackWarningDecal> Warning;
 
 	// 충전 연출 (추적·확정 동안, 발사 시 즉시 정리)
-	FEnemyFeedbackInstance ChargeFeedback;
+	FFeedbackInstance ChargeFeedback;
 
 	// 발사 연출 (발사가 끝나면 정지)
-	FEnemyFeedbackInstance FireFeedback;
+	FFeedbackInstance FireFeedback;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> StaffEyeMaterial;

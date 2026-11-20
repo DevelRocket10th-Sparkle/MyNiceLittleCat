@@ -1,8 +1,8 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "Enemy/Combat/FeedbackVisual.h"
-#include "Enemy/Combat/FeedbackVisualSettings.h"
+#include "Frameworks/Feedback/FeedbackVisual.h"
+#include "Frameworks/Feedback/FeedbackVisualSettings.h"
 #include "Enemy/EnemyLog.h"
 
 #include "Components/InstancedStaticMeshComponent.h"

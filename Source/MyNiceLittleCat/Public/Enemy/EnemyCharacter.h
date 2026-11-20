@@ -16,7 +16,7 @@
 
 #include "AbilitySystemInterface.h"
 #include "EnemyTypes.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "Interfaces/TargetableInterface.h"
 
 #include "EnemyCharacter.generated.h"
@@ -230,11 +230,11 @@ protected :
 
 	// 사망 판정 직후 몸 중심에서 재생할 소리와 이펙트 (비명, 터지는 빛 등)
 	UPROPERTY(EditDefaultsOnly, Category = "Death|Feedback")
-	FEnemyFeedbackCue DeathCue;
+	FFeedbackCue DeathCue;
 
 	// 시체가 사라지는 순간 재생할 소리와 이펙트 (연기 펑 등)
 	UPROPERTY(EditDefaultsOnly, Category = "Death|Feedback")
-	FEnemyFeedbackCue CorpseVanishCue;
+	FFeedbackCue CorpseVanishCue;
 
 	// 사망 연출이 끝난 뒤 시체가 남아 있는 시간
 	UPROPERTY(EditDefaultsOnly, Category = "Death", meta = (ClampMin = "0.0", Units = "s"))

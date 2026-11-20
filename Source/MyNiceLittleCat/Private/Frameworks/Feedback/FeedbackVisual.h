@@ -4,7 +4,7 @@
 * 작성 일자: 2026.11.18.
 * 수정 일자: 2026.11.20. (연출 종류를 큐의 ProceduralVisual로 받음, 메시·머티리얼을 프로젝트 설정에서 지정, 움직임별 함수 분리)
 * 나이아가라 대신 쓰는 절차적 피드백 연출 (발광 조각 메시를 인스턴스로 그리는 짧은 연출)
-* - EnemyFeedback::PlayAtLocation/PlayAttached가 큐의 ProceduralVisual이 None이 아닐 때 생성
+* - FeedbackCue::PlayAtLocation/PlayAttached가 큐의 ProceduralVisual이 None이 아닐 때 생성
 * - 메시와 머티리얼은 UFeedbackVisualSettings(프로젝트 설정 → Game → Feedback Visual)에서 지정
 * - 연출 종류마다 움직임(Ring, Fracture, Orbit 등)과 색·크기·시간이 정해져 있고, 수명이 끝나면 스스로 사라짐
 */
@@ -13,7 +13,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "FeedbackVisual.generated.h"
 
 class UInstancedStaticMeshComponent;

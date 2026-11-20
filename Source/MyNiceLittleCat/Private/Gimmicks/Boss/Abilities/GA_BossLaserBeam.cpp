@@ -203,7 +203,7 @@ void UGA_BossLaserBeam::HandleLockFinished()
 
 	Laser->OnLaserStopped.AddUniqueDynamic(this, &UGA_BossLaserBeam::HandleLaserStopped);
 	Laser->StartLaser(GetBeamTargetLocation(Laser, AimPoint), LaserSettings->FireDuration);
-	FireFeedback = EnemyFeedback::PlayAttached(LaserSettings->FireCue, Laser);
+	FireFeedback = FeedbackCue::PlayAttached(LaserSettings->FireCue, Laser);
 	SetStaffEyeGlow(Laser->IsLaserActive());
 
 	UE_LOG(LogTemp, Log, TEXT("[BossLaser] %s: 발사 (%.2f초, 발사 중 추적 %s)"),
@@ -447,7 +447,7 @@ void UGA_BossLaserBeam::StartChargeEffect()
 
 	// 레이저 발사점에 붙여 재생하고, 진행도 파라미터는 0부터 시작
 	ChargeStartTime = GetWorld()->GetTimeSeconds();
-	ChargeFeedback = EnemyFeedback::PlayAttached(LaserSettings->ChargeCue, Laser, NAME_None, LaserSettings->ChargeEffectOffset);
+	ChargeFeedback = FeedbackCue::PlayAttached(LaserSettings->ChargeCue, Laser, NAME_None, LaserSettings->ChargeEffectOffset);
 	if (UNiagaraComponent* ChargeEffect = ChargeFeedback.Effect.Get(); ChargeEffect && !LaserSettings->ChargeProgressParameter.IsNone())
 	{
 		ChargeEffect->SetVariableFloat(LaserSettings->ChargeProgressParameter, 0.f);

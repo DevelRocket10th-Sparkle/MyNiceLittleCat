@@ -58,7 +58,7 @@ bool UCinematicMarkerEffectsComponent::HandleMarkerForOwner(const FCinematicMark
 
 void UCinematicMarkerEffectsComponent::StopAll()
 {
-	for (FEnemyFeedbackInstance& Instance : ActiveCueInstances)
+	for (FFeedbackInstance& Instance : ActiveCueInstances)
 	{
 		Instance.Stop();
 	}
@@ -111,7 +111,7 @@ void UCinematicMarkerEffectsComponent::HandleCueMarker(const FCinematicMarkerArg
 
 	if (Cue->Target == EStageCueTarget::Stage)
 	{
-		EnemyFeedback::PlayAtLocation(this, Cue->Feedback, Anchors.StageTransform.TransformPosition(Cue->Offset), Anchors.StageTransform.Rotator());
+		FeedbackCue::PlayAtLocation(this, Cue->Feedback, Anchors.StageTransform.TransformPosition(Cue->Offset), Anchors.StageTransform.Rotator());
 		return;
 	}
 
@@ -136,7 +136,7 @@ void UCinematicMarkerEffectsComponent::HandleCueMarker(const FCinematicMarkerArg
 
 	if (Cue->bAttach)
 	{
-		FEnemyFeedbackInstance Instance = EnemyFeedback::PlayAttached(Cue->Feedback, Anchor, Cue->Socket, Cue->Offset);
+		FFeedbackInstance Instance = FeedbackCue::PlayAttached(Cue->Feedback, Anchor, Cue->Socket, Cue->Offset);
 
 		if (Cue->StopAfterSeconds > 0.f)
 		{
@@ -154,5 +154,5 @@ void UCinematicMarkerEffectsComponent::HandleCueMarker(const FCinematicMarkerArg
 	/* 그 자리에서 한 번 재생 */
 
 	const FTransform Base = Cue->Socket.IsNone() ? Anchor->GetComponentTransform() : Anchor->GetSocketTransform(Cue->Socket);
-	EnemyFeedback::PlayAtLocation(this, Cue->Feedback, Base.TransformPosition(Cue->Offset), Base.Rotator());
+	FeedbackCue::PlayAtLocation(this, Cue->Feedback, Base.TransformPosition(Cue->Offset), Base.Rotator());
 }

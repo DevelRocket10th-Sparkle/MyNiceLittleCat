@@ -13,7 +13,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Cinematics/CinematicTypes.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "CinematicMarkerEffectsComponent.generated.h"
 
 class USceneComponent;
@@ -36,7 +36,7 @@ struct FStageCinematicCue
 
 	// 재생할 소리와 이펙트
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue")
-	FEnemyFeedbackCue Feedback;
+	FFeedbackCue Feedback;
 
 	// 기준 위치: 스테이지 좌표, 보스, 플레이어, 지정 액터
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue")
@@ -122,5 +122,5 @@ public :
 private :
 
 	// 붙여서 재생 중인 컷 연출
-	TArray<FEnemyFeedbackInstance> ActiveCueInstances;
+	TArray<FFeedbackInstance> ActiveCueInstances;
 };

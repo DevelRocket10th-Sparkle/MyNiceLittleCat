@@ -11,7 +11,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "Enemy/Data/EnemyPatternExecutionSettings.h"
 #include "EnemyMeleePatternSettings.generated.h"
 
@@ -93,11 +93,11 @@ public :
 	// - 내려찍는 먼지처럼 정해진 프레임에 나는 연출은 몽타주의 Enemy Feedback Cue 노티파이로 배치
 	// - 플레이어 자신의 피격 소리는 플레이어 쪽(HitSoundComponent)에서 재생하므로 여기는 무기/몸 충돌음
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee|Feedback")
-	FEnemyFeedbackCue HitCue;
+	FFeedbackCue HitCue;
 
 	// 판정 구간 동안 메시에 붙여 재생 (휘두르는 소리 등), 구간 종료/패턴 취소 시 정지
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee|Feedback")
-	FEnemyFeedbackCue SwingCue;
+	FFeedbackCue SwingCue;
 
 	// 배열에 항목을 추가하면 판정 설정 객체를 생성
 #if WITH_EDITOR

@@ -4,7 +4,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 
 AMoneyGun::AMoneyGun()
 {
@@ -39,7 +39,7 @@ bool AMoneyGun::StartPattern(UMoneyGunPatternSettings* InSettings, AActor* InTar
 	}
 
 	// 등장 연출
-	EnemyFeedback::PlayAtLocation(this, Settings->AppearCue, GetActorLocation(), GetActorRotation());
+	FeedbackCue::PlayAtLocation(this, Settings->AppearCue, GetActorLocation(), GetActorRotation());
 	return true;
 }
 
@@ -125,7 +125,7 @@ bool AMoneyGun::UpdateLoading(float DeltaSeconds)
 		}
 
 		// 장전 시작 연출: 지폐가 모여드는 지점
-		LoadingFeedback = EnemyFeedback::PlayAttached(Settings->LoadStartCue, LoadPoint);
+		LoadingFeedback = FeedbackCue::PlayAttached(Settings->LoadStartCue, LoadPoint);
 	}
 	const float LoadAlpha = FMath::Clamp((Elapsed - Settings->AppearSeconds) / Settings->LoadSeconds, 0.f, 1.f);
 	const FVector End = Root->GetComponentTransform().InverseTransformPosition(LoadPoint->GetComponentLocation());
@@ -150,7 +150,7 @@ bool AMoneyGun::UpdateLoading(float DeltaSeconds)
 		LoadingFeedback.Stop(0.04f);
 		ClearLoadingVisuals();
 		// 장전 완료: LoadPoint에서 소리와 이펙트
-		EnemyFeedback::PlayAtLocation(this, Settings->LoadedCue, LoadPoint->GetComponentLocation(), GetActorRotation());
+		FeedbackCue::PlayAtLocation(this, Settings->LoadedCue, LoadPoint->GetComponentLocation(), GetActorRotation());
 	}
 	return true;
 }
@@ -184,7 +184,7 @@ void AMoneyGun::UpdateDisappearance()
 	if (!bDisappearStarted)
 	{
 		bDisappearStarted = true;
-		EnemyFeedback::PlayAtLocation(this, Settings->DisappearCue, GetActorLocation(), GetActorRotation());
+		FeedbackCue::PlayAtLocation(this, Settings->DisappearCue, GetActorLocation(), GetActorRotation());
 	}
 	const float Alpha = Settings->AppearSeconds > 0.f
 		? FMath::Clamp((Elapsed - LastShotTime) / Settings->AppearSeconds, 0.f, 1.f)
@@ -212,7 +212,7 @@ bool AMoneyGun::Fire()
 	Projectiles.Add(Projectile);
 	Projectile->Launch(MuzzlePoint->GetForwardVector(), Settings->ProjectileSpeed, Damage, Settings->ProjectileLifeSeconds);
 	// 발사: 총구 위치에서 소리와 이펙트
-	EnemyFeedback::PlayAtLocation(this, Settings->ShotCue, MuzzlePoint->GetComponentLocation(), MuzzlePoint->GetComponentRotation());
+	FeedbackCue::PlayAtLocation(this, Settings->ShotCue, MuzzlePoint->GetComponentLocation(), MuzzlePoint->GetComponentRotation());
 	OnShot();
 	return true;
 }

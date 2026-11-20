@@ -3,7 +3,8 @@
 * 작성자: 전선현
 * 작성 일자: 2026.11.17.
 * 수정 일자: 2026.11.20. (절차적 연출을 큐의 ProceduralVisual로 지정: 에셋 이름/경로로 고르던 방식 제거)
-* Enemy 연출 피드백(소리 + 이펙트) 한 묶음과 재생 도우미
+* 수정 일자: 2026.11.21. (Enemy/Combat → Frameworks/Feedback, FEnemyFeedbackCue → FFeedbackCue: 적·스테이지·컷신 공용, 에셋은 CoreRedirects로 이어 읽음)
+* 연출 피드백(소리 + 이펙트) 한 묶음과 재생 도우미: 적 공격, 스테이지 연출, 컷신 마커가 함께 사용
 * - 소리와 이펙트는 각각 비워 둘 수 있음: 둘 다 비면 아무 일도 하지 않음
 * - 판정, 피해, AI와 무관한 연출 전용: 서버 판정 로직 안에서 호출해도 결과에 영향 없음
 */
@@ -11,7 +12,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "EnemyFeedback.generated.h"
+#include "FeedbackCue.generated.h"
 
 class UAudioComponent;
 class UNiagaraComponent;
@@ -48,7 +49,7 @@ enum class EFeedbackVisualStyle : uint8
 
 // 한 시점에 함께 재생할 소리와 이펙트
 USTRUCT(BlueprintType)
-struct FEnemyFeedbackCue
+struct FFeedbackCue
 {
 	GENERATED_BODY()
 
@@ -77,7 +78,7 @@ struct FEnemyFeedbackCue
 };
 
 // 붙여서 재생한 연출: 반복 소리/이펙트를 나중에 함께 끄기 위한 핸들
-struct MYNICELITTLECAT_API FEnemyFeedbackInstance
+struct MYNICELITTLECAT_API FFeedbackInstance
 {
 	TWeakObjectPtr<UNiagaraComponent> Effect;
 	TWeakObjectPtr<AActor> Visual;
@@ -88,13 +89,13 @@ struct MYNICELITTLECAT_API FEnemyFeedbackInstance
 	void Stop(float SoundFadeOutSeconds = 0.15f, bool bDestroyEffect = false);
 };
 
-namespace EnemyFeedback
+namespace FeedbackCue
 {
 	// 월드 위치에서 소리와 이펙트 재생 (이펙트는 재생이 끝나면 자동 제거)
-	MYNICELITTLECAT_API void PlayAtLocation(const UObject* WorldContext, const FEnemyFeedbackCue& Cue,
+	MYNICELITTLECAT_API void PlayAtLocation(const UObject* WorldContext, const FFeedbackCue& Cue,
 		const FVector& Location, const FRotator& Rotation = FRotator::ZeroRotator);
 
 	// 컴포넌트(소켓)에 붙여 재생: 반복 연출을 끌 때 쓰는 핸들 반환
-	MYNICELITTLECAT_API FEnemyFeedbackInstance PlayAttached(const FEnemyFeedbackCue& Cue, USceneComponent* AttachTo,
+	MYNICELITTLECAT_API FFeedbackInstance PlayAttached(const FFeedbackCue& Cue, USceneComponent* AttachTo,
 		FName Socket = NAME_None, const FVector& Offset = FVector::ZeroVector);
 }

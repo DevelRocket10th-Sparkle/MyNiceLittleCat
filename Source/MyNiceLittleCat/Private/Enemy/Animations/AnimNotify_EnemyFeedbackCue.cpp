@@ -38,7 +38,7 @@ void UAnimNotify_EnemyFeedbackCue::Notify(
 		}
 	}
 
-	EnemyFeedback::PlayAtLocation(Owner, Cue, Location, FRotator(0, Owner->GetActorRotation().Yaw, 0));
+	FeedbackCue::PlayAtLocation(Owner, Cue, Location, FRotator(0, Owner->GetActorRotation().Yaw, 0));
 }
 
 #if WITH_EDITOR

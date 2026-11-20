@@ -10,7 +10,7 @@
 
 #include "CoreMinimal.h"
 #include "Enemy/GAS/Abilities/EnemyPatternAbility.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "GA_Enemy_MeleeAttack.generated.h"
 
 class UEnemyMeleePatternSettings;
@@ -69,7 +69,7 @@ protected :
 	TObjectPtr<UEnemyMeleePatternSettings> MeleeSettings;
 
 	// 판정 구간 동안 붙여 재생하는 휘두르는 연출 (구간 종료, 패턴 정리 시 정지)
-	FEnemyFeedbackInstance SwingFeedback;
+	FFeedbackInstance SwingFeedback;
 
 	// 소켓 판정 컴포넌트
 	TWeakObjectPtr<UEnemyMeleeTraceComponent> MeleeTraceComponent;

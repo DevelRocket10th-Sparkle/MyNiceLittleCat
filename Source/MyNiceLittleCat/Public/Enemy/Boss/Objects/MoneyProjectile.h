@@ -13,7 +13,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "MoneyProjectile.generated.h"
 
 class USphereComponent;
@@ -70,11 +70,11 @@ protected :
 
 	// 발사 후 날아가는 동안 메시에 붙어 반복 재생 (반짝이 꼬리, 펄럭이는 소리): 탄환이 사라지면 함께 제거
 	UPROPERTY(EditDefaultsOnly, Category="MoneyProjectile|Feedback")
-	FEnemyFeedbackCue TrailCue;
+	FFeedbackCue TrailCue;
 
 	// 무언가에 맞아 사라지는 순간 충돌 지점에서 재생 (플레이어 피격 여부와 무관)
 	UPROPERTY(EditDefaultsOnly, Category="MoneyProjectile|Feedback")
-	FEnemyFeedbackCue ImpactCue;
+	FFeedbackCue ImpactCue;
 
 	// 충돌: 발사자는 무시하고, 첫 유효 충돌에만 피해를 준 뒤 제거
 	UFUNCTION()

@@ -12,7 +12,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "MoneyGun.generated.h"
 
 class UMoneyGunPatternSettings;
@@ -125,7 +125,7 @@ private :
 	// 패턴 시작 후 경과 시간: 단계 전환과 발사 시각 계산에 사용
 	float Elapsed = 0.f;
 
-	FEnemyFeedbackInstance LoadingFeedback;
+	FFeedbackInstance LoadingFeedback;
 
 	// 지금까지 쏜 탄환 수
 	int32 ShotsFired = 0;

@@ -9,7 +9,7 @@
 #include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
 
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "Enemy/Combat/EnemyTargetUtils.h"
 #include "Enemy/Data/EnemyMeleePatternSettings.h"
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
@@ -146,7 +146,7 @@ void UGA_Enemy_MeleeAttack::HandleTargetHit(const FHitResult& Hit)
 	if (MeleeSettings)
 	{
 		const FVector ImpactPoint = Hit.bStartPenetrating || Hit.ImpactPoint.IsZero() ? Target->GetActorLocation() : FVector(Hit.ImpactPoint);
-		EnemyFeedback::PlayAtLocation(Enemy.Get(), MeleeSettings->HitCue, ImpactPoint, (-Direction).Rotation());
+		FeedbackCue::PlayAtLocation(Enemy.Get(), MeleeSettings->HitCue, ImpactPoint, (-Direction).Rotation());
 	}
 
 	EnemyTargetUtils::ApplyAttackHit(Target, CalculatePatternDamage(), Direction, Enemy.Get());
@@ -180,7 +180,7 @@ void UGA_Enemy_MeleeAttack::HandleWindowBegin(FGameplayEventData Payload)
 	// 휘두르는 연출: 이미 재생 중이면 다시 붙이지 않음
 	if (MeleeSettings->SwingCue.IsSet() && !SwingFeedback.Sound.IsValid() && !SwingFeedback.Effect.IsValid() && !SwingFeedback.Visual.IsValid())
 	{
-		SwingFeedback = EnemyFeedback::PlayAttached(MeleeSettings->SwingCue, Enemy->GetMesh());
+		SwingFeedback = FeedbackCue::PlayAttached(MeleeSettings->SwingCue, Enemy->GetMesh());
 	}
 }
 

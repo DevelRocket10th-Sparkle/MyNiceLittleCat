@@ -12,7 +12,7 @@
 
 #include "CoreMinimal.h"
 #include "Enemy/Data/EnemyPatternExecutionSettings.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "BossLaserPatternSettings.generated.h"
 
 class UAnimMontage;
@@ -85,7 +85,7 @@ public:
 
 	// 추적 시작부터 발사 직전까지 레이저 발사점에 붙여 재생할 충전 연출 (소리 반복 여부는 Sound Cue에서 편집)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Feedback")
-	FEnemyFeedbackCue ChargeCue;
+	FFeedbackCue ChargeCue;
 
 	// 충전 연출을 붙일 위치 (레이저 발사점 기준)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Feedback")
@@ -97,7 +97,7 @@ public:
 
 	// 발사 순간 레이저에 붙여 재생하고 발사가 끝나면 정지
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Feedback")
-	FEnemyFeedbackCue FireCue;
+	FFeedbackCue FireCue;
 
 	// LaserEyeGlow 태그를 가진 무기 메시의 눈 발광 색. 발사 중에만 적용.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BossLaser|Visual")

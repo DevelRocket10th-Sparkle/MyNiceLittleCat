@@ -6,7 +6,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "Enemy/Combat/EnemyTargetUtils.h"
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
 #include "Enemy/Data/EnemyMeleePatternSettings.h"
@@ -159,8 +159,8 @@ void UGA_Enemy_RushAttack::UpdateRush()
 		Anim->Montage_Pause(Montage);
 
 		// 돌진 시작 연출: 발밑에서 한 번, 돌진하는 동안 몸에 붙은 반복 연출
-		EnemyFeedback::PlayAtLocation(Enemy.Get(), RushStartCue, Enemy->GetMesh()->GetComponentLocation(), RushDirection.Rotation());
-		RushTrail = EnemyFeedback::PlayAttached(RushTrailCue, Enemy->GetMesh(), RushTrailSocket);
+		FeedbackCue::PlayAtLocation(Enemy.Get(), RushStartCue, Enemy->GetMesh()->GetComponentLocation(), RushDirection.Rotation());
+		RushTrail = FeedbackCue::PlayAttached(RushTrailCue, Enemy->GetMesh(), RushTrailSocket);
 
 		// 진입 프레임에는 이동하지 않아 준비 시간만큼 거리가 늘어나지 않게 함
 		if (DistanceRemaining <= KINDA_SMALL_NUMBER)
@@ -208,7 +208,7 @@ void UGA_Enemy_RushAttack::UpdateRush()
 		// 막혀서 멈춘 경우만 충돌 연출 (목표 거리 도달은 공격 섹션 몽타주 노티파이가 담당)
 		if (MovementHit.IsValidBlockingHit())
 		{
-			EnemyFeedback::PlayAtLocation(Enemy.Get(), RushBlockedCue, MovementHit.ImpactPoint, MovementHit.ImpactNormal.Rotation());
+			FeedbackCue::PlayAtLocation(Enemy.Get(), RushBlockedCue, MovementHit.ImpactPoint, MovementHit.ImpactNormal.Rotation());
 		}
 
 		FinishRush();

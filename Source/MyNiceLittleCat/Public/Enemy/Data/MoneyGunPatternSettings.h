@@ -9,7 +9,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "Enemy/Data/EnemyPatternExecutionSettings.h"
 #include "MoneyGunPatternSettings.generated.h"
 
@@ -77,23 +77,23 @@ public :
 
 	// 총이 나타나기 시작할 때 총 위치에서 재생
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
-	FEnemyFeedbackCue AppearCue;
+	FFeedbackCue AppearCue;
 
 	// 지폐가 모여들기 시작할 때 LoadPoint에서 재생 (지폐 펄럭임 등)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
-	FEnemyFeedbackCue LoadStartCue;
+	FFeedbackCue LoadStartCue;
 
 	// 장전 완료 순간 LoadPoint에서 재생
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
-	FEnemyFeedbackCue LoadedCue;
+	FFeedbackCue LoadedCue;
 
 	// 발사 순간 총구(MuzzlePoint) 위치에서 재생
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
-	FEnemyFeedbackCue ShotCue;
+	FFeedbackCue ShotCue;
 
 	// 마지막 발사 후 총이 사라지기 시작할 때 총 위치에서 재생
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
-	FEnemyFeedbackCue DisappearCue;
+	FFeedbackCue DisappearCue;
 
 	/* 발사 */
 

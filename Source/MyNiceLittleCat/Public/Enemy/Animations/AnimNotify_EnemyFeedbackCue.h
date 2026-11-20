@@ -12,7 +12,7 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "AnimNotify_EnemyFeedbackCue.generated.h"
 
 UCLASS(meta = (DisplayName = "Enemy Feedback Cue"))
@@ -38,7 +38,7 @@ public :
 
 	// 재생할 연출 (크기는 큐의 EffectScale)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
-	FEnemyFeedbackCue Cue;
+	FFeedbackCue Cue;
 
 	// 메시 위치에서 캐릭터 앞쪽으로 떨어진 거리
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback", meta = (Units = "cm"))
