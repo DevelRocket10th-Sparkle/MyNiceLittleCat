@@ -33,6 +33,9 @@ void ARoomMaskVolume::BeginPlay()
 		return;
 	}
 
+	// 방 박스 범위를 한 번만 모아 둠 (방은 움직이지 않음): 플레이어 위치로 방을 고를 때마다 컴포넌트를 다시 찾지 않음
+	GetRoomBounds(CachedRoomBounds);
+
 	TArray<UBoxComponent*> Boxes;
 	GatherBoxes(Boxes);
 	for (UBoxComponent* B : Boxes)
@@ -210,6 +213,12 @@ ARoomMaskVolume* ARoomMaskVolume::GetCurrentRoom()
 
 void ARoomMaskVolume::GetRoomBounds(TArray<FBox>& OutBounds) const
 {
+	if (!CachedRoomBounds.IsEmpty())
+	{
+		OutBounds = CachedRoomBounds;
+		return;
+	}
+
 	OutBounds.Reset();
 	TArray<UBoxComponent*> Boxes;
 	GatherBoxes(Boxes);

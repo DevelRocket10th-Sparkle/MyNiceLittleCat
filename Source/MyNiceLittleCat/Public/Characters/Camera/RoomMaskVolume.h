@@ -72,6 +72,9 @@ private:
 	// 겹친 방들 중 플레이어 위치가 가장 깊이 들어간 방 (위치 정보가 없거나 어느 박스에도 없으면 마지막에 들어간 방)
 	static ARoomMaskVolume* SelectRoom();
 
+	// BeginPlay에서 모아 둔 방 박스 범위 (비어 있으면 매번 컴포넌트에서 계산)
+	TArray<FBox> CachedRoomBounds;
+
 	// 플레이어가 들어가 있는 방들 (들어간 순서)
 	static TArray<TWeakObjectPtr<ARoomMaskVolume>> ActiveRooms;
 	// 현재 표시 중인 방
