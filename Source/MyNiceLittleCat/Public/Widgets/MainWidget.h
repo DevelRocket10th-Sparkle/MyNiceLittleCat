@@ -76,8 +76,9 @@ protected:
 	FLinearColor EmptyPotionColor = FLinearColor(1.f, 1.f, 1.f, 0.3f);
 
 	// 쉬움 모드일 때 포션 아이콘 대신 쓸 젖병 아이콘
+	// WBP에서 지정한다. C++ 기본값과 같은 값은 WBP에 저장되지 않아 패키지에 쿠킹되지 않으므로 기본값은 비워 둔다
 	UPROPERTY(EditAnywhere, Category = "HUD|Potion")
-	TSoftObjectPtr<UTexture2D> EasyModePotionTexture = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/Game/Widgets/Player/TX_MilkBottle_Icon.TX_MilkBottle_Icon")));
+	TSoftObjectPtr<UTexture2D> EasyModePotionTexture;
 
 private:
 	void BindToPlayer();
