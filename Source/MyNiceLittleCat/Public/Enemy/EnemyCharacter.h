@@ -3,6 +3,8 @@
 * 작성자: 전선현
 * 작성 일자: 2026.10.14.
 * 수정 일자: 2026.11.17. (중복 주석 정리, 사망/시체 사라짐 연출 슬롯 추가)
+* 수정 일자: 2026.11.20. (활동 단계: 멀리 있거나 안 보이는 적의 갱신 줄이기)
+* 수정 일자: 2026.11.20. (BeginPlay 초기화 단계와 사망 시 이동·캡슐 정리를 함수로 분리)
 * 잡몹/보스 캐릭터의 기본 클래스
 * - GAS 연결
 */
@@ -14,7 +16,7 @@
 
 #include "AbilitySystemInterface.h"
 #include "EnemyTypes.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "Interfaces/TargetableInterface.h"
 
 #include "EnemyCharacter.generated.h"
@@ -24,6 +26,7 @@ class UEnemyConfigData;
 
 class UEnemyPatternComponent;
 class UEnemyMeleeTraceComponent;
+class UEnemyOverheadHealthBarComponent;
 
 class UCameraShakeBase;
 
@@ -118,6 +121,21 @@ public:
 	// - false: 다른 Enemy에게 공간 양보
 	void ApplyPlayerPush(const FVector& PushVelocity, bool bDirectPush = true);
 
+	/* 활동 단계 (UEnemyActivitySubsystem) */
+
+	// Getter: 현재 활동 단계
+	EEnemyActivityTier GetActivityTier() const { return ActivityTier; }
+
+	// 활동 단계 적용: Active를 떠날 때 원래 Tick 설정을 기록하고, 돌아오면 복원
+	// - ReducedTickInterval: Reduced, Dormant에서 쓸 Tick 간격
+	void ApplyActivityTier(EEnemyActivityTier NewTier, float ReducedTickInterval = 0.f);
+
+	// 단계를 낮추면 안 되는 상태: 단계 미사용, 준비 전·사망, 패턴 실행 중, 전투 타깃 있음, 최근 체력 변화
+	bool ShouldStayActive(float RecentHealthChangeSeconds) const;
+
+	// 쉬는 중인지 (경로 이동 없음, 거의 멈춤): Dormant 조건
+	bool IsResting() const;
+
 protected:
 
 	// 메시 물리 해제 → ASC/능력치 → 패턴 → 파생 초기화 → AI 시작
@@ -127,8 +145,18 @@ protected:
 	UFUNCTION(CallInEditor)
 	virtual void ApplyEnemyConfig();
 
+	// BeginPlay 1단계: ASC 소유자 설정, AttributeSet 등록, 설정 데이터 능력치 적용, 체력 변경 구독
+	void InitializeAbilitySystem();
+
+	// BeginPlay 2단계: 설정 데이터의 패턴 세트와 공격 간격을 패턴 컴포넌트에 전달
+	// - 실패하면 false (설정 데이터가 없으면 할 일이 없으므로 true)
+	bool InitializePatternExecution();
+
 	// 사망 판정 직후: 중복 사망을 막고 공격과 AI를 정리한 뒤 사망 연출 시작
 	virtual void BeginDeath();
+
+	// 현재 움직임을 멈추고 이동 불가로 바꾼 뒤 캡슐 충돌 해제: 사망 시작과 시체 전환에서 함께 사용
+	void StopMovementAndDisableCapsule();
 
 	/* 델리게이트 반응 함수 */
 
@@ -140,7 +168,7 @@ protected:
 	// 시체 유지 시간이 끝나 제거되기 직전: 사라짐 연출 재생 후 부모 호출(Destroy)
 	virtual void LifeSpanExpired() override;
 
-	/* Pattern Component */
+	/* 파생 캐릭터 확장 */
 
 	// 기본 초기화 뒤 파생 캐릭터의 추가 설정 준비
 	virtual bool InitializeEnemyExtensions();
@@ -202,11 +230,11 @@ protected :
 
 	// 사망 판정 직후 몸 중심에서 재생할 소리와 이펙트 (비명, 터지는 빛 등)
 	UPROPERTY(EditDefaultsOnly, Category = "Death|Feedback")
-	FEnemyFeedbackCue DeathCue;
+	FFeedbackCue DeathCue;
 
 	// 시체가 사라지는 순간 재생할 소리와 이펙트 (연기 펑 등)
 	UPROPERTY(EditDefaultsOnly, Category = "Death|Feedback")
-	FEnemyFeedbackCue CorpseVanishCue;
+	FFeedbackCue CorpseVanishCue;
 
 	// 사망 연출이 끝난 뒤 시체가 남아 있는 시간
 	UPROPERTY(EditDefaultsOnly, Category = "Death", meta = (ClampMin = "0.0", Units = "s"))
@@ -216,8 +244,35 @@ protected :
 	UPROPERTY(EditDefaultsOnly, Category = "Push", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float PlayerPushMultiplier = 1.f;	// 보스는 0으로 설정하기
 
+	/* 활동 단계 */
+
+	// 멀리 있거나 안 보일 때 갱신을 줄일지 (보스는 전투 매니저가 직접 다루므로 끔)
+	UPROPERTY(EditDefaultsOnly, Category = "Activity")
+	bool bAllowActivityTiers = true;
+
 private :
 	
 	float BaseMoveSpeed = 0.f;	// ApplyEnemyConfig에서 EnemyConfig->MoveSpeed 저장
+
+	/* 활동 단계 */
+
+	// 현재 활동 단계
+	EEnemyActivityTier ActivityTier = EEnemyActivityTier::Active;
+
+	// 마지막으로 체력이 바뀐 시각 (피해 직후 Active 유지)
+	double LastHealthChangedTime = -1.0;
+
+	// Active를 떠나기 전의 Tick 간격 (Active로 돌아오면 복원)
+	float ActiveActorTickInterval = 0.f;
+	float ActiveMovementTickInterval = 0.f;
+	float ActiveControllerTickInterval = 0.f;
+
+	// Dormant에서 멈춘 것 (이 단계가 멈춘 것만 되돌림)
+	bool bActivityStoppedMovementTick = false;
+	bool bActivityPausedLogic = false;
+
+	// 머리 위 체력바 (BP에서 붙인 경우만, 없으면 nullptr)
+	UPROPERTY(Transient)
+	TObjectPtr<UEnemyOverheadHealthBarComponent> OverheadHealthBar;
 
 };

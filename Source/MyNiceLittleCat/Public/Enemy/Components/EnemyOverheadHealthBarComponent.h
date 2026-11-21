@@ -3,6 +3,7 @@
 * 작성자: 전선현
 * 작성 일자: 2026.10.30.
 * 수정 일자: 2026.11.17. (주석 정리)
+* 수정 일자: 2026.11.20. (활동 단계에 따라 Tick 켜고 끄기)
 * Enemy 머리 위 체력바 위젯 컴포넌트
 * - 위젯(UEnemyOverheadHealthBarWidget)에 소유 Enemy의 체력을 연결하고, 카메라를 향해 회전
 * - 사망 시작 시 숨김, 체력이 바뀔 때만 다시 그림 (bRedrawOnlyOnChange)
@@ -35,6 +36,9 @@ public :
 	// 체력 숫자 표시 여부 변경 후 다시 그리기 요청
 	UFUNCTION(BlueprintCallable, Category = "HealthBar")
 	void SetShowHealthText(bool bShow);
+
+	// 활동 단계(Reduced, Dormant)에서 Tick을 끄고 Active에서 다시 켬: 사망했거나 위젯이 없으면 계속 꺼 둠
+	void SetActivityTickEnabled(bool bEnabled);
 
 protected :
 

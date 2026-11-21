@@ -93,7 +93,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BombDrop|FX")
 	TObjectPtr<USoundBase> DropSound;
 
-	bool IsValidConfiguration() const;
+	virtual bool IsValidConfiguration() const override;
+	virtual bool FitsExecutionTime(float MaxExecutionSeconds) const override;
 	float GetExecutionSeconds() const;
 
 	// DropHeight에서 DropSpeed로 떨어질 때 땅에 닿기까지 시간 (GravityZ는 음수)

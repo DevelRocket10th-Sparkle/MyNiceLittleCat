@@ -2,6 +2,10 @@
 
 
 #include "Cinematics/CinematicTypes.h"
+#include "Cinematics/CinematicLog.h"
+
+DEFINE_LOG_CATEGORY(LogCinematic);
+DEFINE_LOG_CATEGORY(LogStage);
 
 FCinematicMarkerArgs::FCinematicMarkerArgs(const FString& Label)
 {

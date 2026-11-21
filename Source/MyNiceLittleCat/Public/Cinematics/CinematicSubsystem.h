@@ -2,6 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.11.16.
+* 수정 일자: 2026.11.19. (시퀀스 없는 외부 연출도 컷신 처리를 쓰도록 Begin/EndExternalCutscene 공개)
 * 레벨 시퀀스 재생을 한 곳에서 관리하는 월드 서브시스템
 * - 재생, 바인딩, 컷신 처리(입력/HUD/카메라 가림), 스킵, 제한 시간, 마커 전달, 정리를 담당
 * - 요청자는 "무엇을 재생할지"만 넘기고, 마커/종료 콜백으로 자기 연출만 처리
@@ -18,7 +19,6 @@
 class ALevelSequenceActor;
 class ULevelSequencePlayer;
 class UMovieSceneSequence;
-class UCameraOcclusionComponent;
 class UCinematicSubsystem;
 
 // 시퀀스 플레이어의 OnFinished/OnStop은 매개변수 없는 다이나믹 델리게이트라 어느 재생이 끝났는지 알 수 없음
@@ -140,6 +140,13 @@ public :
 	// 컷신이 하나라도 재생 중인지 확인
 	bool IsCutscenePlaying() const { return ActiveCutsceneCount > 0; }
 
+	/* 외부 연출 */
+
+	// 시퀀스 없이 카메라를 직접 움직이는 연출(출구 차단 등)도 컷신으로 취급: 입력 차단, 가림 정지를 같이 적용
+	// - 참조 횟수 방식이라 Begin/End를 짝으로 호출 (다른 컷신이나 잠금과 겹쳐도 마지막 End에서만 해제)
+	void BeginExternalCutscene() { BeginCutsceneEffects(); }
+	void EndExternalCutscene() { EndCutsceneEffects(); }
+
 	// 컷신 시작/종료 알림: 입력 차단 등 서브시스템이 모르는 처리는 구독자가 담당
 	// - 구독 시점에 이미 컷신 중일 수 있으므로 구독 직후 IsCutscenePlaying()으로 현재 상태를 맞출 것
 	FOnCutsceneStateChanged OnCutsceneStateChanged;
@@ -210,7 +217,4 @@ private :
 
 	// 재생 중인 컷신 수
 	int32 ActiveCutsceneCount = 0;
-
-	// 컷신 동안 일시 정지한 플레이어 카메라 가림 컴포넌트
-	TWeakObjectPtr<UCameraOcclusionComponent> SuspendedOcclusion;
 };

@@ -2,23 +2,30 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.11.17.
+* 수정 일자: 2026.11.20. (문은 UStageDoorControlComponent, Event·Cue 마커는 UCinematicMarkerEffectsComponent로 분리,
+*            처치 후 엔딩 컷·첫 페이즈 시작 훅·등장 전 보스 숨기기를 Stage3에서 베이스로)
+* 수정 일자: 2026.11.21. (옮기기 전 설정과 PostLoad 삭제: 연출 담당자가 있는 레벨을 모두 새 형식으로 다시 저장)
 * 보스방 레벨 연출 담당의 공통 베이스 (레벨 배치 액터, 보스방 하나당 하나)
 * - 보스방 매니저에 연출 담당자로 등록, 등장 컷 → 전투 시작, 페이즈 전환 컷 → 아레나 진입 대기 → 다음 페이즈
-* - 공통 마커 처리: Door:<번호>:Open|Close[:초], Door:<번호>:Lock|Unlock, Event:<이름>[:Off], Cue:<이름>
-* - Cue:<이름>: CinematicCues에 등록한 소리/이펙트 재생 (시퀀스를 다시 생성해도 레벨의 연출 설정은 유지)
+* - 공통 마커: Door:<번호>:…(DoorControl), Event:<이름>[:Off]·Cue:<이름>(MarkerEffects), Collapse:Player
+* - 처치 후 엔딩 컷(EndingSequence): 다음 틱에 시작, 엔딩 BGM, 컷 뒤 검은 화면 유지 후 다음 레벨
+* - 연출 소리·이펙트를 둘 곳 (2026.11.20. 규칙)
+*   시퀀스 안에서만 나는 일회성 소리·화면 연출 → 시퀀스 트랙 (Sequencer에서 타이밍을 보며 맞춤)
+*   보스·플레이어·레벨 액터에 붙거나 리셋·스킵 때 멈춰야 하는 효과 → Cue: 마커 + MarkerEffects의 CinematicCues
+*   패턴·적의 효과 → 패턴 실행 설정·적 BP의 FFeedbackCue
 * - 문은 연출 중에만 강제하고, 초기화·처치 때 강제를 풀어 문 자체 규칙(신호, 플레이어, 잠금)에 돌려줌
 * - 페이즈가 끝난 방의 문(DoorsFreedOnPhaseEnd)과 처치 후의 문은 플레이어에게 넘김 (잠금 해제 + 여닫기), 초기화 때 원래대로
 * - 스테이지마다 다른 부분은 파생 클래스(C++ 또는 BP)가 아래 확장 지점에서 처리
 *
 * 확장 지점 (BlueprintNativeEvent: C++ override 또는 BP 이벤트로 구현)
-*   OnBossReady            보스 생성 직후 (등장 전 숨김 등)
+*   OnBossReady            보스 생성 직후
 *   CanBeginIntro          등장 컷을 시작할 수 있는 단계인지
-*   OnIntroStarting        등장 컷 직전 (보스 보이기 등)
+*   OnIntroStarting        등장 컷 직전
 *   OnIntroFinished        등장 컷 종료 후, 전투 시작 직전 (문 닫기 등)
 *   OnEncounterStarted     전투 시작 성공 후
 *   OnPhaseStagingBegin    페이즈 전환 컷 시작 시 (효과, 데칼)
 *   OnPhaseStagingFinished 페이즈 전환 컷 종료 시 (보스 외형)
-*   OnStagePhaseStarted    다음 페이즈가 실제로 시작된 뒤
+*   OnStagePhaseStarted    첫 페이즈(전투 시작)와 다음 페이즈가 실제로 시작된 뒤
 *   HandleStageMarker      공통 마커가 아닌 마커
 *   OnCutFinished          스테이지가 직접 재생한 컷(태그) 종료
 *   OnStageReset           전투 초기화 (문 복원 이후)
@@ -31,7 +38,7 @@
 #include "GameFramework/Actor.h"
 
 #include "Cinematics/CinematicTypes.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Cinematics/CinematicMarkerEffectsComponent.h"
 #include "Enemy/Interfaces/BossEncounterDirector.h"
 #include "Enemy/Interfaces/BossPhaseTransitionHandler.h"
 
@@ -40,9 +47,12 @@
 class ABossCharacter;
 class ABossEncounterManager;
 class AGimmickDoor;
+class APetCharacter;
 class APlayerCharacter;
 class ULevelSequence;
 class USceneComponent;
+class USoundBase;
+class UStageDoorControlComponent;
 
 // 페이즈 하나의 공통 연출 설정 (스테이지 전용 설정은 이 구조체를 상속해서 추가)
 USTRUCT(BlueprintType)
@@ -78,63 +88,6 @@ struct FStagePhaseStaging
 	TArray<int32> DoorsFreedOnPhaseEnd;
 };
 
-// 컷 마커 Cue:<이름>의 연출 기준 위치
-UENUM(BlueprintType)
-enum class EStageCueTarget : uint8
-{
-	Stage	UMETA(DisplayName = "Stage (스테이지 로컬 좌표)"),
-	Boss	UMETA(DisplayName = "Boss (보스 메시)"),
-	Player	UMETA(DisplayName = "Player (플레이어 메시)"),
-	Actor	UMETA(DisplayName = "Actor (레벨 액터)")
-};
-
-// 컷 마커 Cue:<이름> 하나가 재생할 소리와 이펙트
-USTRUCT(BlueprintType)
-struct FStageCinematicCue
-{
-	GENERATED_BODY()
-
-	// 재생할 소리와 이펙트
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue")
-	FEnemyFeedbackCue Feedback;
-
-	// 기준 위치: 스테이지 좌표, 보스, 플레이어, 지정 액터
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue")
-	EStageCueTarget Target = EStageCueTarget::Stage;
-
-	// Target이 Actor일 때 기준 액터 (계단 막이, 대문 등 레벨에 배치된 액터)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue", meta = (EditCondition = "Target == EStageCueTarget::Actor", EditConditionHides))
-	TObjectPtr<AActor> TargetActor;
-
-	// Target이 Boss/Player일 때 붙일 메시 소켓 (None이면 메시 원점 = 발밑)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue")
-	FName Socket;
-
-	// Stage: 스테이지 로컬 좌표 / 그 외: 기준 위치에서 기준의 로컬 방향으로 더할 거리
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue")
-	FVector Offset = FVector::ZeroVector;
-
-	// 기준을 따라 움직이도록 붙여서 재생 (Stage 기준은 무시)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue")
-	bool bAttach = false;
-
-	// 붙여서 재생한 반복 연출을 끌 시간 (0이면 이펙트가 스스로 끝날 때까지, 초기화/처치/종료 때는 항상 정지)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue", meta = (ClampMin = "0.0", Units = "s", EditCondition = "bAttach"))
-	float StopAfterSeconds = 0.f;
-
-	// 스킵으로 한꺼번에 전달될 때도 재생할지 (기본: 지나간 연출은 재생하지 않음)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue")
-	bool bPlayWhenSkipped = false;
-};
-
-// 스테이지가 플레이어에게 넘긴 문의 원래 상태 (전투 초기화 때 복원)
-struct FStageDoorDefaultState
-{
-	bool bLocked = false;
-	bool bPlayerCanToggle = false;
-	bool bActivated = false;
-};
-
 UCLASS(Abstract, Blueprintable)
 class MYNICELITTLECAT_API AStageEncounterDirector : public AActor,
 	public IBossEncounterDirector, public IBossPhaseTransitionHandler
@@ -153,6 +106,9 @@ public :
 	virtual void OnEncounterReset() override;
 	virtual void OnEncounterCleared() override;
 
+	// 엔딩 컷이 있으면 처치 후 레벨 이동을 엔딩이 끝날 때까지 미룸
+	virtual bool HoldsLevelAfterDefeat() const override;
+
 	/* IBossPhaseTransitionHandler */
 
 	virtual bool BeginPhaseTransition(const FBossPhaseTransitionContext& Context) override;
@@ -161,7 +117,7 @@ public :
 
 	/* 파생 클래스와 BP가 쓰는 도우미 */
 
-	// 문 열기/닫기: 연출이 문 상태를 강제 (Duration이 0 이하면 즉시, 소리 없음)
+	// 문 열기/닫기: 연출이 문 상태를 강제 (Duration이 0 이하면 즉시, 소리 없음) → DoorControl
 	UFUNCTION(BlueprintCallable, Category = "Stage|Doors")
 	void SetDoor(int32 DoorIndex, bool bOpen, float Duration);
 
@@ -192,6 +148,10 @@ public :
 
 	// 스테이지(레벨 인스턴스) 변환: 시퀀스 키와 진입 영역의 좌표계
 	FTransform GetStageTransform() const;
+
+	// 문 제어와 마커 효과 컴포넌트
+	UStageDoorControlComponent* GetDoorControl() const { return DoorControl; }
+	UCinematicMarkerEffectsComponent* GetMarkerEffects() const { return MarkerEffects; }
 
 protected :
 
@@ -243,12 +203,13 @@ protected :
 	void OnStagePhaseStarted(FName PhaseId, ABossCharacter* Boss);
 	virtual void OnStagePhaseStarted_Implementation(FName PhaseId, ABossCharacter* Boss) {}
 
-	// 공통 마커(Door, Event)가 아닌 마커: 처리했으면 true
+	// 공통 마커(Door, Event, Cue, Collapse)가 아닌 마커: 처리했으면 true
 	// - Marker.bReachedByPlayback == false면 스킵으로 한꺼번에 온 마커 → 애니메이션 없이 최종 상태만
 	UFUNCTION(BlueprintNativeEvent, Category = "Stage|Events")
 	bool HandleStageMarker(const FCinematicMarker& Marker);
 	virtual bool HandleStageMarker_Implementation(const FCinematicMarker& Marker) { return false; }
 
+	// 스테이지 전용 컷 종료 (엔딩 컷은 베이스가 처리)
 	UFUNCTION(BlueprintNativeEvent, Category = "Stage|Events")
 	void OnCutFinished(FName CutTag);
 	virtual void OnCutFinished_Implementation(FName CutTag) {}
@@ -297,26 +258,44 @@ private :
 	// 진행 중인 전환 상태 초기화
 	void ClearActiveTransition();
 
-	/* 공통 마커 */
+	// 등장 컷 전에는 보스를 숨김 (bHideBossUntilIntro)
+	void HideBossUntilIntro();
 
-	void HandleDoorMarker(const FCinematicMarkerArgs& Args, bool bInstant);
-	void HandleEventMarker(const FCinematicMarkerArgs& Args);
-	void HandleCueMarker(const FCinematicMarkerArgs& Args, bool bReachedByPlayback);
+	/* 엔딩 */
 
-	// 붙여서 재생 중인 컷 연출 정지 (초기화, 처치, 종료)
-	void StopCinematicCues();
+	// 처치 다음 틱: 실제 보스 숨김, 펫 AI 정지, 엔딩 BGM, 엔딩 컷 재생
+	void StartEnding();
+
+	// 엔딩 컷 종료 후 검은 화면 유지 시간이 지나면 다음 레벨로
+	// - 다음 레벨이 없으면 화면 페이드와 펫 AI를 되돌림 (검은 화면에 멈추지 않게)
+	void FinishEnding();
+
+	// 보스방에 엔딩 뒤 열 다음 레벨이 지정되어 있는지
+	bool HasLevelAfterEnding() const;
+
+	// 플레이어의 파트너 펫 (없으면 nullptr)
+	APetCharacter* FindPartnerPet() const;
 
 protected :
 
-	// 공통 컷 태그: 등장, 페이즈 전환 (스테이지 전용 컷은 다른 이름 사용)
+	// 공통 컷 태그: 등장, 페이즈 전환, 엔딩 (스테이지 전용 컷은 다른 이름 사용)
 	static const FName IntroCutTag;
 	static const FName PhaseTransitionCutTag;
+	static const FName EndingCutTag;
 
 	/* 컴포넌트 */
 
 	// 배치용 루트: Director 위치는 동작에 영향 없음 (판정은 모두 레벨 원점 기준)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stage")
 	TObjectPtr<USceneComponent> Root;
+
+	// 스테이지 문 목록과 Door 마커
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stage")
+	TObjectPtr<UStageDoorControlComponent> DoorControl;
+
+	// Event·Cue 마커 (이벤트 대상, 연출 소리·이펙트)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stage")
+	TObjectPtr<UCinematicMarkerEffectsComponent> MarkerEffects;
 
 	/* 보스방 */
 
@@ -332,41 +311,32 @@ protected :
 	UPROPERTY(EditInstanceOnly, Category = "Stage")
 	FName PlayerBindingTag = TEXT("Player");
 
+	// 등장 컷 전에는 보스를 숨김 (보스가 미리 생성되는 보스방에서 등장 컷 전 노출 방지)
+	UPROPERTY(EditAnywhere, Category = "Stage")
+	bool bHideBossUntilIntro = false;
+
 	// 페이즈별 공통 연출 설정 (파생 구조체를 쓰는 스테이지는 숨기고 자기 맵 사용)
 	UPROPERTY(EditInstanceOnly, Category = "Phase Staging")
 	TMap<FName, FStagePhaseStaging> PhaseStagings;
 
-	/* 문 */
+	/* 엔딩 */
 
-	// 스테이지 문 목록 (레벨에 배치된 AGimmickDoor)
-	// - 마커 Door:<번호>의 번호가 이 배열의 인덱스: 삭제된 문 자리는 비워 두어 번호를 유지
-	// - 열림 각도, 기본 시간, 소리(닫힐 때 = Deactivate Sound), 잠금, 플레이어 여닫기는 각 문에서 설정
-	// - 보스 처치 후 열리는 시간은 각 문의 Mover 기본 시간 (문마다 다르게 설정 가능)
-	UPROPERTY(EditInstanceOnly, Category = "Stage|Doors")
-	TArray<TObjectPtr<AGimmickDoor>> Doors;
+	// 보스 처치 후 재생할 엔딩 컷 (비우면 사망 연출 뒤 바로 다음 레벨)
+	// - 시퀀스: 보스 대역(스폰), Player/Pet 태그 바인딩, 마커 Cue:*, Collapse:Player
+	UPROPERTY(EditInstanceOnly, Category = "Stage|Ending")
+	TObjectPtr<ULevelSequence> EndingSequence;
 
-	// 페이즈 시작 시 문이 닫히는 시간
-	UPROPERTY(EditInstanceOnly, Category = "Stage|Doors", meta = (ClampMin = "0.0", Units = "s"))
-	float PhaseDoorCloseSeconds = 0.18f;
+	// 엔딩 컷에서 펫을 연결할 바인딩 태그
+	UPROPERTY(EditInstanceOnly, Category = "Stage|Ending")
+	FName PetBindingTag = TEXT("Pet");
 
-	// 보스 처치 후 Doors 목록의 문을 모두 플레이어에게 넘김 (잠금 해제 + 여닫기 허용)
-	// - 끄면 처치 후 문이 열린 채로만 남고 플레이어 설정(잠금, 여닫기)은 그대로
-	UPROPERTY(EditInstanceOnly, Category = "Stage|Doors")
-	bool bPlayerControlsDoorsAfterClear = true;
+	// 엔딩 동안 이어질 곡 (이벤트 BGM: 존 볼륨보다 우선이라 컷이 다른 BGM 존으로 넘어가도 곡 유지, 비우면 기존 곡)
+	UPROPERTY(EditInstanceOnly, Category = "Stage|Ending")
+	TObjectPtr<USoundBase> EndingBGM;
 
-	/* 마커 이벤트 */
-
-	// 마커 Event:<이름>을 받을 액터: IActivatableInterface 구현 액터 (기믹, 또는 인터페이스를 추가한 BP)
-	// - Event:<이름> → Activate, Event:<이름>:Off → Deactivate
-	// - 스킵하면 종료 시점에 한꺼번에 전달되므로 받는 쪽은 여러 번 와도 안전해야 함 (기믹은 같은 상태면 무시)
-	UPROPERTY(EditInstanceOnly, Category = "Stage|Cinematic")
-	TMap<FName, TObjectPtr<AActor>> EventReceivers;
-
-	// 마커 Cue:<이름>이 재생할 소리와 이펙트 (키: 이름)
-	// - 시퀀스에는 마커만 두고 에셋은 여기서 지정: 시퀀스를 다시 생성해도 연출 설정 유지
-	// - 등록하지 않은 이름의 마커는 무시 (자리만 만들어 둔 마커)
-	UPROPERTY(EditInstanceOnly, Category = "Stage|Cinematic")
-	TMap<FName, FStageCinematicCue> CinematicCues;
+	// 엔딩 컷이 끝난 뒤(페이드 아웃 상태) 다음 레벨로 넘어가기 전 대기 시간
+	UPROPERTY(EditInstanceOnly, Category = "Stage|Ending", meta = (ClampMin = "0.0", Units = "s"))
+	float EndingBlackHoldSeconds = 1.f;
 
 private :
 
@@ -384,12 +354,14 @@ private :
 	// 진행 중인 전환에서 끝나는 페이즈 (그 방의 문을 다음 페이즈 시작 때 넘김)
 	FName ActiveTransitionFromPhaseId;
 
-	// 플레이어에게 넘긴 문과 원래 상태 (전투 초기화 때 복원)
-	TMap<TWeakObjectPtr<AGimmickDoor>, FStageDoorDefaultState> FreedDoorDefaults;
-
 	// 아레나 진입 확인 타이머
 	FTimerHandle ArenaEntryTimer;
 
-	// 붙여서 재생 중인 컷 연출
-	TArray<FEnemyFeedbackInstance> ActiveCueInstances;
+	// 등장 컷을 시작했는지 (초기화 때 다시 false)
+	bool bIntroStarted = false;
+
+	// 엔딩: 엔딩 컷에 연결하고 끝난 뒤 되돌릴 펫, 중복 시작 방지, 레벨 이동 대기
+	TWeakObjectPtr<APetCharacter> EndingPet;
+	bool bEndingStarted = false;
+	FTimerHandle EndingTimer;
 };

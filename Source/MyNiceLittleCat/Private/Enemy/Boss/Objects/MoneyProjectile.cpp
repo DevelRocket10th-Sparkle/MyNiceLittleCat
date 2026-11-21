@@ -1,8 +1,9 @@
 #include "Enemy/Boss/Objects/MoneyProjectile.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "Enemy/Combat/EnemyTargetUtils.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 
 AMoneyProjectile::AMoneyProjectile()
@@ -30,6 +31,16 @@ AMoneyProjectile::AMoneyProjectile()
 	InitialLifeSpan = 5.f;
 }
 
+void AMoneyProjectile::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (APawn* Shooter = GetInstigator())
+	{
+		Shooter->MoveIgnoreActorRemove(this);
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void AMoneyProjectile::Launch(const FVector& Direction, float Speed, float Damage, float LifeSeconds)
 {
 	HitDamage = Damage;
@@ -40,13 +51,19 @@ void AMoneyProjectile::Launch(const FVector& Direction, float Speed, float Damag
 	Collision->IgnoreActorWhenMoving(GetOwner(), true);
 	Collision->IgnoreActorWhenMoving(GetInstigator(), true);
 	Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+
+	// 반대 방향도 무시: 보스가 움직이다 자기 탄환에 막혀 멈추는 것 방지 (EndPlay에서 해제)
+	if (APawn* Shooter = GetInstigator())
+	{
+		Shooter->MoveIgnoreActorAdd(this);
+	}
 	Movement->InitialSpeed = Movement->MaxSpeed = Speed;
 	Movement->Velocity = Direction.GetSafeNormal() * Speed;
 	Movement->Activate();
 	SetLifeSpan(LifeSeconds);
 
 	// 외형이 펄럭여도 궤적은 탄환의 진행 방향을 따른다.
-	EnemyFeedback::PlayAttached(TrailCue, Collision);
+	FeedbackCue::PlayAttached(TrailCue, Collision);
 }
 
 void AMoneyProjectile::Tick(float DeltaSeconds)
@@ -72,7 +89,7 @@ void AMoneyProjectile::HandleHit(UPrimitiveComponent* HitComponent, AActor* Othe
 	bConsumed = true;
 
 	// 충돌 연출: 맞은 면 바깥쪽을 향하도록
-	EnemyFeedback::PlayAtLocation(this, ImpactCue, Hit.ImpactPoint, Hit.ImpactNormal.Rotation());
+	FeedbackCue::PlayAtLocation(this, ImpactCue, Hit.ImpactPoint, Hit.ImpactNormal.Rotation());
 	
 	// 대상 판정과 피해 전달은 EnemyTargetUtils에 위임 (탄환은 플레이어 타입을 모름)
 	// - 가해자 컨트롤러는 이 탄환의 Instigator(발사한 보스)에서 구함

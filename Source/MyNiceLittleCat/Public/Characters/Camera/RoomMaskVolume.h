@@ -51,6 +51,10 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Room")
 	TObjectPtr<UMaterialParameterCollection> RoomMPC;
 
+	// 이 방 마스크를 쓸지: 끄면 충돌을 끄고 방 판정, 컷어웨이 모두 하지 않음 (예전 "DisableRoomMask" 액터 태그 대신)
+	UPROPERTY(EditAnywhere, Category = "Room")
+	bool bRoomMaskEnabled = true;
+
 	// 방 단위 컷어웨이: 들어오면 카메라 쪽 벽면 (+ 벽에 붙은 소품), 천장, 윗층 전부를 화면에서 숨김
 	// 복도처럼 숨기지 않아야 하는 방만 끄면 됨
 	UPROPERTY(EditAnywhere, Category = "Room|Cutaway")
@@ -67,6 +71,9 @@ private:
 	float GetInsideDepth(const FVector& Point) const;
 	// 겹친 방들 중 플레이어 위치가 가장 깊이 들어간 방 (위치 정보가 없거나 어느 박스에도 없으면 마지막에 들어간 방)
 	static ARoomMaskVolume* SelectRoom();
+
+	// BeginPlay에서 모아 둔 방 박스 범위 (비어 있으면 매번 컴포넌트에서 계산)
+	TArray<FBox> CachedRoomBounds;
 
 	// 플레이어가 들어가 있는 방들 (들어간 순서)
 	static TArray<TWeakObjectPtr<ARoomMaskVolume>> ActiveRooms;

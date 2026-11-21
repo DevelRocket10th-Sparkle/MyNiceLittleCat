@@ -2,7 +2,9 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.16.
+* 수정 일자: 2026.11.20. (요청 종료를 패턴 컴포넌트 알림으로 받음, 실행 중에는 Tick 간격을 늘려 안전 확인만)
 * 공격 요청 후 해당 공격의 종료 대기
+* - 방향 정렬 중에만 매 Tick, 공격이 시작되면 OnPrimaryRequestFinished로 끝을 받음 (엔진 MoveTo Task가 이동 완료 메시지를 받는 방식과 같음)
 */
 
 #pragma once
@@ -15,6 +17,7 @@
 class AEnemyCharacter;
 class UEnemyPatternComponent;
 class AAIController;
+enum class EEnemyPatternResult : uint8;
 
 /**
  * 
@@ -36,7 +39,7 @@ protected :
 		uint8* NodeMemory
 	) override;
 
-	// 요청의 종료 결과를 확인하여 BT Task 완료
+	// 방향 정렬, 요청 종료 안전 확인 (공격 실행 중에는 FallbackCheckSeconds 간격)
 	virtual void TickTask(
 		UBehaviorTreeComponent& OwnerComp,
 		uint8* NodeMemory,
@@ -58,9 +61,15 @@ private :
 	// 이 Task가 소유한 패턴 요청 해제
 	void Cleanup();
 
-	// 선택해 둔 패턴을 재추첨 없이 실행
+	// 선택해 둔 패턴을 재추첨 없이 실행하고 종료 알림 구독
 	// - 실행 직전 조건은 컴포넌트가 재검사
 	bool StartAttack();
+
+	// 실행 중인 요청을 기다리는 동안 Tick 간격을 늘림 (끝은 알림으로 받음)
+	void WaitForRequestEnd(uint8* NodeMemory);
+
+	// 패턴 컴포넌트의 주 패턴 종료 알림: 이 Task의 요청이면 결과로 Task 완료
+	void HandleRequestFinished(int64 RequestId, EEnemyPatternResult Result);
 
 public :
 
@@ -82,6 +91,11 @@ private :
 	TWeakObjectPtr<UEnemyPatternComponent> CachedPatternComp;
 	// 이 Task가 소유한 공격 요청 번호
 	int64 PatternRequestId = 0;
+
+	// 종료 알림으로 Task를 끝낼 BT 컴포넌트
+	TWeakObjectPtr<UBehaviorTreeComponent> CachedOwnerComp;
+	// 종료 알림 구독 핸들
+	FDelegateHandle RequestFinishedHandle;
 
 	TWeakObjectPtr<AEnemyCharacter> CachedEnemy;	// 회전할 Enemy
 	TWeakObjectPtr<AActor> CachedTarget;			// 회전 방향 목표 Target

@@ -5,17 +5,30 @@
 #include "Camera/CameraComponent.h"
 #include "Components/BoxComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 
-#include "Characters/PlayerCharacter.h"
-#include "Characters/PlayerMainController.h"
+#include "Cinematics/CinematicSubsystem.h"
+#include "Frameworks/PlayerLookup.h"
 #include "Frameworks/Save/ProgressFlagGateComponent.h"
+#include "Interfaces/TargetableInterface.h"
 #include "Pet/PetCharacter.h"
 #include "Pet/SpeechBubbleComponent.h"
+
+namespace
+{
+	// 직선 보간 + 위로 볼록한 포물선 (Alpha 0.5에서 ArcHeight만큼 최고점)
+	FVector EvaluateArc(const FVector& Start, const FVector& End, float ArcHeight, float Alpha)
+	{
+		FVector Location = FMath::Lerp(Start, End, Alpha);
+		Location.Z += 4.f * ArcHeight * Alpha * (1.f - Alpha);
+		return Location;
+	}
+}
 
 AAreaExitBlocker::AAreaExitBlocker()
 {
@@ -26,7 +39,7 @@ AAreaExitBlocker::AAreaExitBlocker()
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
 
-	// 보이지 않는 벽: Pawn만 막음 (투사체·카메라는 통과)
+	// 보이지 않는 벽: BlockedChannels만 막음 (OnConstruction·BeginPlay에서 적용)
 	BlockingBox = CreateDefaultSubobject<UBoxComponent>(TEXT("BlockingBox"));
 	BlockingBox->SetupAttachment(SceneRoot);
 	BlockingBox->SetBoxExtent(FVector(50.f, 400.f, 400.f));
@@ -60,9 +73,17 @@ AAreaExitBlocker::AAreaExitBlocker()
 	};
 }
 
+void AAreaExitBlocker::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	ApplyBlockedChannels();
+}
+
 void AAreaExitBlocker::BeginPlay()
 {
 	Super::BeginPlay();
+	// 패키지 빌드에서는 배치된 액터의 OnConstruction이 다시 돌지 않으므로 여기서도 적용
+	ApplyBlockedChannels();
 	TriggerBox->OnComponentBeginOverlap.AddUniqueDynamic(this, &AAreaExitBlocker::HandleTriggerBeginOverlap);
 }
 
@@ -70,8 +91,8 @@ void AAreaExitBlocker::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	TriggerBox->OnComponentBeginOverlap.RemoveDynamic(this, &AAreaExitBlocker::HandleTriggerBeginOverlap);
 	GetWorldTimerManager().ClearTimer(StepTimerHandle);
-	// 연출 도중 제거되면 잠금 상태를 남기지 않음
-	if (bBusy && EndPlayReason == EEndPlayReason::Destroyed)
+	// 연출 도중 제거되거나 레벨이 언로드되면 잠금 상태를 남기지 않음 (월드 종료 시에는 서브시스템이 함께 정리됨)
+	if (bBusy && (EndPlayReason == EEndPlayReason::Destroyed || EndPlayReason == EEndPlayReason::RemovedFromWorld))
 	{
 		FinishSequence();
 	}
@@ -84,15 +105,15 @@ void AAreaExitBlocker::HandleTriggerBeginOverlap(UPrimitiveComponent* Overlapped
 	if (bBusy)
 		return;
 
-	APlayerCharacter* Player = Cast<APlayerCharacter>(OtherActor);
-	if (!Player || !Player->IsPlayerControlled() || Player->GetbIsDead())
+	ACharacter* Player = Cast<ACharacter>(OtherActor);
+	if (!Player || !Player->IsPlayerControlled() || !IsAliveCharacter(Player))
 		return;
 
 	BeginSequence(Player);
 }
 
 // 1) 입력 잠금, 멈춤 → 펫 카메라
-void AAreaExitBlocker::BeginSequence(APlayerCharacter* Player)
+void AAreaExitBlocker::BeginSequence(ACharacter* Player)
 {
 	bBusy = true;
 	ActivePlayer = Player;
@@ -120,7 +141,7 @@ void AAreaExitBlocker::BeginSequence(APlayerCharacter* Player)
 void AAreaExitBlocker::FocusPetCamera()
 {
 	APetCharacter* Pet = ActivePet.Get();
-	APlayerCharacter* Player = ActivePlayer.Get();
+	ACharacter* Player = ActivePlayer.Get();
 	if (!Pet || !Player)
 		return;
 
@@ -150,8 +171,8 @@ void AAreaExitBlocker::FocusPetCamera()
 void AAreaExitBlocker::PlayNextLine()
 {
 	APetCharacter* Pet = ActivePet.Get();
-	APlayerCharacter* Player = ActivePlayer.Get();
-	if (!Player || Player->GetbIsDead())
+	ACharacter* Player = ActivePlayer.Get();
+	if (!IsAliveCharacter(Player))
 	{
 		FinishSequence();
 		return;
@@ -177,9 +198,9 @@ void AAreaExitBlocker::PlayNextLine()
 // 4) 카메라를 플레이어로 되돌리며 복귀 지점까지 포물선 비행
 void AAreaExitBlocker::BeginFlight()
 {
-	APlayerCharacter* Player = ActivePlayer.Get();
+	ACharacter* Player = ActivePlayer.Get();
 	FRotator ReturnRotation;
-	if (!Player || Player->GetbIsDead() || !ResolveReturnLocation(FlightEnd, ReturnRotation))
+	if (!IsAliveCharacter(Player) || !ResolveReturnLocation(FlightEnd, ReturnRotation))
 	{
 		FinishSequence();
 		return;
@@ -219,7 +240,7 @@ void AAreaExitBlocker::Tick(float DeltaSeconds)
 		return;
 	}
 
-	APlayerCharacter* Player = ActivePlayer.Get();
+	ACharacter* Player = ActivePlayer.Get();
 	if (!Player)
 	{
 		FinishSequence();
@@ -229,10 +250,7 @@ void AAreaExitBlocker::Tick(float DeltaSeconds)
 	FlightElapsed += DeltaSeconds;
 	const float Alpha = FMath::Clamp(FlightElapsed / FlightDuration, 0.f, 1.f);
 
-	// 직선 보간 + 위로 볼록한 포물선 (Alpha 0.5에서 최고점)
-	FVector Location = FMath::Lerp(FlightStart, FlightEnd, Alpha);
-	Location.Z += 4.f * FlightArcHeight * Alpha * (1.f - Alpha);
-	Player->SetActorLocation(Location, false, nullptr, ETeleportType::TeleportPhysics);
+	Player->SetActorLocation(EvaluateArc(FlightStart, FlightEnd, FlightArcHeight, Alpha), false, nullptr, ETeleportType::TeleportPhysics);
 
 	if (Alpha >= 1.f)
 	{
@@ -254,7 +272,7 @@ void AAreaExitBlocker::FinishSequence()
 	bFlying = false;
 	SetActorTickEnabled(false);
 
-	APlayerCharacter* Player = ActivePlayer.Get();
+	ACharacter* Player = ActivePlayer.Get();
 	if (Player)
 	{
 		UCharacterMovementComponent* Movement = Player->GetCharacterMovement();
@@ -279,7 +297,7 @@ void AAreaExitBlocker::FinishSequence()
 		}
 		SetBubbleHeightOverridden(false);
 		SetPetLogicPaused(false);
-		if (bTeleportPetAfterLanding && Player && !Player->GetbIsDead())
+		if (bTeleportPetAfterLanding && IsAliveCharacter(Player))
 		{
 			Pet->TeleportToPartner();
 		}
@@ -297,25 +315,26 @@ void AAreaExitBlocker::FinishSequence()
 void AAreaExitBlocker::SetPlayerInputLocked(bool bLocked)
 {
 	if (bInputLocked == bLocked)
+	{
 		return;
+	}
 	bInputLocked = bLocked;
 
-	APlayerController* Controller = ActiveController.Get();
-	APlayerCharacter* Player = ActivePlayer.Get();
-	if (!Controller)
+	// 컷신과 같은 경로로 차단: 컨트롤러가 입력 매핑을 바꾸고(누르고 있던 키는 뗄 때까지 무시) 가림 처리도 멈춤
+	// - DisableInput/EnableInput은 횟수를 세지 않아 화면 전환, 튜토리얼 등 다른 잠금을 풀어 버리므로 쓰지 않음
+	UCinematicSubsystem* Cinematics = GetWorld() ? GetWorld()->GetSubsystem<UCinematicSubsystem>() : nullptr;
+	if (!Cinematics)
+	{
 		return;
+	}
 
 	if (bLocked)
 	{
-		Controller->DisableInput(Controller);
-		if (Player)
-			Player->DisableInput(Controller);
+		Cinematics->BeginExternalCutscene();
 	}
 	else
 	{
-		Controller->EnableInput(Controller);
-		if (Player)
-			Player->EnableInput(Controller);
+		Cinematics->EndExternalCutscene();
 	}
 }
 
@@ -341,12 +360,26 @@ bool AAreaExitBlocker::ResolveReturnLocation(FVector& OutLocation, FRotator& Out
 
 APetCharacter* AAreaExitBlocker::ResolvePet() const
 {
-	if (const APlayerMainController* MainController = Cast<APlayerMainController>(ActiveController.Get()))
+	if (APetCharacter* Pet = PlayerLookup::GetPartnerPet(this))
 	{
-		if (APetCharacter* Pet = MainController->GetPartnerPet())
-			return Pet;
+		return Pet;
 	}
 	return Cast<APetCharacter>(UGameplayStatics::GetActorOfClass(this, APetCharacter::StaticClass()));
+}
+
+void AAreaExitBlocker::ApplyBlockedChannels()
+{
+	BlockingBox->SetCollisionResponseToAllChannels(ECR_Ignore);
+	for (const TEnumAsByte<ECollisionChannel>& Channel : BlockedChannels)
+	{
+		BlockingBox->SetCollisionResponseToChannel(Channel, ECR_Block);
+	}
+}
+
+bool AAreaExitBlocker::IsAliveCharacter(const ACharacter* Character)
+{
+	return IsValid(Character)
+		&& (!Character->Implements<UTargetableInterface>() || ITargetableInterface::Execute_IsTargetAlive(Character));
 }
 
 // 대사 중 펫 AI가 움직이거나 돌아서지 않게 BT 일시정지

@@ -10,7 +10,7 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "Enemy/GAS/Abilities/GA_Enemy_MeleeAttack.h"
 #include "GA_Enemy_RushAttack.generated.h"
 
@@ -72,11 +72,11 @@ protected:
 
 	// 돌진을 시작하는 순간 발밑에서 재생 (박차고 나가는 먼지, 기합 소리)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rush|Feedback")
-	FEnemyFeedbackCue RushStartCue;
+	FFeedbackCue RushStartCue;
 
 	// 돌진하는 동안 몸(RushTrailSocket)에 붙어 반복 재생, 돌진이 끝나면 정지 (반복 이펙트/반복 소리 사용)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rush|Feedback")
-	FEnemyFeedbackCue RushTrailCue;
+	FFeedbackCue RushTrailCue;
 
 	// 돌진 반복 연출을 붙일 메시 소켓 (None이면 메시 원점 = 발밑)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rush|Feedback")
@@ -84,14 +84,14 @@ protected:
 
 	// 벽 등 장애물에 막혀 돌진이 멈췄을 때 충돌 지점에서 재생 (쿵 소리, 부스러기)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rush|Feedback")
-	FEnemyFeedbackCue RushBlockedCue;
+	FFeedbackCue RushBlockedCue;
 
 private :
 
 	FTimerHandle RushTimer;
 
 	// 돌진 중 재생 중인 반복 연출
-	FEnemyFeedbackInstance RushTrail;
+	FFeedbackInstance RushTrail;
 
 	// 돌진 시작 시 정한 방향과 남은 거리: 시작 후 타깃이 움직여도 목적지를 바꾸지 않음
 	FVector RushDirection = FVector::ZeroVector;

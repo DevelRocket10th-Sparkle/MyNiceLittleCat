@@ -6,7 +6,7 @@
 #include "Items/InventorySubsystem.h"
 #include "Items/ItemData.h"
 #include "Items/ItemSettings.h"
-#include "WIdgets/Item/ItemAcquireWidget.h"
+#include "Widgets/Item/ItemAcquireWidget.h"
 #include "Frameworks/Save/GameProgressSubsystem.h"
 #include "Frameworks/Save/GameProgressSaveGame.h"
 #include "Kismet/GameplayStatics.h"

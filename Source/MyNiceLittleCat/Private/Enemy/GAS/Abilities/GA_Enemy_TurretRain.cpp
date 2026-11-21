@@ -53,7 +53,7 @@ bool UGA_Enemy_TurretRain::CanStartPattern() const
 	// 멤버 Settings는 StartPattern에서 채우므로 지역 변수 이름을 따로 씀 (이름 가림 방지)
 	const UTurretRainPatternSettings* RainSettings = GetPatternSettings<UTurretRainPatternSettings>();
 	if (!RainSettings || !RainSettings->IsValidConfiguration() || !IsValid(ExecutionTarget)
-		|| RainSettings->GetExecutionSeconds() + 0.5f >= ExecutionPattern.MaxExecutionSeconds)
+		|| !RainSettings->FitsExecutionTime(ExecutionPattern.MaxExecutionSeconds))
 	{
 		UE_LOG(LogTemp, Error, TEXT("TurretRain: invalid settings or MaxExecutionSeconds too short (needs > %.1f) on %s"),
 			RainSettings ? RainSettings->GetExecutionSeconds() + 0.5f : 0.f, *GetNameSafe(Enemy.Get()));

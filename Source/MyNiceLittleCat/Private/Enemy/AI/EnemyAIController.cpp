@@ -2,6 +2,7 @@
 
 
 #include "Enemy/AI/EnemyAIController.h"
+#include "Enemy/EnemyLog.h"
 
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
@@ -74,7 +75,7 @@ void AEnemyAIController::TryStartEnemyAI()
 	UBehaviorTree* Tree = IsValid(Config) ? Config->BehaviorTree.Get() : nullptr;
 	if (!IsValid(Tree) || !IsValid(Tree->BlackboardAsset))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[%s] BehaviorTree or Blackboard asset is missing"), *GetNameSafe(Enemy));
+		UE_LOG(LogEnemy, Error, TEXT("[%s] BehaviorTree or Blackboard asset is missing"), *GetNameSafe(Enemy));
 		return;
 	}
 
@@ -97,7 +98,7 @@ void AEnemyAIController::TryStartEnemyAI()
 	// 필수 키가 없으면 BT를 시작하지 않음: "실행 중 조용히 실패"하지 않고 시작할 때 크게 실패
 	if (!CacheBlackboardKeys(*BlackboardComp))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[%s] Blackboard '%s' is missing required keys. AI not started."),
+		UE_LOG(LogEnemy, Error, TEXT("[%s] Blackboard '%s' is missing required keys. AI not started."),
 			*GetNameSafe(Enemy), *GetNameSafe(Tree->BlackboardAsset));
 		return;
 	}
@@ -114,7 +115,7 @@ void AEnemyAIController::TryStartEnemyAI()
 
 	if (!RunBehaviorTree(Tree))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[%s] Failed to run BehaviorTree"), *GetName());
+		UE_LOG(LogEnemy, Warning, TEXT("[%s] Failed to run BehaviorTree"), *GetName());
 		return;
 	}
 
@@ -150,14 +151,12 @@ void AEnemyAIController::SetCombatTarget(AActor* NewTarget)
 	UBlackboardComponent* BlackboardComp = GetBlackboardComponent();
 	if (!IsValid(BlackboardComp))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[%s] SetCombatTarget: Blackboard is missing"), *GetName());
+		UE_LOG(LogEnemy, Warning, TEXT("[%s] SetCombatTarget: Blackboard is missing"), *GetName());
 		return;
 	}
 
-	// BT 시작 전(튜토리얼처럼 빙의 직후 지정)에도 동작하도록 캐시가 없으면 이름으로 찾음
-	const FBlackboard::FKey Key = TargetActorKey != FBlackboard::InvalidKey
-		? TargetActorKey
-		: BlackboardComp->GetKeyID(EnemyBlackboardKeys::TargetActor);
+	// BT 시작 전(튜토리얼처럼 빙의 직후 지정)에도 동작
+	const FBlackboard::FKey Key = ResolveTargetActorKey(*BlackboardComp);
 	if (Key == FBlackboard::InvalidKey)
 	{
 		return;
@@ -174,9 +173,7 @@ void AEnemyAIController::ClearCombatTarget()
 {
 	if (UBlackboardComponent* BlackboardComp = GetBlackboardComponent())
 	{
-		const FBlackboard::FKey Key = TargetActorKey != FBlackboard::InvalidKey
-			? TargetActorKey
-			: BlackboardComp->GetKeyID(EnemyBlackboardKeys::TargetActor);
+		const FBlackboard::FKey Key = ResolveTargetActorKey(*BlackboardComp);
 		if (Key != FBlackboard::InvalidKey)
 		{
 			BlackboardComp->ClearValue(Key);
@@ -194,10 +191,7 @@ AActor* AEnemyAIController::GetCombatTarget() const
 		return nullptr;
 	}
 
-	const FBlackboard::FKey Key = TargetActorKey != FBlackboard::InvalidKey
-		? TargetActorKey
-		: BlackboardComp->GetKeyID(EnemyBlackboardKeys::TargetActor);
-
+	const FBlackboard::FKey Key = ResolveTargetActorKey(*BlackboardComp);
 	return Key != FBlackboard::InvalidKey
 		? Cast<AActor>(BlackboardComp->GetValue<UBlackboardKeyType_Object>(Key))
 		: nullptr;
@@ -232,9 +226,7 @@ void AEnemyAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulu
 	}
 
 	// 현재 타깃을 놓친 경우에만 해제 → BT가 복귀 분기 선택
-	const UBlackboardComponent* BlackboardComp = GetBlackboardComponent();
-	if (IsValid(BlackboardComp) && TargetActorKey != FBlackboard::InvalidKey
-		&& BlackboardComp->GetValue<UBlackboardKeyType_Object>(TargetActorKey) == DetectedPawn)
+	if (GetCombatTarget() == DetectedPawn)
 	{
 		ClearCombatTarget();
 	}
@@ -265,7 +257,7 @@ void AEnemyAIController::Tick(float DeltaSeconds)
 void AEnemyAIController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
-	UE_LOG(LogTemp, Log, TEXT("[%s] Enemy possessed"), *GetNameSafe(GetPawn()));
+	UE_LOG(LogEnemy, Log, TEXT("[%s] Enemy possessed"), *GetNameSafe(GetPawn()));
 
 	TryStartEnemyAI();
 }
@@ -287,7 +279,7 @@ void AEnemyAIController::OnUnPossess()
 		Enemy->SetWantsToMove(false);
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[%s] Enemy unpossessed"), *GetNameSafe(GetPawn()));
+	UE_LOG(LogEnemy, Log, TEXT("[%s] Enemy unpossessed"), *GetNameSafe(GetPawn()));
 	Super::OnUnPossess();
 }
 
@@ -304,7 +296,7 @@ FBlackboard::FKey AEnemyAIController::FindKey(const UBlackboardComponent& Blackb
 	{
 		if (bRequired)
 		{
-			UE_LOG(LogTemp, Error, TEXT("[Blackboard] '%s' requires key '%s'"), *GetNameSafe(Asset), *KeyName.ToString());
+			UE_LOG(LogEnemy, Error, TEXT("[Blackboard] '%s' requires key '%s'"), *GetNameSafe(Asset), *KeyName.ToString());
 		}
 		return FBlackboard::InvalidKey;
 	}
@@ -312,12 +304,19 @@ FBlackboard::FKey AEnemyAIController::FindKey(const UBlackboardComponent& Blackb
 	// 타입 불일치: 다른 타입 값을 읽고 쓰면 조용히 실패하므로 여기서 차단
 	if (Asset->GetKeyType(KeyId) != ExpectedType)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[Blackboard] '%s' key '%s' must be %s"),
+		UE_LOG(LogEnemy, Error, TEXT("[Blackboard] '%s' key '%s' must be %s"),
 			*GetNameSafe(Asset), *KeyName.ToString(), *GetNameSafe(ExpectedType.Get()));
 		return FBlackboard::InvalidKey;
 	}
 
 	return KeyId;
+}
+
+FBlackboard::FKey AEnemyAIController::ResolveTargetActorKey(const UBlackboardComponent& BlackboardComp) const
+{
+	return TargetActorKey != FBlackboard::InvalidKey
+		? TargetActorKey
+		: BlackboardComp.GetKeyID(EnemyBlackboardKeys::TargetActor);
 }
 
 void AEnemyAIController::SetBlackboardBool(FBlackboard::FKey KeyId, bool bValue)

@@ -137,7 +137,7 @@ void UGA_BossLaserBeam::StartShot()
 
 	// 1단계: 추적
 	Stage = EBossLaserBeamStage::Tracking;
-	ChargeAudio = UGameplayStatics::SpawnSoundAttached(LaserSettings->ChargeSound, Laser);
+	// 충전 연출 (소리 + 이펙트)
 	StartChargeEffect();
 	ShowAimWarning(0.f);
 
@@ -192,9 +192,7 @@ void UGA_BossLaserBeam::HandleLockFinished()
 
 	// 3단계: 발사
 	Stage = EBossLaserBeamStage::Firing;
-	if (IsValid(ChargeAudio)) { ChargeAudio->FadeOut(0.04f, 0.f); }
-	ChargeAudio = nullptr;
-	StopChargeEffect();
+	StopChargeEffect(0.04f);
 	HideAimWarning();
 
 	if (!FMath::IsNearlyEqual(LaserMoveSpeedMultiplier, 1.f))
@@ -205,7 +203,7 @@ void UGA_BossLaserBeam::HandleLockFinished()
 
 	Laser->OnLaserStopped.AddUniqueDynamic(this, &UGA_BossLaserBeam::HandleLaserStopped);
 	Laser->StartLaser(GetBeamTargetLocation(Laser, AimPoint), LaserSettings->FireDuration);
-	FireAudio = UGameplayStatics::SpawnSoundAttached(LaserSettings->FireSound, Laser);
+	FireFeedback = FeedbackCue::PlayAttached(LaserSettings->FireCue, Laser);
 	SetStaffEyeGlow(Laser->IsLaserActive());
 
 	UE_LOG(LogTemp, Log, TEXT("[BossLaser] %s: 발사 (%.2f초, 발사 중 추적 %s)"),
@@ -214,8 +212,7 @@ void UGA_BossLaserBeam::HandleLockFinished()
 
 void UGA_BossLaserBeam::HandleLaserStopped(ULaserBeamComponent* InLaser)
 {
-	if (IsValid(FireAudio)) { FireAudio->FadeOut(0.04f, 0.f); }
-	FireAudio = nullptr;
+	FireFeedback.Stop(0.04f);
 	SetStaffEyeGlow(false);
 	if (IsValid(Laser))
 	{
@@ -276,13 +273,13 @@ void UGA_BossLaserBeam::UpdateAim()
 		return;
 	}
 
-	if (IsValid(ChargeEffectComponent))
+	if (UNiagaraComponent* ChargeEffect = ChargeFeedback.Effect.Get(); ChargeEffect && !LaserSettings->ChargeProgressParameter.IsNone())
 	{
 		const float Duration = LaserSettings->AimTrackTime + LaserSettings->LockDelay;
 		const float Progress = Duration > 0.f
 			? FMath::Clamp(static_cast<float>(GetWorld()->GetTimeSeconds() - ChargeStartTime) / Duration, 0.f, 1.f)
 			: 1.f;
-		ChargeEffectComponent->SetVariableFloat(TEXT("User.ChargeProgress"), Progress);
+		ChargeEffect->SetVariableFloat(LaserSettings->ChargeProgressParameter, Progress);
 	}
 
 	if (Stage == EBossLaserBeamStage::Tracking)
@@ -447,30 +444,20 @@ void UGA_BossLaserBeam::HideAimWarning()
 void UGA_BossLaserBeam::StartChargeEffect()
 {
 	StopChargeEffect();
-	if (!LaserSettings->ChargeEffect || GetWorld()->GetNetMode() == NM_DedicatedServer)
-	{
-		return;
-	}
 
+	// 레이저 발사점에 붙여 재생하고, 진행도 파라미터는 0부터 시작
 	ChargeStartTime = GetWorld()->GetTimeSeconds();
-	ChargeEffectComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
-		LaserSettings->ChargeEffect, Laser, NAME_None, LaserSettings->ChargeEffectOffset,
-		FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset, false, false);
-	if (IsValid(ChargeEffectComponent))
+	ChargeFeedback = FeedbackCue::PlayAttached(LaserSettings->ChargeCue, Laser, NAME_None, LaserSettings->ChargeEffectOffset);
+	if (UNiagaraComponent* ChargeEffect = ChargeFeedback.Effect.Get(); ChargeEffect && !LaserSettings->ChargeProgressParameter.IsNone())
 	{
-		ChargeEffectComponent->SetRelativeScale3D(FVector(LaserSettings->ChargeEffectScale));
-		ChargeEffectComponent->SetVariableFloat(TEXT("User.ChargeProgress"), 0.f);
-		ChargeEffectComponent->Activate(true);
+		ChargeEffect->SetVariableFloat(LaserSettings->ChargeProgressParameter, 0.f);
 	}
 }
 
-void UGA_BossLaserBeam::StopChargeEffect()
+void UGA_BossLaserBeam::StopChargeEffect(float SoundFadeOutSeconds)
 {
-	if (IsValid(ChargeEffectComponent))
-	{
-		ChargeEffectComponent->DestroyComponent();
-	}
-	ChargeEffectComponent = nullptr;
+	// 충전 이펙트는 발사 순간 바로 사라지게 함 (남은 입자를 기다리지 않음)
+	ChargeFeedback.Stop(SoundFadeOutSeconds, true);
 }
 
 void UGA_BossLaserBeam::SetStaffEyeGlow(bool bEnabled)
@@ -516,10 +503,7 @@ void UGA_BossLaserBeam::RestoreMoveSpeed()
 // 부모 EndAbility가 먼저 호출 → 이 정리 뒤에 부모가 이동/회전 잠금 해제, ExecutionTarget/RequestId 등 초기화, Super::EndAbility 진행
 void UGA_BossLaserBeam::StopPattern(bool bWasCancelled)
 {
-	if (IsValid(ChargeAudio)) { ChargeAudio->Stop(); }
-	if (IsValid(FireAudio)) { FireAudio->Stop(); }
-	ChargeAudio = nullptr;
-	FireAudio = nullptr;
+	FireFeedback.Stop(0.f);
 	SetStaffEyeGlow(false);
 	Stage = EBossLaserBeamStage::None;
 	StopChargeEffect();

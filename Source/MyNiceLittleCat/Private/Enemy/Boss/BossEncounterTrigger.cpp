@@ -1,4 +1,5 @@
 #include "Enemy/Boss/BossEncounterTrigger.h"
+#include "Enemy/EnemyLog.h"
 #include "Enemy/Boss/BossEncounterManager.h"
 #include "Characters/PlayerCharacter.h"
 #include "Components/BoxComponent.h"
@@ -29,10 +30,10 @@ void ABossEncounterTrigger::BeginPlay()
 	EncounterManager = ResolveEncounterManager();
 	if (!IsValid(EncounterManager))
 	{
-		UE_LOG(LogTemp, Error, TEXT("Boss encounter trigger has no EncounterManager: %s"), *GetName());
+		UE_LOG(LogEnemy, Error, TEXT("Boss encounter trigger has no EncounterManager: %s"), *GetName());
 		return;
 	}
-	UE_LOG(LogTemp, Log, TEXT("Boss encounter trigger %s -> %s"), *GetName(), *EncounterManager->GetName());
+	UE_LOG(LogEnemy, Log, TEXT("Boss encounter trigger %s -> %s"), *GetName(), *EncounterManager->GetName());
 	TriggerBox->OnComponentBeginOverlap.AddUniqueDynamic(this, &ABossEncounterTrigger::HandleBeginOverlap);
 }
 
@@ -55,7 +56,7 @@ ABossEncounterManager* ABossEncounterTrigger::ResolveEncounterManager() const
 			continue;
 		if (Found)
 		{
-			UE_LOG(LogTemp, Error, TEXT("Multiple encounter managers in trigger level, assign one explicitly: %s"), *GetName());
+			UE_LOG(LogEnemy, Error, TEXT("Multiple encounter managers in trigger level, assign one explicitly: %s"), *GetName());
 			return nullptr;
 		}
 		Found = Manager;

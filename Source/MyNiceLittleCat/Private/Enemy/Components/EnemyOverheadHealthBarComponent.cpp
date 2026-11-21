@@ -2,6 +2,7 @@
 
 
 #include "Enemy/Components/EnemyOverheadHealthBarComponent.h"
+#include "Enemy/EnemyLog.h"
 
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/World.h"
@@ -40,6 +41,14 @@ void UEnemyOverheadHealthBarComponent::SetShowHealthText(bool bShow)
 	RequestRedraw();
 }
 
+void UEnemyOverheadHealthBarComponent::SetActivityTickEnabled(bool bEnabled)
+{
+	const AEnemyCharacter* Enemy = OwnerEnemy.Get();
+	const bool bCanTick = Enemy && Enemy->IsAlive() && IsValid(HealthBarWidget);
+
+	SetComponentTickEnabled(bEnabled && bCanTick);
+}
+
 void UEnemyOverheadHealthBarComponent::HandleHealthChanged(float NewHealth, float MaxHealth)
 {
 	RequestRedraw();
@@ -61,7 +70,7 @@ void UEnemyOverheadHealthBarComponent::BeginPlay()
 	HealthBarWidget = Cast<UEnemyOverheadHealthBarWidget>(GetUserWidgetObject());
 	if (!IsValid(HealthBarWidget))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("%s: Check the overhead Widget Class."), *GetName());
+		UE_LOG(LogEnemy, Warning, TEXT("%s: Check the overhead Widget Class."), *GetName());
 
 		SetVisibility(false);
 		SetComponentTickEnabled(false);
@@ -142,8 +151,8 @@ void UEnemyOverheadHealthBarComponent::TickComponent(float DeltaTime, ELevelTick
 	if (!GetWorld() || !GetWorld()->IsGameWorld())
 		return;
 
-	// 위젯이 항상 플레이어 카메라 방향을 향하도록 회전 갱신
-	if (bFaceCamera && IsVisible())
+	// 위젯이 항상 플레이어 카메라 방향을 향하도록 회전 갱신 (화면에 안 그려지는 체력바는 건너뜀)
+	if (bFaceCamera && IsVisible() && WasRecentlyRendered(0.1f))
 	{
 		UpdateWidgetRotation();
 	}

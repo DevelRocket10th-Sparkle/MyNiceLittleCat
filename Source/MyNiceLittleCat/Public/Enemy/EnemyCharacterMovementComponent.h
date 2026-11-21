@@ -3,6 +3,7 @@
 * 작성자: 전선현
 * 작성 일자: 2026.10.19.
 * 수정 일자: 2026.11.17. (기능별 섹션 구분, 함수 주석 정리)
+* 수정 일자: 2026.11.20. (바닥 탐색 도우미)
 * Enemy 전용 캐릭터 무브먼트 컴포넌트
 * - 비행 높이: 지상 내비 경로를 따라 일정 높이로 비행 (bUseGroundPathForFlight)
 * - 루트 모션: 비행형 루트 모션의 추가 회전 제거와 공격 중 회전 제한
@@ -92,6 +93,9 @@ private :
 
 	// 바닥 기준 목표 높이(HoverHeight)로 천천히 복귀
 	void UpdateFlightHeight(float DeltaTime);
+
+	// 시작 위치에서 아래로 Distance만큼 정적 지형만 탐색 (자기 자신 무시): 비행 높이 기록과 보정에서 함께 사용
+	bool TraceStaticGround(const FVector& Start, float Distance, FHitResult& OutHit) const;
 
 	/* 밀려나기 */
 

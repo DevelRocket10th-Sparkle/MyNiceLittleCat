@@ -11,7 +11,7 @@
 #include "Cinematics/CinematicSubsystem.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "Gimmicks/InteractionVolumeComponent.h"
-#include "WIdgets/Interaction/InteractionPromptWidget.h"
+#include "Widgets/Interaction/InteractionPromptWidget.h"
 #include "Components/WidgetComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"

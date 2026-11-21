@@ -3,6 +3,7 @@
 * 작성자: 전선현
 * 작성 일자: 2026.10.16.
 * 수정 일자: 2026.11.17. (보스 전용 처리를 ABossAIController로 분리, Blackboard 키 검증 추가)
+* 수정 일자: 2026.11.20. (타깃 키 찾기 도우미)
 * 잡몹/보스 공통 AI Controller
 * - BT 시작/종료, 타깃 설정/해제, 시야 인지
 * - 파생 컨트롤러는 가상 함수로 인지 사용 여부, 추가 필수 키, BT 시작 후 처리를 확장
@@ -86,6 +87,9 @@ protected :
 
 	// 캐싱한 키 ID로 Bool 값 기록: 키가 없으면 무시
 	void SetBlackboardBool(FBlackboard::FKey KeyId, bool bValue);
+
+	// 타깃 키 ID: BT 시작 전(튜토리얼처럼 빙의 직후 지정)이라 캐시가 없으면 이름으로 찾음
+	FBlackboard::FKey ResolveTargetActorKey(const UBlackboardComponent& BlackboardComp) const;
 
 	// 시야 인지 갱신: 플레이어 발견 시 타깃 지정, 놓치면 해제
 	UFUNCTION()

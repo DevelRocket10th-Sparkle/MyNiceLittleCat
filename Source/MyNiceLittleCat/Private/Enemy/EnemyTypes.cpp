@@ -2,3 +2,7 @@
 
 
 #include "Enemy/EnemyTypes.h"
+
+#include "Enemy/EnemyLog.h"
+
+DEFINE_LOG_CATEGORY(LogEnemy);

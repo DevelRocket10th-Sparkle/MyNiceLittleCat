@@ -1,4 +1,5 @@
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
+#include "Enemy/EnemyLog.h"
 
 #include "Algo/AllOf.h"
 #include "Components/MeshComponent.h"
@@ -11,10 +12,6 @@
 
 namespace
 {
-	// 판정 소스 이름: 패턴 설정의 SourceName과 같은 값
-	const FName BodySourceName(TEXT("Body"));
-	const FName WeaponSourceName(TEXT("Weapon"));
-
 	// 등록된 Weapon 소스가 없을 때, 필요한 소켓을 모두 가진 부착 메시를 찾음 (둘 이상이면 모호하므로 실패)
 	UMeshComponent* FindAttachedWeapon(
 		USkeletalMeshComponent* BodyMesh,
@@ -29,7 +26,7 @@ namespace
 		TSet<FName> RequiredSockets;
 		for (const UEnemyMeleeTraceSettings* Definition : Definitions)
 		{
-			if (IsValid(Definition) && Definition->SourceName == WeaponSourceName)
+			if (IsValid(Definition) && Definition->SourceName == EnemyMeleeSources::Weapon)
 			{
 				RequiredSockets.Append(Definition->SocketNames);
 			}
@@ -59,7 +56,7 @@ namespace
 
 			if (Weapon)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[%s] Ambiguous melee source Weapon: %s and %s both match. Register the weapon explicitly."),
+				UE_LOG(LogEnemy, Warning, TEXT("[%s] Ambiguous melee source Weapon: %s and %s both match. Register the weapon explicitly."),
 					*GetNameSafe(BodyMesh->GetOwner()), *GetNameSafe(Weapon), *GetNameSafe(Mesh));
 				return nullptr;
 			}
@@ -84,7 +81,7 @@ void UEnemyMeleeTraceComponent::BeginPlay()
 
 	if (AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(GetOwner()))
 	{
-		RegisterHitSource(BodySourceName, Enemy->GetMesh());
+		RegisterHitSource(EnemyMeleeSources::Body, Enemy->GetMesh());
 	}
 }
 
@@ -153,7 +150,7 @@ bool UEnemyMeleeTraceComponent::PrepareAttack(const TArray<TObjectPtr<UEnemyMele
 		if (!IsValid(Definition) || Definition->SocketNames.IsEmpty()
 			|| !FMath::IsFinite(Definition->Radius) || Definition->Radius <= 0.f)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[%s] Invalid melee trace settings"), *GetNameSafe(GetOwner()));
+			UE_LOG(LogEnemy, Warning, TEXT("[%s] Invalid melee trace settings"), *GetNameSafe(GetOwner()));
 			StopAttack();
 			return false;
 		}
@@ -161,7 +158,7 @@ bool UEnemyMeleeTraceComponent::PrepareAttack(const TArray<TObjectPtr<UEnemyMele
 		/* 소스 메시 찾기 */
 
 		UMeshComponent* Mesh = GetHitSource(Definition->SourceName);
-		if (!IsValid(Mesh) && Definition->SourceName == WeaponSourceName)
+		if (!IsValid(Mesh) && Definition->SourceName == EnemyMeleeSources::Weapon)
 		{
 			if (!AutoWeapon)
 			{
@@ -172,7 +169,7 @@ bool UEnemyMeleeTraceComponent::PrepareAttack(const TArray<TObjectPtr<UEnemyMele
 
 		if (!IsValid(Mesh))
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[%s] No melee mesh for source %s"), *GetNameSafe(Enemy), *Definition->SourceName.ToString());
+			UE_LOG(LogEnemy, Warning, TEXT("[%s] No melee mesh for source %s"), *GetNameSafe(Enemy), *Definition->SourceName.ToString());
 			StopAttack();
 			return false;
 		}
@@ -183,7 +180,7 @@ bool UEnemyMeleeTraceComponent::PrepareAttack(const TArray<TObjectPtr<UEnemyMele
 		{
 			if (Socket.IsNone() || !Mesh->DoesSocketExist(Socket))
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[%s] Melee socket missing: %s.%s"),
+				UE_LOG(LogEnemy, Warning, TEXT("[%s] Melee socket missing: %s.%s"),
 					*GetNameSafe(GetOwner()), *Definition->SourceName.ToString(), *Socket.ToString());
 				StopAttack();
 				return false;
@@ -374,7 +371,7 @@ void UEnemyMeleeTraceComponent::SampleSockets()
 		}
 
 		AActor* Target = Hit.GetActor();
-		if (!EnemyTargetUtils::IsAttackableTarget(Target)
+		if (!EnemyTargetUtils::IsHostileTarget(GetOwner(), Target)
 			|| !EnemyTargetUtils::IsHitReceiverComponent(Target, Hit.GetComponent())
 			|| HitActors.Contains(Target))
 		{
@@ -386,29 +383,34 @@ void UEnemyMeleeTraceComponent::SampleSockets()
 	}
 }
 
-void UEnemyMeleeTraceComponent::DrawSweepDebug(const FTracePoint& Point, const FVector& Current) const
+void UEnemyMeleeTraceComponent::DrawSphereSweep(const UWorld* World, const FVector& Start, const FVector& End, float Radius, const FColor& Color)
 {
-	UWorld* World = GetWorld();
-	const FVector SweepDelta = Current - Point.PreviousPosition;
-	
+	const FVector SweepDelta = End - Start;
+
 	// 구를 직선으로 이동하며 검사한 영역은 캡슐 모양
-	DrawDebugSphere(GetWorld(), Current, Point.Radius, 16, FColor::Cyan, false, 0.f);
+	DrawDebugSphere(World, End, Radius, 16, Color, false, 0.f);
 	if (!SweepDelta.IsNearlyZero())
 	{
 		DrawDebugCapsule(
-			GetWorld(),
-			(Point.PreviousPosition + Current) * 0.5f,
-			Point.Radius + SweepDelta.Size() * 0.5f, Point.Radius,
+			World,
+			(Start + End) * 0.5f,
+			Radius + SweepDelta.Size() * 0.5f, Radius,
 			FQuat::FindBetweenNormals(FVector::UpVector, SweepDelta.GetSafeNormal()),
-			FColor::Cyan,
+			Color,
 			false,
 			0.f
 		);
 	}
+}
 
-	DrawDebugLine(GetWorld(), Point.PreviousPosition, Current, FColor::Cyan, false, 0.f);
+void UEnemyMeleeTraceComponent::DrawSweepDebug(const FTracePoint& Point, const FVector& Current) const
+{
+	UWorld* World = GetWorld();
+
+	DrawSphereSweep(World, Point.PreviousPosition, Current, Point.Radius, FColor::Cyan);
+	DrawDebugLine(World, Point.PreviousPosition, Current, FColor::Cyan, false, 0.f);
 	DrawDebugString(
-		GetWorld(),
+		World,
 		Current + FVector(0.f, 0.f, Point.Radius + 8.f),
 		FString::Printf(TEXT("%s.%s (%.1f cm)"),*Point.SourceName.ToString(), *Point.Socket.ToString(), Point.Radius),
 		nullptr,

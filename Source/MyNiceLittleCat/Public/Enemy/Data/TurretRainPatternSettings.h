@@ -88,6 +88,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX", meta = (ClampMin = "0.01"))
 	float DestroyMeshScale = 1.f;
 
-	bool IsValidConfiguration() const;
+	virtual bool IsValidConfiguration() const override;
+	virtual bool FitsExecutionTime(float MaxExecutionSeconds) const override;
 	float GetExecutionSeconds() const;
 };

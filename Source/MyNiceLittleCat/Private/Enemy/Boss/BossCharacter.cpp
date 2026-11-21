@@ -2,6 +2,7 @@
 
 
 #include "Enemy/Boss/BossCharacter.h"
+#include "Enemy/EnemyLog.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
@@ -16,6 +17,12 @@
 ABossCharacter::ABossCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+	// 보스는 화면 밖에서도 레이저 발사점·연출 소켓이 정확해야 하므로 항상 포즈와 본 갱신 (Enemy 기본값은 화면 밖이면 몽타주만)
+	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+
+	// 활동 단계 제외: 보스방 매니저가 전투 시작과 끝을 직접 다룸
+	bAllowActivityTiers = false;
+
 	// 보스 전용 컨트롤러가 Blackboard와 Focus를 담당 (BP에서 다른 컨트롤러로 바꿀 수 있음)
 	AIControllerClass = ABossAIController::StaticClass();
 
@@ -33,7 +40,7 @@ bool ABossCharacter::CanRunEnemyAI() const
 float ABossCharacter::CalculateHealthAfterDamage(float CurrentHealth, float MaxHealth, float Damage) const
 {
 	// 전투 전, 전환 중, 실패 예약 중에는 피해 무시
-	if (!IsAlive() || !IsEncounterActive() || !PhaseComponent->IsActive())
+	if (!IsAlive() || !IsEncounterActive() || !PhaseComponent->IsPhaseActive())
 	{
 		return CurrentHealth;
 	}
@@ -145,9 +152,7 @@ void ABossCharacter::ScheduleEncounterFailure()
 
 	// 실패가 확정된 순간부터 공격, 전환, 기믹이 더 진행하지 않도록 즉시 정리
 	PhaseComponent->StopAndInvalidate();
-	GetPatternComponent()->SetRequestsBlocked(true);
-	GetPatternComponent()->CancelAllRequests();
-	StopPhaseGimmicks();
+	HaltCombatActions();
 
 	// 이 예약 이후 보스가 사망 또는 초기화되면 실행하지 않음
 	const int64 ExpectedGeneration = EncounterGeneration;
@@ -200,7 +205,7 @@ bool ABossCharacter::NotifyPhaseGimmickCompleted(UActorComponent* SourceComponen
 
 bool ABossCharacter::CanBossAct() const
 {
-	return IsEncounterActive() && IsAlive() && PhaseComponent->IsActive();
+	return IsEncounterActive() && IsAlive() && PhaseComponent->IsPhaseActive();
 }
 
 bool ABossCharacter::IsPhaseTransitionInProgress() const
@@ -225,7 +230,7 @@ bool ABossCharacter::InitializeEnemyExtensions()
 {
 	if (!Super::InitializeEnemyExtensions() || !PhaseConfig || !GetPatternComponent()->HasPatterns())
 	{
-		UE_LOG(LogTemp, Error, TEXT("[Boss] %s: PhaseConfig or PatternSet is missing"), *GetName());
+		UE_LOG(LogEnemy, Error, TEXT("[Boss] %s: PhaseConfig or PatternSet is missing"), *GetName());
 		return false;
 	}
 
@@ -292,14 +297,11 @@ void ABossCharacter::HandleTransitionRequested()
 		return;
 	}
 
-	GetPatternComponent()->SetRequestsBlocked(true);
-	// 주 패턴뿐 아니라 보조 패턴과 시작 지연 예약까지 취소 (전환 Task는 IsIdle을 기다림)
-	GetPatternComponent()->CancelAllRequests();
+	// 주 패턴뿐 아니라 보조 패턴과 시작 지연 예약까지 취소 (전환 Task는 바로 IsIdle을 확인하므로 취소는 즉시 끝나야 함)
+	HaltCombatActions();
 
 	// 이전 페이즈의 공격 간격을 새 페이즈 첫 공격에 넘기지 않음
 	GetPatternComponent()->ResetAttackInterval();
-
-	StopPhaseGimmicks();
 
 	if (ABossAIController* AI = GetBossAIController())
 	{
@@ -332,7 +334,7 @@ bool ABossCharacter::HandlePhaseEntered(const FBossPhaseDefinition& Phase)
 	// 기믹 구현이 빠진 배리어는 완료될 수 없으므로 진행하지 않음
 	if (Phase.Kind == EBossPhaseKind::Barrier)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[Boss] %s: missing phase gimmick component for barrier '%s'"),
+		UE_LOG(LogEnemy, Error, TEXT("[Boss] %s: missing phase gimmick component for barrier '%s'"),
 			*GetName(), *Phase.PhaseId.ToString());
 		return false;
 	}
@@ -360,7 +362,7 @@ void ABossCharacter::HandleTransitionFinished(int64 TransitionId, bool bSucceede
 void ABossCharacter::FinishPhaseActivation()
 {
 	// 진입 직후 다음 전환이 이미 요청된 경우(즉시 완료된 기믹)는 공격 차단 유지
-	if (!IsEncounterActive() || !PhaseComponent->IsActive())
+	if (!IsEncounterActive() || !PhaseComponent->IsPhaseActive())
 	{
 		return;
 	}
@@ -399,7 +401,7 @@ bool ABossCharacter::ValidatePhasePatterns() const
 		{
 			if (!Patterns->HasPattern(Entry.PatternId))
 			{
-				UE_LOG(LogTemp, Error, TEXT("[Boss] %s: phase '%s' uses unknown pattern '%s'"),
+				UE_LOG(LogEnemy, Error, TEXT("[Boss] %s: phase '%s' uses unknown pattern '%s'"),
 					*GetName(), *Phase.PhaseId.ToString(), *Entry.PatternId.ToString());
 				return false;
 			}
@@ -410,7 +412,7 @@ bool ABossCharacter::ValidatePhasePatterns() const
 		{
 			if (!Patterns->HasPattern(Entry.PatternId))
 			{
-				UE_LOG(LogTemp, Error, TEXT("[Boss] %s: phase '%s' uses unknown persistent pattern '%s'"),
+				UE_LOG(LogEnemy, Error, TEXT("[Boss] %s: phase '%s' uses unknown persistent pattern '%s'"),
 					*GetName(), *Phase.PhaseId.ToString(), *Entry.PatternId.ToString());
 				return false;
 			}
@@ -435,7 +437,7 @@ bool ABossCharacter::ValidatePhasePatterns() const
 
 		if (!bUsableAtArrival)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[Boss] Phase '%s': no auto pattern usable at chase acceptance radius %.0f (check MinRange/MaxRange)"),
+			UE_LOG(LogEnemy, Warning, TEXT("[Boss] Phase '%s': no auto pattern usable at chase acceptance radius %.0f (check MinRange/MaxRange)"),
 				*Phase.PhaseId.ToString(), Radius);
 		}
 	}
@@ -460,7 +462,7 @@ bool ABossCharacter::InitializeGimmickConnection()
 
 		if (PhaseGimmickComponent)
 		{
-			UE_LOG(LogTemp, Error, TEXT("[Boss] %s requires at most one phase gimmick component"), *GetName());
+			UE_LOG(LogEnemy, Error, TEXT("[Boss] %s requires at most one phase gimmick component"), *GetName());
 			return false;
 		}
 
@@ -483,6 +485,14 @@ bool ABossCharacter::InitializeGimmickConnection()
 }
 
 // 정지 상태를 무효화한 뒤 호출하므로 정리 중 발생한 완료 알림도 페이즈를 진행시키지 못함
+// 새 공격 요청을 막고 진행 중인 패턴과 페이즈 기믹 정리
+void ABossCharacter::HaltCombatActions()
+{
+	GetPatternComponent()->SetRequestsBlocked(true);
+	GetPatternComponent()->CancelAllRequests();
+	StopPhaseGimmicks();
+}
+
 void ABossCharacter::StopPhaseGimmicks()
 {
 	if (HasAuthority() && IsValid(PhaseGimmickComponent))
@@ -502,7 +512,7 @@ void ABossCharacter::TeleportToFirstWaypoint(const FBossPhaseDefinition& Phase)
 	FVector Point;
 	if (!PhaseComponent->GetCurrentWaypoint(Point))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Boss] %s: no first waypoint for '%s', route '%s'. Teleport skipped."),
+		UE_LOG(LogEnemy, Warning, TEXT("[Boss] %s: no first waypoint for '%s', route '%s'. Teleport skipped."),
 			*GetName(), *Phase.PhaseId.ToString(), *Phase.MovementRouteId.ToString());
 		return;
 	}

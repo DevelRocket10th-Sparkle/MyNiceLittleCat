@@ -11,11 +11,18 @@
 
 #include "Enemy/AI/EnemyAIController.h"
 
+namespace
+{
+	// 공격 실행 중 안전 확인 간격: 끝은 알림으로 받고, 알림이 없는 경우(사망 직후 등)만 이 간격으로 확인
+	constexpr float FallbackCheckSeconds = 0.5f;
+}
+
 UBTTask_Enemy_ExecuteAttack::UBTTask_Enemy_ExecuteAttack()
 {
 	NodeName = TEXT("Execute Enemy Attack");
 	bCreateNodeInstance = true;
 	bNotifyTick = true;
+	bTickIntervals = true;	// 공격 실행 중에는 SetNextTickTime으로 Tick 간격을 늘림
 	bNotifyTaskFinished = true;
 	BlackboardKey.AddObjectFilter(this,
 		GET_MEMBER_NAME_CHECKED(UBTTask_Enemy_ExecuteAttack, BlackboardKey), AActor::StaticClass());
@@ -24,6 +31,9 @@ UBTTask_Enemy_ExecuteAttack::UBTTask_Enemy_ExecuteAttack()
 EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
 	Cleanup();
+
+	// 이전 실행에서 늘려 둔 Tick 간격이 남지 않게 초기화 (방향 정렬은 매 Tick 확인)
+	SetNextTickTime(NodeMemory, 0.f);
 
 	// AIC 찾기
 	AAIController* AI = OwnerComp.GetAIOwner();
@@ -44,6 +54,7 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeCompon
 
 	CachedEnemy = Enemy;
 	CachedAI = AI;
+	CachedOwnerComp = &OwnerComp;
 	CachedPatternComp = Enemy->GetPatternComponent();	// 패턴 컴포넌트 찾기
 
 	// Pattern 정보 없으면 실패 처리
@@ -102,6 +113,7 @@ EBTNodeResult::Type UBTTask_Enemy_ExecuteAttack::ExecuteTask(UBehaviorTreeCompon
 			return EBTNodeResult::Failed;
 		}
 
+		WaitForRequestEnd(NodeMemory);
 		return EBTNodeResult::InProgress;
 	}
 
@@ -175,10 +187,14 @@ void UBTTask_Enemy_ExecuteAttack::TickTask(UBehaviorTreeComponent& OwnerComp, ui
 		{
 			Cleanup();
 			FinishLatentTask(OwnerComp, EBTNodeResult::Failed);
+			return;
 		}
-	
+
+		WaitForRequestEnd(NodeMemory);
 		return;
 	}
+
+	/* 안전 확인: 끝은 HandleRequestFinished가 받음 (알림을 놓친 경우만 여기서 정리) */
 
 	// Running에는 GA 실행 뿐만 아니라 후딜 대기도 포함
 	// Completed가 되어야 공격 Task를 성공 종료
@@ -187,7 +203,10 @@ void UBTTask_Enemy_ExecuteAttack::TickTask(UBehaviorTreeComponent& OwnerComp, ui
 		: EEnemyPatternResult::Invalid;
 
 	if (Result == EEnemyPatternResult::Running)
+	{
+		WaitForRequestEnd(NodeMemory);
 		return;
+	}
 
 	Cleanup();
 	FinishLatentTask(
@@ -215,6 +234,9 @@ void UBTTask_Enemy_ExecuteAttack::Cleanup()
 	// 진행 중인 요청은 취소하고, 끝난 요청은 결과 보관 해제
 	if (CachedPatternComp.IsValid())
 	{
+		// 구독을 먼저 해제: 아래 취소로 오는 종료 알림을 이 Task가 다시 받지 않음
+		CachedPatternComp->OnPrimaryRequestFinished.Remove(RequestFinishedHandle);
+
 		CachedPatternComp->ReleaseRequest(PatternRequestId);
 
 		// 실행 전 실패, 회전 정렬 중단 시에도 예약된 패턴의 이동 예외가 남지 않도록 해제
@@ -239,6 +261,8 @@ void UBTTask_Enemy_ExecuteAttack::Cleanup()
 	bOwnsAttackFacingFocus = false;
 	
 	// 캐싱 해놓은 것들 초기화
+	RequestFinishedHandle.Reset();
+	CachedOwnerComp.Reset();
 	CachedPatternComp.Reset();
 	CachedEnemy.Reset();
 	CachedTarget.Reset();
@@ -260,5 +284,39 @@ bool UBTTask_Enemy_ExecuteAttack::StartAttack()
 
 	// 사전에 선택한 패턴을 재추첨 없이 실행
 	// -> 회전을 기다리는 동안 조건이 바뀔 수 있으므로 TryStartPattern에서 재검사
-	return CachedPatternComp->TryStartPattern(SelectedPatternId, CachedTarget.Get(), PatternRequestId);
+	if (!CachedPatternComp->TryStartPattern(SelectedPatternId, CachedTarget.Get(), PatternRequestId))
+	{
+		return false;
+	}
+
+	// 요청 번호가 정해진 뒤 종료 알림 구독
+	RequestFinishedHandle = CachedPatternComp->OnPrimaryRequestFinished.AddUObject(
+		this, &UBTTask_Enemy_ExecuteAttack::HandleRequestFinished);
+	return true;
+}
+
+void UBTTask_Enemy_ExecuteAttack::WaitForRequestEnd(uint8* NodeMemory)
+{
+	// 시작하자마자 끝난 요청(구독 전에 끝남)은 다음 Tick에서 바로 정리
+	const bool bRunning = CachedPatternComp.IsValid() && CachedPatternComp->IsRequestRunning(PatternRequestId);
+	SetNextTickTime(NodeMemory, bRunning ? FallbackCheckSeconds : 0.f);
+}
+
+void UBTTask_Enemy_ExecuteAttack::HandleRequestFinished(int64 RequestId, EEnemyPatternResult Result)
+{
+	// 다른 요청(이전 실행의 늦은 알림) 무시
+	if (RequestId == 0 || RequestId != PatternRequestId)
+	{
+		return;
+	}
+
+	UBehaviorTreeComponent* OwnerComp = CachedOwnerComp.Get();
+	Cleanup();
+
+	if (OwnerComp)
+	{
+		FinishLatentTask(*OwnerComp, Result == EEnemyPatternResult::Completed
+			? EBTNodeResult::Succeeded
+			: EBTNodeResult::Failed);
+	}
 }

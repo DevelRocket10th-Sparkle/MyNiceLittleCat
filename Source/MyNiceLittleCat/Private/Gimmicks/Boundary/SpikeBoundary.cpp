@@ -12,6 +12,12 @@
 
 #include "Enemy/Combat/EnemyTargetUtils.h"
 
+namespace
+{
+	// 이 액터가 만든 가시 컴포넌트 표시: 다시 만들 때 이전 가시를 찾아 지움 (패키지 빌드에서 Transient 배열이 비어 있어도)
+	const FName GeneratedSpikeTag(TEXT("GeneratedBoundarySpike"));
+}
+
 ASpikeBoundary::ASpikeBoundary()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -118,7 +124,7 @@ void ASpikeBoundary::BuildSpikes()
 		if (IsValid(Component)
 			&& Component != Walls
 			&& (SpikeComponents.Contains(Component)
-				|| Component->ComponentHasTag(TEXT("GeneratedBoundarySpike"))
+				|| Component->ComponentHasTag(GeneratedSpikeTag)
 				|| (Component->CreationMethod == EComponentCreationMethod::UserConstructionScript
 					&& SpikeMeshes.Contains(Component->GetStaticMesh())
 					&& Component->GetCollisionEnabled() == ECollisionEnabled::NoCollision
@@ -145,7 +151,7 @@ void ASpikeBoundary::BuildSpikes()
 		RemoveOwnedComponent(Component);
 		Component->CreationMethod = EComponentCreationMethod::UserConstructionScript;
 		AddOwnedComponent(Component);
-		Component->ComponentTags.Add(TEXT("GeneratedBoundarySpike"));
+		Component->ComponentTags.Add(GeneratedSpikeTag);
 		
 		Component->SetupAttachment(RootComponent);
 		Component->SetStaticMesh(Mesh);

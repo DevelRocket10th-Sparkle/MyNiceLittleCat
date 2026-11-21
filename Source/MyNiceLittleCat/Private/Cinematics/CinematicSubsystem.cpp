@@ -2,12 +2,11 @@
 
 
 #include "Cinematics/CinematicSubsystem.h"
+#include "Cinematics/CinematicLog.h"
 
 #include "DefaultLevelSequenceInstanceData.h"
 #include "Engine/LevelStreaming.h"
 #include "Engine/World.h"
-#include "GameFramework/Pawn.h"
-#include "Kismet/GameplayStatics.h"
 #include "LevelSequence.h"
 #include "LevelSequenceActor.h"
 #include "LevelSequencePlayer.h"
@@ -17,7 +16,6 @@
 #include "MovieSceneObjectBindingID.h"
 #include "TimerManager.h"
 
-#include "Systems/CameraOcclusionComponent.h"
 
 namespace
 {
@@ -79,7 +77,7 @@ FCinematicHandle UCinematicSubsystem::Play(const FCinematicRequest& Request, FOn
 	// 재생 범위가 없는 시퀀스는 시작하지 않음
 	if (!World || !MovieScene || MovieScene->GetPlaybackRange().IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Cinematic] Invalid sequence: %s"), *GetNameSafe(Sequence));
+		UE_LOG(LogCinematic, Warning, TEXT("[Cinematic] Invalid sequence: %s"), *GetNameSafe(Sequence));
 		return FCinematicHandle();
 	}
 
@@ -103,7 +101,7 @@ FCinematicHandle UCinematicSubsystem::Play(const FCinematicRequest& Request, FOn
 			SequenceActor->Destroy();
 		}
 
-		UE_LOG(LogTemp, Warning, TEXT("[Cinematic] Failed to create player: %s"), *Sequence->GetName());
+		UE_LOG(LogCinematic, Warning, TEXT("[Cinematic] Failed to create player: %s"), *Sequence->GetName());
 		return FCinematicHandle();
 	}
 
@@ -178,16 +176,12 @@ void UCinematicSubsystem::Cancel(FCinematicHandle Handle)
 
 bool UCinematicSubsystem::TrySkipActiveCutscene()
 {
-	// 가장 최근에 시작한 재생부터 확인
-	for (int32 Index = Playbacks.Num() - 1; Index >= 0; --Index)
+	// 안내에 표시되는 대상과 같은 재생을 스킵 (가장 최근에 시작한 스킵 가능 재생)
+	const FCinematicHandle Handle = GetActiveSkippableCutscene();
+	FCinematicPlayback* Found = Handle.IsValid() ? Playbacks.FindByPredicate([&Handle](const FCinematicPlayback& P) { return P.Handle == Handle; }) : nullptr;
+	if (nullptr != Found)
 	{
-		FCinematicPlayback& Playback = Playbacks[Index];
-		if (!Playback.bSkippable || Playback.PendingEndReason.IsSet() || !IsPlayerRunning(Playback.Player))
-		{
-			continue;
-		}
-
-		const FCinematicHandle Handle = Playback.Handle;
+		FCinematicPlayback& Playback = *Found;
 
 		// GoToEndAndStop이 발생시키는 OnStop을 중단으로 기록하지 않도록 리스너를 먼저 해제
 		if (Playback.Listener)
@@ -309,7 +303,6 @@ void UCinematicSubsystem::Deinitialize()
 	}
 
 	ActiveCutsceneCount = 0;
-	SuspendedOcclusion.Reset();
 
 	Super::Deinitialize();
 }
@@ -356,7 +349,7 @@ void UCinematicSubsystem::Tick(float DeltaTime)
 			&& Playback->TimeoutSeconds > 0.f
 			&& Now - Playback->StartWorldSeconds >= Playback->TimeoutSeconds)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[Cinematic] Timed out after %.1fs: %s"),
+			UE_LOG(LogCinematic, Warning, TEXT("[Cinematic] Timed out after %.1fs: %s"),
 				Playback->TimeoutSeconds, *GetNameSafe(Playback->Player ? Playback->Player->GetSequence() : nullptr));
 			Playback->PendingEndReason = ECinematicEndReason::TimedOut;
 		}
@@ -451,7 +444,7 @@ void UCinematicSubsystem::EndPlayback(FCinematicHandle Handle, ECinematicEndReas
 		Playback.OnMarker.ExecuteIfBound(Handle, Marker);
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[Cinematic] Ended (%s)"), *UEnum::GetValueAsString(Reason));
+	UE_LOG(LogCinematic, Log, TEXT("[Cinematic] Ended (%s)"), *UEnum::GetValueAsString(Reason));
 
 	Playback.OnEnded.ExecuteIfBound(Handle, Reason);
 }
@@ -534,7 +527,7 @@ void UCinematicSubsystem::ApplyBindings(ALevelSequenceActor& SequenceActor, ULev
 		UActorComponent* Component = Cast<UActorComponent>(Object);
 		if (!Component || !SequenceActor.BindingOverrides)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[Cinematic] %s: tag '%s' supports only actors and components"),
+			UE_LOG(LogCinematic, Warning, TEXT("[Cinematic] %s: tag '%s' supports only actors and components"),
 				*Sequence.GetName(), *Binding.Tag.ToString());
 			continue;
 		}
@@ -563,15 +556,7 @@ void UCinematicSubsystem::BeginCutsceneEffects()
 		return;
 	}
 
-	// 컷신 카메라가 벽 너머를 비출 때 플레이어 기준 가림 처리가 화면을 가리지 않도록 일시 정지
-	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
-	UCameraOcclusionComponent* Occlusion = PlayerPawn ? PlayerPawn->FindComponentByClass<UCameraOcclusionComponent>() : nullptr;
-	if (Occlusion)
-	{
-		SuspendedOcclusion = Occlusion;
-		Occlusion->SetOcclusionSuspended(true);
-	}
-
+	// 입력 차단·카메라 가림 정지 등은 구독자가 각자 처리
 	OnCutsceneStateChanged.Broadcast(true);
 }
 
@@ -587,12 +572,6 @@ void UCinematicSubsystem::EndCutsceneEffects()
 	{
 		return;
 	}
-
-	if (UCameraOcclusionComponent* Occlusion = SuspendedOcclusion.Get())
-	{
-		Occlusion->SetOcclusionSuspended(false);
-	}
-	SuspendedOcclusion.Reset();
 
 	OnCutsceneStateChanged.Broadcast(false);
 }

@@ -1,4 +1,5 @@
 #include "Enemy/GAS/Abilities/GA_Enemy_MeleeAttack.h"
+#include "Enemy/EnemyLog.h"
 
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
@@ -8,7 +9,7 @@
 #include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
 
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "Enemy/Combat/EnemyTargetUtils.h"
 #include "Enemy/Data/EnemyMeleePatternSettings.h"
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
@@ -39,7 +40,7 @@ bool UGA_Enemy_MeleeAttack::StartPattern()
 
 	if (!MeleeTraceComponent.IsValid() || !MeleeTraceComponent->PrepareAttack(MeleeSettings->MeleeTraceSettings, RequestId))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[%s] Pattern %s has no valid melee traces"),
+		UE_LOG(LogEnemy, Warning, TEXT("[%s] Pattern %s has no valid melee traces"),
 			*Enemy->GetName(), *ExecutionPattern.PatternId.ToString());
 		return false;
 	}
@@ -96,8 +97,7 @@ bool UGA_Enemy_MeleeAttack::StartPattern()
 
 void UGA_Enemy_MeleeAttack::StopPattern(bool bWasCancelled)
 {
-	if (IsValid(SwingAudio)) { SwingAudio->Stop(); }
-	SwingAudio = nullptr;
+	SwingFeedback.Stop(0.f);
 	if (MeleeTraceComponent.IsValid())
 	{
 		MeleeTraceComponent->OnTargetHit.Remove(TargetHitHandle);
@@ -118,7 +118,7 @@ void UGA_Enemy_MeleeAttack::HandleTargetHit(const FHitResult& Hit)
 		return;
 
 	AActor* Target = Hit.GetActor();
-	if (!EnemyTargetUtils::IsAttackableTarget(Target) || DamagedActors.Contains(Target))
+	if (!EnemyTargetUtils::IsHostileTarget(GetAvatarActorFromActorInfo(), Target) || DamagedActors.Contains(Target))
 		return;
 
 	// 벽 너머 타격 방지: 시야가 필요한 패턴은 맞은 순간에도 시야 확인
@@ -146,7 +146,7 @@ void UGA_Enemy_MeleeAttack::HandleTargetHit(const FHitResult& Hit)
 	if (MeleeSettings)
 	{
 		const FVector ImpactPoint = Hit.bStartPenetrating || Hit.ImpactPoint.IsZero() ? Target->GetActorLocation() : FVector(Hit.ImpactPoint);
-		EnemyFeedback::PlayAtLocation(Enemy.Get(), MeleeSettings->HitCue, ImpactPoint, (-Direction).Rotation());
+		FeedbackCue::PlayAtLocation(Enemy.Get(), MeleeSettings->HitCue, ImpactPoint, (-Direction).Rotation());
 	}
 
 	EnemyTargetUtils::ApplyAttackHit(Target, CalculatePatternDamage(), Direction, Enemy.Get());
@@ -177,9 +177,10 @@ void UGA_Enemy_MeleeAttack::HandleWindowBegin(FGameplayEventData Payload)
 		return;
 
 	MeleeTraceComponent->BeginWindow(Payload.OptionalObject.Get());
-	if (MeleeSettings->SwingSound && !IsValid(SwingAudio))
+	// 휘두르는 연출: 이미 재생 중이면 다시 붙이지 않음
+	if (MeleeSettings->SwingCue.IsSet() && !SwingFeedback.Sound.IsValid() && !SwingFeedback.Effect.IsValid() && !SwingFeedback.Visual.IsValid())
 	{
-		SwingAudio = UGameplayStatics::SpawnSoundAttached(MeleeSettings->SwingSound, Enemy->GetMesh());
+		SwingFeedback = FeedbackCue::PlayAttached(MeleeSettings->SwingCue, Enemy->GetMesh());
 	}
 }
 
@@ -190,7 +191,6 @@ void UGA_Enemy_MeleeAttack::HandleWindowEnd(FGameplayEventData Payload)
 		&& Payload.OptionalObject2 == Enemy->GetMesh())
 	{
 		MeleeTraceComponent->EndWindow(Payload.OptionalObject.Get());
-		if (IsValid(SwingAudio)) { SwingAudio->FadeOut(0.03f, 0.f); }
-		SwingAudio = nullptr;
+		SwingFeedback.Stop(0.03f);
 	}
 }

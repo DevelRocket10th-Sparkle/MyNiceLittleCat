@@ -116,7 +116,7 @@ bool UGA_Enemy_BombDrop::CanStartPattern() const
 	// 멤버 Settings는 StartPattern에서 채우므로 지역 변수 이름을 따로 씀 (이름 가림 방지)
 	const UBombDropPatternSettings* BombSettings = GetPatternSettings<UBombDropPatternSettings>();
 	if (!BombSettings || !BombSettings->IsValidConfiguration() || !IsValid(ExecutionTarget)
-		|| BombSettings->GetExecutionSeconds() + 0.5f >= ExecutionPattern.MaxExecutionSeconds)
+		|| !BombSettings->FitsExecutionTime(ExecutionPattern.MaxExecutionSeconds))
 	{
 		UE_LOG(LogTemp, Error, TEXT("BombDrop: invalid settings or MaxExecutionSeconds too short (needs > %.1f) on %s"),
 			BombSettings ? BombSettings->GetExecutionSeconds() + 0.5f : 0.f, *GetNameSafe(Enemy.Get()));

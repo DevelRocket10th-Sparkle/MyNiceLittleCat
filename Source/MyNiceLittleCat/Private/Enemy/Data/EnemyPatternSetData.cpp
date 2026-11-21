@@ -94,12 +94,40 @@ bool FEnemyPersistentPatternEntry::Validate(FString& OutError) const
 	return true;
 }
 
-/* UEnemyPatternSetDat */
+/* UEnemyPatternSetData */
 
 void UEnemyPatternSetData::Serialize(FArchive& Ar)
 {
 	Super::Serialize(Ar);
 	Ar.UsingCustomVersion(EnemyPatternSetVersion::Guid);
+}
+
+// 패턴별 설정 오류와 패턴 ID 중복을 모두 모아 반환
+bool UEnemyPatternSetData::ValidateConfiguration(FString& OutError) const
+{
+	TArray<FString> Errors;
+	TSet<FName> PatternIds;
+
+	for (const FEnemyPatternDefinition& Pattern : Patterns)
+	{
+		// 유효하지 않은 패턴
+		FString Error;
+		if (!Pattern.Validate(Error))
+		{
+			Errors.Add(Error);
+		}
+
+		// 이미 있는 패턴 ID (중복)
+		if (PatternIds.Contains(Pattern.PatternId))
+		{
+			Errors.Add(FString::Printf(TEXT("Duplicate PatternId '%s'."), *Pattern.PatternId.ToString()));
+		}
+
+		PatternIds.Add(Pattern.PatternId);
+	}
+
+	OutError = FString::Join(Errors, TEXT("\n"));
+	return Errors.IsEmpty();
 }
 
 #if WITH_EDITOR
@@ -118,28 +146,35 @@ EDataValidationResult UEnemyPatternSetData::IsDataValid(FDataValidationContext& 
 {
 	EDataValidationResult Result = Super::IsDataValid(Context);
 
-	TSet<FName> PatternIds;
+	FString Error;
+	if (!ValidateConfiguration(Error))
+	{
+		Context.AddError(FText::FromString(Error));
+		Result = EDataValidationResult::Invalid;
+	}
 
+	// GA별 실행 설정: 실행 시에는 패턴 하나만 시작 실패하므로 세트 검사(ValidateConfiguration)에는 넣지 않고 에셋 검사에서만 표시
 	for (const FEnemyPatternDefinition& Pattern : Patterns)
 	{
-		FString Error;
-
-		// 유효하지 않은 패턴
-		if (!Pattern.Validate(Error))
+		const UEnemyPatternExecutionSettings* Settings = Pattern.ExecutionSettings;
+		if (!Settings)
 		{
-			Context.AddError(FText::FromString(Error));
-			Result = EDataValidationResult::Invalid;
+			continue;
 		}
 
-		// 이미 있는 패턴ID (중복)
-		if (PatternIds.Contains(Pattern.PatternId))
+		const FString Name = Pattern.PatternId.ToString();
+		if (!Settings->IsValidConfiguration())
 		{
-			Context.AddError(FText::FromString(FString::Printf(TEXT("Duplicate PatternId '%s'."), *Pattern.PatternId.ToString())));
+			Context.AddError(FText::FromString(FString::Printf(TEXT("Pattern '%s': %s has invalid values."),
+				*Name, *Settings->GetClass()->GetName())));
 			Result = EDataValidationResult::Invalid;
 		}
-
-		// 문제 없음
-		PatternIds.Add(Pattern.PatternId);
+		else if (!Settings->FitsExecutionTime(Pattern.MaxExecutionSeconds))
+		{
+			Context.AddError(FText::FromString(FString::Printf(TEXT("Pattern '%s': MaxExecutionSeconds %.1f is too short for %s."),
+				*Name, Pattern.MaxExecutionSeconds, *Settings->GetClass()->GetName())));
+			Result = EDataValidationResult::Invalid;
+		}
 	}
 
 	return Result;

@@ -9,8 +9,8 @@
 * - 몸을 쓰는 동작(이동 정지, 회전, 잠금, 몽타주)은 도우미로만: 보조·상시 실행에서 자동 생략되어 주 패턴의 몸을 방해하지 않음
 *
 * 실행 흐름
-*	ActivateAbility -> 컨텍스트 수신 -> CanStartPattern -> CommitAblity -> StartPattern
-*	-> (FinishPatter / CancelPattern) -> EndAbility -> StopPattern -> 이동/회전 잠금 해제 -> 참조 정리
+*	ActivateAbility -> 컨텍스트 수신 -> CanStartPattern -> CommitAbility -> StartPattern
+*	-> (FinishPattern / CancelPattern) -> EndAbility -> StopPattern -> 이동/회전 잠금 해제 -> 참조 정리
 */
 
 #pragma once

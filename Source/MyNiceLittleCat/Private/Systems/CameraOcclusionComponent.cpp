@@ -4,57 +4,11 @@
 #include "GameFramework/Pawn.h"
 #include "Characters/PlayerComponents/LockOnComponent.h"
 #include "Characters/Camera/RoomMaskVolume.h"
-#include "Components/MeshComponent.h"
 #include "Components/LocalLightComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
-#include "EngineUtils.h"
 #include "TimerManager.h"
-
-namespace
-{
-	// 방 컷어웨이 후보: 화면에 보이는 메시만, 캐릭터 / 펫 등 Pawn과 거기 붙은 액터, 방에서 제외 지정한 액터는 제외
-	bool IsRoomCutawayCandidate(const UPrimitiveComponent* Piece, const AActor* Owner, const ARoomMaskVolume* Room)
-	{
-		if (!Piece->IsA<UMeshComponent>() || !Piece->IsRegistered() || !Piece->IsVisible() || Piece->bHiddenInGame)
-		{
-			return false;
-		}
-		const AActor* AttachRoot = Owner;
-		while (AttachRoot->GetAttachParentActor())
-		{
-			AttachRoot = AttachRoot->GetAttachParentActor();
-		}
-		return !AttachRoot->IsA<APawn>() && !AttachRoot->IsA<ARoomMaskVolume>() && !Room->IsCutawayIgnored(AttachRoot);
-	}
-
-	// 그림자 컬링 후보 조명: 보이는 상태로 그림자를 그리는 점 / 스포트 조명만. 캐릭터 / 펫 등 Pawn에 붙은 조명과 방에서 제외 지정한 액터는 제외
-	bool IsLightShadowCullCandidate(const ULocalLightComponent* Light, const AActor* Owner, const ARoomMaskVolume* Room)
-	{
-		if (!Light->IsRegistered() || !Light->IsVisible() || !Light->CastShadows || Light->AttenuationRadius <= 0.f)
-		{
-			return false;
-		}
-		const AActor* AttachRoot = Owner;
-		while (AttachRoot->GetAttachParentActor())
-		{
-			AttachRoot = AttachRoot->GetAttachParentActor();
-		}
-		return !AttachRoot->IsA<APawn>() && !Room->IsCutawayIgnored(AttachRoot);
-	}
-
-	bool IsInsideAnyOtherBox(const FVector& Point, const TArray<FBox>& Boxes, int32 SkipIndex)
-	{
-		for (int32 i = 0; i < Boxes.Num(); ++i)
-		{
-			if (i != SkipIndex && Boxes[i].IsInside(Point))
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-}
+#include "Cinematics/CinematicSubsystem.h"
 
 UCameraOcclusionComponent::UCameraOcclusionComponent()
 {
@@ -80,6 +34,14 @@ void UCameraOcclusionComponent::SetOcclusionSuspended(bool bSuspended)
 void UCameraOcclusionComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 컷신 카메라가 벽 너머를 비출 때 플레이어 기준 가림 처리가 화면을 가리지 않도록 컷신 동안 정지
+	// - 컷신 도중 리스폰된 폰도 맞도록 현재 상태를 바로 반영
+	if (UCinematicSubsystem* Cinematics = GetWorld()->GetSubsystem<UCinematicSubsystem>())
+	{
+		CutsceneStateChangedHandle = Cinematics->OnCutsceneStateChanged.AddUObject(this, &UCameraOcclusionComponent::SetOcclusionSuspended);
+		SetOcclusionSuspended(Cinematics->IsCutscenePlaying());
+	}
 	AActor* Owner = GetOwner();
 	if (!Owner)
 	{
@@ -101,7 +63,10 @@ void UCameraOcclusionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(UpdateTimerHandle);
+		if (UCinematicSubsystem* Cinematics = World->GetSubsystem<UCinematicSubsystem>())
+			Cinematics->OnCutsceneStateChanged.Remove(CutsceneStateChangedHandle);
 	}
+	CutsceneStateChangedHandle.Reset();
 	RestoreAllPieces();
 	RestoreCulledLightShadows();
 	RoomCaches.Reset();
@@ -125,11 +90,11 @@ void UCameraOcclusionComponent::UpdateOcclusion()
 		return;
 	}
 	const FVector CameraLocation = Camera->GetComponentLocation();
+	const float CurrentTime = GetWorld()->GetTimeSeconds();
 
-	// 1. 방 안이면 카메라 쪽 벽면 / 천장 / 윗층 / 방 밖을 방 기준으로 수집
+	// 1. 방 안이면 카메라 쪽 벽면 / 천장 / 윗층 / 방 밖을 방 기준으로 숨김 (방이나 카메라 쪽 면이 바뀔 때만 다시 모음)
 	ARoomMaskVolume::UpdatePlayerLocation(OwnerPawn->GetActorLocation());
-	TSet<UPrimitiveComponent*> OccludingPieces;
-	CollectRoomCutaway(CameraLocation, OccludingPieces);
+	const bool bInCutawayRoom = UpdateRoomCutaway(CameraLocation, CurrentTime);
 
 	// 2. 방 밖이면 대상별 Sweep으로 시야를 가린 조각 수집
 	//    방 안에서는 Sweep을 쓰지 않음: 가까이 간 가구 / 계단이 사라지는 것 방지
@@ -137,27 +102,16 @@ void UCameraOcclusionComponent::UpdateOcclusion()
 	{
 		TArray<AActor*> Targets;
 		CollectTargets(Targets);
+
+		TSet<UPrimitiveComponent*> OccludingPieces;
 		for (const AActor* Target : Targets)
 		{
 			SweepToTarget(CameraLocation, Target, OccludingPieces);
 		}
+		MarkOccluded(OccludingPieces, CurrentTime);
 	}
 
-	// 3. 새로 가린 조각은 숨기고, 이미 숨긴 조각은 가림 시각만 갱신
-	const float CurrentTime = GetWorld()->GetTimeSeconds();
-	for (UPrimitiveComponent* Piece : OccludingPieces)
-	{
-		if (FHiddenPiece* Hidden = HiddenPieces.Find(Piece))
-		{
-			Hidden->LastOccludedTime = CurrentTime;
-		}
-		else
-		{
-			HidePiece(Piece, CurrentTime);
-		}
-	}
-
-	// 4. 일정 시간 가리지 않은 조각 복구
+	// 3. 일정 시간 가리지 않은 조각 복구 (방 컷어웨이가 잡고 있는 조각 제외)
 	RestoreExpiredPieces(CurrentTime);
 }
 
@@ -250,66 +204,21 @@ void UCameraOcclusionComponent::SweepToTarget(const FVector& CameraLocation, con
 	}
 }
 
-void UCameraOcclusionComponent::CollectRoomCutaway(const FVector& CameraLocation, TSet<UPrimitiveComponent*>& OutOccludingPieces)
+bool UCameraOcclusionComponent::UpdateRoomCutaway(const FVector& CameraLocation, float CurrentTime)
 {
-	bInCutawayRoom = false;
-	if (!RoomCutaway.bEnabled)
-	{
-		RestoreCulledLightShadows();
-		return;
-	}
-	ARoomMaskVolume* Room = ARoomMaskVolume::GetCurrentRoom();
+	ARoomMaskVolume* Room = RoomCutaway.bEnabled ? ARoomMaskVolume::GetCurrentRoom() : nullptr;
 	if (!Room || Room->GetWorld() != GetWorld() || !Room->IsCutawayEnabled())
 	{
 		// 방 밖 (마당, 옥상)에서는 창 너머 실내가 보일 수 있으므로 조명 그림자를 모두 원래대로 유지
+		ReleaseRoomPieces(CurrentTime);
 		RestoreCulledLightShadows();
-		return;
+		return false;
 	}
-	bInCutawayRoom = true;
+
 	const FRoomCutawayCache& Cache = GetOrBuildRoomCache(Room);
 
 	// 방에 닿지 않는 조명의 그림자 끄기 (방이 바뀔 때만 실제 변경)
 	ApplyLightShadowCulling(Room, Cache);
-
-	// 천장 / 윗층, 방 밖 (옆방, 건물 밖)은 카메라 각도와 관계없이 항상 숨김
-	for (const TWeakObjectPtr<UPrimitiveComponent>& Piece : Cache.TopPieces)
-	{
-		if (Piece.IsValid())
-		{
-			OutOccludingPieces.Add(Piece.Get());
-		}
-	}
-	if (RoomCutaway.bHideOutsideRoom)
-	{
-		for (const TWeakObjectPtr<UPrimitiveComponent>& Piece : Cache.OutsidePieces)
-		{
-			if (Piece.IsValid())
-			{
-				OutOccludingPieces.Add(Piece.Get());
-			}
-		}
-	}
-
-	// 옆면은 플레이어 기준 카메라가 있는 쪽만 숨김
-	static const FVector SideNormals[FRoomCutawayCache::SideCount] =
-	{
-		FVector(-1.f, 0.f, 0.f), FVector(1.f, 0.f, 0.f), FVector(0.f, -1.f, 0.f), FVector(0.f, 1.f, 0.f)
-	};
-	const FVector ToCamera = (CameraLocation - GetOwner()->GetActorLocation()).GetSafeNormal2D();
-	for (int32 Side = 0; Side < FRoomCutawayCache::SideCount; ++Side)
-	{
-		if (FVector::DotProduct(SideNormals[Side], ToCamera) <= RoomCutaway.FaceDotThreshold)
-		{
-			continue;
-		}
-		for (const TWeakObjectPtr<UPrimitiveComponent>& Piece : Cache.SidePieces[Side])
-		{
-			if (Piece.IsValid())
-			{
-				OutOccludingPieces.Add(Piece.Get());
-			}
-		}
-	}
 
 	if (bDrawDebug)
 	{
@@ -320,6 +229,26 @@ void UCameraOcclusionComponent::CollectRoomCutaway(const FVector& CameraLocation
 			DrawDebugBox(GetWorld(), Box.GetCenter(), Box.GetExtent(), FColor::Cyan, false, UpdateInterval);
 		}
 	}
+
+	// 옆면은 플레이어 기준 카메라가 있는 쪽만 숨김
+	const FVector ToCamera = (CameraLocation - GetOwner()->GetActorLocation()).GetSafeNormal2D();
+	const uint8 SideMask = FRoomCutawayCache::GetCameraSideMask(ToCamera, RoomCutaway.FaceDotThreshold);
+
+	// 방, 카메라 쪽 면, 방 밖 숨김 설정이 그대로면 이미 숨긴 상태: 판정마다 수천 개 조각을 다시 모으지 않음
+	if (bHasRoomHeldPieces && HeldRoom.Get() == Room && HeldSideMask == SideMask && bHeldOutsideRoom == RoomCutaway.bHideOutsideRoom)
+	{
+		return true;
+	}
+
+	// 천장 / 윗층, 방 밖 (옆방, 건물 밖)은 카메라 각도와 관계없이 항상 숨김
+	TSet<UPrimitiveComponent*> RoomPieces;
+	Cache.CollectPieces(SideMask, RoomCutaway.bHideOutsideRoom, RoomPieces);
+	HoldRoomPieces(RoomPieces, CurrentTime);
+
+	HeldRoom = Room;
+	HeldSideMask = SideMask;
+	bHeldOutsideRoom = RoomCutaway.bHideOutsideRoom;
+	return true;
 }
 
 const FRoomCutawayCache& UCameraOcclusionComponent::GetOrBuildRoomCache(ARoomMaskVolume* Room)
@@ -328,151 +257,80 @@ const FRoomCutawayCache& UCameraOcclusionComponent::GetOrBuildRoomCache(ARoomMas
 	{
 		return *Found;
 	}
-	FRoomCutawayCache& Cache = RoomCaches.Add(Room);
+	return RoomCaches.Add(Room, FRoomCutawayCache::Build(*GetWorld(), *Room, RoomCutaway));
+}
 
-	TArray<FBox> Boxes;
-	Room->GetRoomBounds(Boxes);
-	const FRoomCutawaySettings& S = RoomCutaway;
-
-	// 방을 처음 들어갈 때 한 번만 월드 메시를 훑어 면별로 분류
-	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+void UCameraOcclusionComponent::HoldRoomPieces(const TSet<UPrimitiveComponent*>& RoomPieces, float CurrentTime)
+{
+	// 이전에 잡고 있던 조각 중 이번에 빠진 것은 놓음: RestoreDelay 뒤 복구 (카메라 쪽 면이 바뀔 때 깜빡임 방지)
+	if (bHasRoomHeldPieces)
 	{
-		const AActor* Actor = *It;
-
-		// 조명: 빛이 닿는 범위 (감쇠 반경 구)가 방 박스 (+여유)와 하나도 겹치지 않으면 그림자 컬링 대상
-		TInlineComponentArray<ULocalLightComponent*> Lights;
-		Actor->GetComponents(Lights);
-		for (ULocalLightComponent* Light : Lights)
+		for (TPair<TWeakObjectPtr<UPrimitiveComponent>, FHiddenPiece>& Pair : HiddenPieces)
 		{
-			if (!IsLightShadowCullCandidate(Light, Actor, Room))
+			if (Pair.Value.bHeldByRoom && !RoomPieces.Contains(Pair.Key.Get()))
 			{
-				continue;
-			}
-			const FVector LightCenter = Light->GetComponentLocation();
-			const FVector::FReal RadiusSquared = FMath::Square(static_cast<FVector::FReal>(Light->AttenuationRadius));
-			bool bReachesRoom = false;
-			for (const FBox& Box : Boxes)
-			{
-				if (FMath::SphereAABBIntersection(LightCenter, RadiusSquared, Box.ExpandBy(S.LightShadowMargin)))
-				{
-					bReachesRoom = true;
-					break;
-				}
-			}
-			if (!bReachesRoom)
-			{
-				Cache.OutsideShadowLights.Add(Light);
-			}
-		}
-
-		TInlineComponentArray<UPrimitiveComponent*> Pieces;
-		Actor->GetComponents(Pieces);
-		for (UPrimitiveComponent* Piece : Pieces)
-		{
-			if (!IsRoomCutawayCandidate(Piece, Actor, Room))
-			{
-				continue;
-			}
-			const FBox PieceBox = Piece->Bounds.GetBox();
-			const FVector PieceCenter = PieceBox.GetCenter();
-
-			// 방 박스 (XY만 Inset만큼 축소)와 전혀 겹치지 않으면 방 밖 조각
-			bool bTouchesRoom = false;
-			bool bNearRoom = false;
-			for (const FBox& Box : Boxes)
-			{
-				const FVector Inset(S.OutsideInset, S.OutsideInset, 0.f);
-				if (FBox(Box.Min + Inset, Box.Max - Inset).Intersect(PieceBox))
-				{
-					bTouchesRoom = true;
-					break;
-				}
-				bNearRoom |= Box.ExpandBy(S.OutsideRadius).Intersect(PieceBox);
-			}
-			if (!bTouchesRoom)
-			{
-				// 윗층 판정에 해당하면 TopPieces로, 아니면 OutsidePieces로 분류
-				bool bIsTop = false;
-				for (const FBox& Box : Boxes)
-				{
-					const FBox Footprint = Box.ExpandBy(FVector(S.TopFootprintMargin, S.TopFootprintMargin, 0.f));
-					if (PieceCenter.Z >= Box.Max.Z - S.TopTolerance &&
-						PieceBox.Min.X < Footprint.Max.X && PieceBox.Max.X > Footprint.Min.X &&
-						PieceBox.Min.Y < Footprint.Max.Y && PieceBox.Max.Y > Footprint.Min.Y)
-					{
-						bIsTop = true;
-						break;
-					}
-				}
-				if (bIsTop)
-				{
-					Cache.TopPieces.AddUnique(Piece);
-				}
-				else if (bNearRoom)
-				{
-					Cache.OutsidePieces.AddUnique(Piece);
-				}
-				continue;
-			}
-
-			for (int32 BoxIndex = 0; BoxIndex < Boxes.Num(); ++BoxIndex)
-			{
-				const FBox& Box = Boxes[BoxIndex];
-
-				// 윗층: 중심이 박스 윗면 근처 이상이고, 방 바닥 면적 (+여유) 위에 걸친 메시
-				if (PieceCenter.Z >= Box.Max.Z - S.TopTolerance)
-				{
-					const FBox Footprint = Box.ExpandBy(FVector(S.TopFootprintMargin, S.TopFootprintMargin, 0.f));
-					if (PieceBox.Min.X < Footprint.Max.X && PieceBox.Max.X > Footprint.Min.X &&
-						PieceBox.Min.Y < Footprint.Max.Y && PieceBox.Max.Y > Footprint.Min.Y)
-					{
-						Cache.TopPieces.AddUnique(Piece);
-						break;
-					}
-					continue;
-				}
-				// 방 바닥보다 아래 (기초, 지면 소품)는 제외
-				if (PieceCenter.Z < Box.Min.Z)
-				{
-					continue;
-				}
-				// L / T자 방에서 박스끼리 맞닿은 안쪽 면 조각 제외
-				if (IsInsideAnyOtherBox(PieceCenter, Boxes, BoxIndex))
-				{
-					continue;
-				}
-
-				for (int32 Side = 0; Side < FRoomCutawayCache::SideCount; ++Side)
-				{
-					const int32 Axis = Side / 2;          // 0 = X, 1 = Y
-					const int32 LateralAxis = 1 - Axis;
-					const bool bMinSide = (Side % 2) == 0;
-
-					// 면에서 방 안쪽으로 들어온 깊이: 음수면 면 바깥 (벽 두께, 외벽 장식)
-					const double Reach = bMinSide ? PieceBox.Max[Axis] - Box.Min[Axis] : Box.Max[Axis] - PieceBox.Min[Axis];
-					// 면을 뚫고 벽 안 / 밖으로 나간 깊이: 벽난로, 문틀처럼 벽에 박힌 메시 판별
-					const double Embed = bMinSide ? Box.Min[Axis] - PieceBox.Min[Axis] : PieceBox.Max[Axis] - Box.Max[Axis];
-					const bool bAttached = Reach <= S.InnerDepth;
-					const bool bEmbedded = Embed >= S.WallEmbedDepth && Reach <= S.MaxEmbeddedReach;
-					if ((!bAttached && !bEmbedded) || Reach < -S.OuterDepth)
-					{
-						continue;
-					}
-					// 면의 가로 범위와 겹쳐야 함: 옆방 벽까지 번지는 것 방지
-					if (PieceBox.Max[LateralAxis] <= Box.Min[LateralAxis] || PieceBox.Min[LateralAxis] >= Box.Max[LateralAxis])
-					{
-						continue;
-					}
-					Cache.SidePieces[Side].AddUnique(Piece);
-				}
+				Pair.Value.bHeldByRoom = false;
+				Pair.Value.LastOccludedTime = CurrentTime;
+				bHasReleasingPieces = true;
 			}
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[RoomCutaway] %s: top %d, outside %d, -X %d, +X %d, -Y %d, +Y %d, shadow-culled lights %d"), *Room->GetActorNameOrLabel(),
-		Cache.TopPieces.Num(), Cache.OutsidePieces.Num(), Cache.SidePieces[0].Num(), Cache.SidePieces[1].Num(), Cache.SidePieces[2].Num(), Cache.SidePieces[3].Num(),
-		Cache.OutsideShadowLights.Num());
-	return Cache;
+	// 새로 들어온 조각은 숨기고, 전부 방이 잡고 있는 것으로 표시
+	for (UPrimitiveComponent* Piece : RoomPieces)
+	{
+		FHiddenPiece* Hidden = HiddenPieces.Find(Piece);
+		if (!Hidden)
+		{
+			Hidden = &HidePiece(Piece, CurrentTime);
+		}
+		Hidden->bHeldByRoom = true;
+		Hidden->LastOccludedTime = CurrentTime;
+	}
+
+	bHasRoomHeldPieces = !RoomPieces.IsEmpty();
+}
+
+void UCameraOcclusionComponent::ReleaseRoomPieces(float CurrentTime)
+{
+	HeldRoom.Reset();
+	if (!bHasRoomHeldPieces)
+	{
+		return;
+	}
+
+	// 방을 나가면 잡고 있던 조각을 놓음: 바깥 Sweep과 같은 RestoreDelay 뒤 복구
+	for (TPair<TWeakObjectPtr<UPrimitiveComponent>, FHiddenPiece>& Pair : HiddenPieces)
+	{
+		if (Pair.Value.bHeldByRoom)
+		{
+			Pair.Value.bHeldByRoom = false;
+			Pair.Value.LastOccludedTime = CurrentTime;
+		}
+	}
+	bHasRoomHeldPieces = false;
+	bHasReleasingPieces = true;
+}
+
+void UCameraOcclusionComponent::MarkOccluded(const TSet<UPrimitiveComponent*>& OccludingPieces, float CurrentTime)
+{
+	// 새로 가린 조각은 숨기고, 이미 숨긴 조각은 가림 시각만 갱신
+	for (UPrimitiveComponent* Piece : OccludingPieces)
+	{
+		if (FHiddenPiece* Hidden = HiddenPieces.Find(Piece))
+		{
+			Hidden->LastOccludedTime = CurrentTime;
+		}
+		else
+		{
+			HidePiece(Piece, CurrentTime);
+		}
+	}
+
+	if (!OccludingPieces.IsEmpty())
+	{
+		bHasReleasingPieces = true;
+	}
 }
 
 void UCameraOcclusionComponent::ApplyLightShadowCulling(ARoomMaskVolume* Room, const FRoomCutawayCache& Cache)
@@ -527,7 +385,7 @@ bool UCameraOcclusionComponent::IsAboveTargetFloor(const UPrimitiveComponent* Pi
 	return PieceBottomZ >= TargetFootZ + CeilingMinHeight;
 }
 
-void UCameraOcclusionComponent::HidePiece(UPrimitiveComponent* Piece, float CurrentTime)
+UCameraOcclusionComponent::FHiddenPiece& UCameraOcclusionComponent::HidePiece(UPrimitiveComponent* Piece, float CurrentTime)
 {
 	FHiddenPiece& Hidden = HiddenPieces.Add(Piece);
 	Hidden.bWasRenderInMainPass = Piece->bRenderInMainPass;
@@ -537,6 +395,7 @@ void UCameraOcclusionComponent::HidePiece(UPrimitiveComponent* Piece, float Curr
 	Piece->SetRenderInMainPass(false);
 	// 메인 패스를 꺼도 깊이 패스는 기본으로 켜져 있어, 끄지 않으면 색 없는 깊이만 남아 검은 면으로 가림
 	Piece->SetRenderInDepthPass(false);
+	return Hidden;
 }
 
 void UCameraOcclusionComponent::RestorePiece(UPrimitiveComponent* Piece, const FHiddenPiece& Hidden)
@@ -547,6 +406,13 @@ void UCameraOcclusionComponent::RestorePiece(UPrimitiveComponent* Piece, const F
 
 void UCameraOcclusionComponent::RestoreExpiredPieces(float CurrentTime)
 {
+	// 방 안에서 면이 그대로면 복구할 조각이 없음: 숨긴 조각 수천 개를 판정마다 훑지 않음
+	if (!bHasReleasingPieces)
+	{
+		return;
+	}
+
+	bool bStillReleasing = false;
 	for (TMap<TWeakObjectPtr<UPrimitiveComponent>, FHiddenPiece>::TIterator It = HiddenPieces.CreateIterator(); It; ++It)
 	{
 		UPrimitiveComponent* Piece = It.Key().Get();
@@ -557,13 +423,19 @@ void UCameraOcclusionComponent::RestoreExpiredPieces(float CurrentTime)
 			continue;
 		}
 		const FHiddenPiece& Hidden = It.Value();
+		if (Hidden.bHeldByRoom)
+		{
+			continue;
+		}
 		if (CurrentTime - Hidden.LastOccludedTime < RestoreDelay)
 		{
+			bStillReleasing = true;
 			continue;
 		}
 		RestorePiece(Piece, Hidden);
 		It.RemoveCurrent();
 	}
+	bHasReleasingPieces = bStillReleasing;
 }
 
 void UCameraOcclusionComponent::RestoreAllPieces()
@@ -577,4 +449,9 @@ void UCameraOcclusionComponent::RestoreAllPieces()
 		}
 	}
 	HiddenPieces.Reset();
+
+	// 다음 판정에서 방 조각을 처음부터 다시 숨김 (컷신이 끝난 뒤 등)
+	HeldRoom.Reset();
+	bHasRoomHeldPieces = false;
+	bHasReleasingPieces = false;
 }

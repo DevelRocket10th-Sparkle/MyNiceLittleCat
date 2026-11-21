@@ -2,12 +2,11 @@
 
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 
-#include "Enemy/Combat/EnemyFeedback.h"
+#include "Frameworks/Feedback/FeedbackCue.h"
 #include "Enemy/Combat/EnemyTargetUtils.h"
 #include "Enemy/Components/EnemyMeleeTraceComponent.h"
 #include "Enemy/Data/EnemyMeleePatternSettings.h"
@@ -24,7 +23,7 @@ bool UGA_Enemy_RushAttack::CanStartPattern() const
 		return false;
 	}
 
-	// 섹션 순서: 시작 섹선 <= Rush < Attack
+	// 섹션 순서: 시작 섹션 <= Rush < Attack
 	const UEnemyMeleePatternSettings* Settings = GetPatternSettings<UEnemyMeleePatternSettings>();
 	const UAnimMontage* Montage = Settings->Montage;
 	const int32 RushIndex = Montage->GetSectionIndex(RushSection);
@@ -63,7 +62,11 @@ void UGA_Enemy_RushAttack::OnMontageStarted()
 	MontageSetNextSectionName(RushSection, AttackSection);
 
 	LastUpdateTime = GetWorld()->GetTimeSeconds();
-	GetWorld()->GetTimerManager().SetTimer(RushTimer, this, &UGA_Enemy_RushAttack::UpdateRush, RushUpdateInterval, true);
+	// 짧은 반복 간격이라도 한 프레임에 한 번만 갱신 (SweepRushHits가 이동 경로 전체를 쓸어 판정하므로 누락 없음)
+	FTimerManagerTimerParameters RushTimerParams;
+	RushTimerParams.bLoop = true;
+	RushTimerParams.bMaxOncePerFrame = true;
+	GetWorld()->GetTimerManager().SetTimer(RushTimer, this, &UGA_Enemy_RushAttack::UpdateRush, RushUpdateInterval, RushTimerParams);
 	UpdateRush();
 }
 
@@ -156,8 +159,8 @@ void UGA_Enemy_RushAttack::UpdateRush()
 		Anim->Montage_Pause(Montage);
 
 		// 돌진 시작 연출: 발밑에서 한 번, 돌진하는 동안 몸에 붙은 반복 연출
-		EnemyFeedback::PlayAtLocation(Enemy.Get(), RushStartCue, Enemy->GetMesh()->GetComponentLocation(), RushDirection.Rotation());
-		RushTrail = EnemyFeedback::PlayAttached(RushTrailCue, Enemy->GetMesh(), RushTrailSocket);
+		FeedbackCue::PlayAtLocation(Enemy.Get(), RushStartCue, Enemy->GetMesh()->GetComponentLocation(), RushDirection.Rotation());
+		RushTrail = FeedbackCue::PlayAttached(RushTrailCue, Enemy->GetMesh(), RushTrailSocket);
 
 		// 진입 프레임에는 이동하지 않아 준비 시간만큼 거리가 늘어나지 않게 함
 		if (DistanceRemaining <= KINDA_SMALL_NUMBER)
@@ -205,7 +208,7 @@ void UGA_Enemy_RushAttack::UpdateRush()
 		// 막혀서 멈춘 경우만 충돌 연출 (목표 거리 도달은 공격 섹션 몽타주 노티파이가 담당)
 		if (MovementHit.IsValidBlockingHit())
 		{
-			EnemyFeedback::PlayAtLocation(Enemy.Get(), RushBlockedCue, MovementHit.ImpactPoint, MovementHit.ImpactNormal.Rotation());
+			FeedbackCue::PlayAtLocation(Enemy.Get(), RushBlockedCue, MovementHit.ImpactPoint, MovementHit.ImpactNormal.Rotation());
 		}
 
 		FinishRush();
@@ -223,14 +226,7 @@ void UGA_Enemy_RushAttack::SweepRushHits(const FVector& Start, const FVector& En
 	// 판정 디버그 표시: 근접 판정 컴포넌트의 디버그 설정을 함께 사용 (주황)
 	if (const UEnemyMeleeTraceComponent* Trace = Enemy->GetMeleeTraceComponent(); Trace && Trace->bDrawDebugTraces)
 	{
-		const FVector SweepDelta = End - Start;
-		DrawDebugSphere(GetWorld(), End, RushHitRadius, 20, FColor::Orange, false, 0.f);
-		if (!SweepDelta.IsNearlyZero())
-		{
-			DrawDebugCapsule(GetWorld(), (Start + End) * 0.5f, RushHitRadius + SweepDelta.Size() * 0.5f,
-				RushHitRadius, FQuat::FindBetweenNormals(FVector::UpVector, SweepDelta.GetSafeNormal()),
-				FColor::Orange, false, 0.f);
-		}
+		UEnemyMeleeTraceComponent::DrawSphereSweep(GetWorld(), Start, End, RushHitRadius, FColor::Orange);
 	}
 
 	for (const FHitResult& Hit : Hits)

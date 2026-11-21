@@ -2,7 +2,7 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
-* 수정 일자: 2026.11.17. (EnemyPhaseComponent → BossPhaseComponent, 시퀀스 재생/Stage3 의존 제거)
+* 수정 일자: 2026.11.19. (IsActive → IsPhaseActive: 엔진 UActorComponent::IsActive 가림 해소)
 * 보스 페이즈 진행 관리
 * - 현재 페이즈, 체력 하한, 기믹 완료에 의한 진행, 전환 요청/완료
 * - 전환 연출은 직접 재생하지 않음: 레벨 담당자(IBossPhaseTransitionHandler)에게 맡기거나
@@ -46,6 +46,9 @@ DECLARE_MULTICAST_DELEGATE(FOnBossPhaseTransitionRequested);
 
 // 전환 완료(다음 페이즈 적용) 또는 실패 알림
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBossPhaseTransitionFinished, int64 /*TransitionId*/, bool /*bSucceeded*/);
+
+// 진행 상태(Stopped·TransitionPending·Transitioning·Active)가 바뀔 때 알림: 체력바 잠금 표시 등
+DECLARE_MULTICAST_DELEGATE(FOnBossPhaseRunStateChanged);
 
 UCLASS(ClassGroup = (Boss), meta = (BlueprintSpawnableComponent))
 class MYNICELITTLECAT_API UBossPhaseComponent : public UActorComponent, public IEnemyLocomotionProvider
@@ -114,7 +117,7 @@ public :
 	int64 GetCurrentPhaseExecutionId() const { return ActivePhaseExecutionId; }
 
 	// 일반 공격 및 체력 조건 평가가 가능한 상태인지 확인
-	bool IsActive() const { return RunState == EBossPhaseRunState::Active; }
+	bool IsPhaseActive() const { return RunState == EBossPhaseRunState::Active; }
 
 	// BT가 처리해야 하는 전환 요청이 있는지 확인
 	bool HasPendingTransition() const { return RunState == EBossPhaseRunState::TransitionPending; }
@@ -148,6 +151,8 @@ public :
 
 	// 전환 완료/실패 알림
 	FOnBossPhaseTransitionFinished OnTransitionFinished;
+
+	FOnBossPhaseRunStateChanged OnRunStateChanged;
 
 	// 보스가 페이즈별 공격 목록과 기믹을 적용하는 함수
 	FApplyBossPhase ApplyPhase;
@@ -209,8 +214,10 @@ private :
 
 	/* 페이즈 상태 */
 
-	// 진행 상태
+	// 진행 상태 (SetRunState로만 바꿈)
 	EBossPhaseRunState RunState = EBossPhaseRunState::Stopped;
+
+	void SetRunState(EBossPhaseRunState NewState);
 
 	// 현재 적용된 페이즈 인덱스
 	int32 CurrentPhaseIndex = INDEX_NONE;

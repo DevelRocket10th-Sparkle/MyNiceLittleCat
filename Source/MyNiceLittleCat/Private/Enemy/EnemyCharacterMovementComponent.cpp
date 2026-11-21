@@ -148,21 +148,8 @@ void UEnemyCharacterMovementComponent::InitializeHoverHeight()
 
 	const FVector FeetLocation = Super::GetActorFeetLocation();
 
-	const FVector TraceEnd = FeetLocation - FVector(0.f, 0.f, 5000.f);
-
-	FCollisionObjectQueryParams Objects;
-	Objects.AddObjectTypesToQuery(ECC_WorldStatic);
-
-	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(CharacterOwner);
-
 	FHitResult Hit;
-	if (GetWorld()->LineTraceSingleByObjectType(
-		Hit,
-		FeetLocation,
-		TraceEnd,
-		Objects,
-		Params))
+	if (TraceStaticGround(FeetLocation, 5000.f, Hit))
 	{
 		HoverHeight = FMath::Max(0.f, FeetLocation.Z - Hit.ImpactPoint.Z);
 
@@ -279,7 +266,8 @@ bool UEnemyCharacterMovementComponent::IsYieldingToPush() const
 {
 	const AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(CharacterOwner);
 
-	return Enemy && Enemy->CanReceivePlayerPush() && PushHoldRemaining > 0.f;
+	// 남은 양보 시간을 먼저 확인 (CanReceivePlayerPush는 패턴 상태까지 조회해서 비쌈)
+	return PushHoldRemaining > 0.f && Enemy && Enemy->CanReceivePlayerPush();
 }
 
 void UEnemyCharacterMovementComponent::BeginPlay()
@@ -398,6 +386,18 @@ FTransform UEnemyCharacterMovementComponent::FilterFlightRootMotion(const FTrans
 	return Result;
 }
 
+bool UEnemyCharacterMovementComponent::TraceStaticGround(const FVector& Start, float Distance, FHitResult& OutHit) const
+{
+	// 플레이어와 Enemy 대신 정적 지형만 바닥 후보로 탐색
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(ECC_WorldStatic);
+
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(CharacterOwner);	// 자기 자신 무시
+
+	return GetWorld()->LineTraceSingleByObjectType(OutHit, Start, Start - FVector(0.f, 0.f, Distance), Objects, Params);
+}
+
 void UEnemyCharacterMovementComponent::UpdateFlightHeight(float DeltaTime)
 {
 	const AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(CharacterOwner);
@@ -417,22 +417,8 @@ void UEnemyCharacterMovementComponent::UpdateFlightHeight(float DeltaTime)
 	// 컴포넌트 위치
 	const FVector Center = UpdatedComponent->GetComponentLocation();
 
-	const FVector TraceEnd = Center - FVector(0.f, 0.f, FlightGroundTraceDistance);
-
-	// 플레이어와 Enemy 대신 정적 지형만 바닥 후보로 탐색
-	FCollisionObjectQueryParams Objects;
-	Objects.AddObjectTypesToQuery(ECC_WorldStatic);
-
-	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(Enemy);	// 자기 자신 무시
-
 	FHitResult GroundHit;
-	if (!GetWorld()->LineTraceSingleByObjectType(
-		GroundHit,
-		Center,
-		TraceEnd,
-		Objects,
-		Params))
+	if (!TraceStaticGround(Center, FlightGroundTraceDistance, GroundHit))
 	{
 		// 바닥 찾지 못하면 이번 보정 생략
 		return;

@@ -6,6 +6,12 @@ bool UBombDropPatternSettings::IsValidConfiguration() const
 	return BombClass && BombCount >= 1 && DropHeight > 0.f;
 }
 
+// 전체 시간 + 끝 처리 여유(0.5초)가 패턴 제한 시간보다 짧은지
+bool UBombDropPatternSettings::FitsExecutionTime(float MaxExecutionSeconds) const
+{
+	return GetExecutionSeconds() + DefaultExecutionTimeMargin < MaxExecutionSeconds;
+}
+
 float UBombDropPatternSettings::GetExecutionSeconds() const
 {
 	return (BombCount - 1) * DropInterval;

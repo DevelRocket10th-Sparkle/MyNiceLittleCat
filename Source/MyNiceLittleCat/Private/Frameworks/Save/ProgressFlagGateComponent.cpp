@@ -5,6 +5,23 @@
 #include "Frameworks/Save/GameProgressSubsystem.h"
 #include "GameFramework/Actor.h"
 
+namespace
+{
+	// 진행 플래그를 들고 있는 게임 인스턴스 서브시스템
+	UGameProgressSubsystem* FindProgress(const UActorComponent& Component)
+	{
+		const UGameInstance* GameInstance = Component.GetWorld() ? Component.GetWorld()->GetGameInstance() : nullptr;
+		return GameInstance ? GameInstance->GetSubsystem<UGameProgressSubsystem>() : nullptr;
+	}
+
+	// 숨김과 충돌을 함께 바꿈
+	void SetActorShown(AActor& Actor, bool bShown)
+	{
+		Actor.SetActorHiddenInGame(!bShown);
+		Actor.SetActorEnableCollision(bShown);
+	}
+}
+
 UProgressFlagGateComponent::UProgressFlagGateComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
@@ -18,8 +35,7 @@ void UProgressFlagGateComponent::BeginPlay()
 	if (Flag.IsNone())
 		return;
 
-	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-	UGameProgressSubsystem* Progress = GameInstance ? GameInstance->GetSubsystem<UGameProgressSubsystem>() : nullptr;
+	UGameProgressSubsystem* Progress = FindProgress(*this);
 	if (!Progress)
 		return;
 
@@ -29,8 +45,7 @@ void UProgressFlagGateComponent::BeginPlay()
 
 void UProgressFlagGateComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-	if (UGameProgressSubsystem* Progress = GameInstance ? GameInstance->GetSubsystem<UGameProgressSubsystem>() : nullptr)
+	if (UGameProgressSubsystem* Progress = FindProgress(*this))
 	{
 		Progress->OnProgressFlagChanged.RemoveDynamic(this, &UProgressFlagGateComponent::HandleProgressFlagChanged);
 	}
@@ -51,8 +66,7 @@ void UProgressFlagGateComponent::Evaluate()
 	if (bApplied)
 		return;
 
-	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-	const UGameProgressSubsystem* Progress = GameInstance ? GameInstance->GetSubsystem<UGameProgressSubsystem>() : nullptr;
+	const UGameProgressSubsystem* Progress = FindProgress(*this);
 	if (!Progress)
 		return;
 
@@ -63,8 +77,7 @@ void UProgressFlagGateComponent::Evaluate()
 		{
 			if (AActor* Owner = GetOwner())
 			{
-				Owner->SetActorHiddenInGame(true);
-				Owner->SetActorEnableCollision(false);
+				SetActorShown(*Owner, false);
 			}
 		}
 		return;
@@ -90,13 +103,11 @@ void UProgressFlagGateComponent::ApplyAction()
 		Owner->Destroy();
 		break;
 	case EProgressFlagGateAction::DisableOwner:
-		Owner->SetActorHiddenInGame(true);
-		Owner->SetActorEnableCollision(false);
+		SetActorShown(*Owner, false);
 		Owner->SetActorTickEnabled(false);
 		break;
 	case EProgressFlagGateAction::RevealOwner:
-		Owner->SetActorHiddenInGame(false);
-		Owner->SetActorEnableCollision(true);
+		SetActorShown(*Owner, true);
 		break;
 	}
 }

@@ -3,6 +3,7 @@
 * 작성자: 전선현
 * 작성 일자: 2026.10.20.
 * 수정 일자: 2026.11.17. (허용 패턴 ID 목록 → 가중치 재정의 패턴 목록과 동시 실행 설정)
+* 수정 일자: 2026.11.21. (이전 형식 AllowedPatternIds와 옮기기 PostLoad 삭제: 모든 페이즈 DA를 새 형식으로 다시 저장)
 * 보스 페이즈 설정용 데이터 에셋
 * - 페이즈 순서, 진행 조건(체력/기믹), 패턴 목록과 가중치, 동시 실행, 이동/회전 정책, 기본 전환 연출
 * - 레벨 액터 참조와 실행 상태는 저장하지 않음 (레벨 참조는 BossEncounterManager가 보스에 전달)
@@ -66,11 +67,6 @@ struct FBossPhaseDefinition
 	// - 패턴의 Can Run As Companion이 켜져 있어야 실행 (근접, 돌진, 레이저 빔 불가)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Patterns", meta = (TitleProperty = "PatternId"))
 	TArray<FEnemyPersistentPatternEntry> PersistentPatterns;
-
-	// 이전 형식: 저장된 이름 그대로 읽은 뒤 PostLoad에서 Patterns로 옮기고 비움 (편집 불가, 에셋을 다시 저장한 뒤 삭제)
-	// - 리다이렉트로 _DEPRECATED에 옮기는 방식은 이 구조체 배열에서 값이 들어오지 않아 이름을 유지
-	UPROPERTY()
-	TArray<FName> AllowedPatternIds;
 
 	/* 기본 전환 연출: 레벨에 전환 담당자(IBossPhaseTransitionHandler)가 있으면 그쪽이 우선 */
 
@@ -154,9 +150,6 @@ class MYNICELITTLECAT_API UBossPhaseConfigData : public UDataAsset
 	GENERATED_BODY()
 
 public :
-
-	// 이전 형식(AllowedPatternIds) 에셋을 새 패턴 목록으로 옮김
-	virtual void PostLoad() override;
 
 	// 페이즈 순서, 중복 ID, 체력 하한 감소, 이동 설정 검사
 	bool ValidateConfiguration(FString& OutError) const;

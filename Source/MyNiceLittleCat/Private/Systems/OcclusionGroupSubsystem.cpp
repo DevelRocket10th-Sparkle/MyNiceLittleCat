@@ -29,7 +29,7 @@ void UOcclusionGroupSubsystem::CollectGroupMembers(UPrimitiveComponent* HitPiece
 		return;
 	}
 
-	const FPieceShape HitShape = CalculatePieceShape(HitPiece, Settings);
+	const FPieceShape HitShape = GetPieceShape(HitPiece, Settings);
 	// 기둥, 모서리 등 덩어리 조각은 면을 정의할 수 없으므로 자기 자신만 숨김
 	if (!HitShape.bIsPlanar)
 	{
@@ -46,7 +46,7 @@ bool UOcclusionGroupSubsystem::IsHorizontalPiece(const UPrimitiveComponent* Piec
 	{
 		return false;
 	}
-	const FPieceShape Shape = CalculatePieceShape(Piece, Settings);
+	const FPieceShape Shape = GetPieceShape(Piece, Settings);
 	// 법선이 위 또는 아래를 향하는 얇은 판
 	return Shape.bIsPlanar && FMath::Abs(Shape.Normal.Z) >= OcclusionGroup::SameDirectionDot;
 }
@@ -55,6 +55,21 @@ void UOcclusionGroupSubsystem::ClearGroupCache()
 {
 	Groups.Reset();
 	GroupIndexByPiece.Reset();
+	ShapeByPiece.Reset();
+}
+
+UOcclusionGroupSubsystem::FPieceShape UOcclusionGroupSubsystem::GetPieceShape(const UPrimitiveComponent* Piece, const FOcclusionGroupSettings& Settings) const
+{
+	// 움직이는 조각(문 등)은 위치·방향이 바뀌므로 매번 계산
+	if (Piece->Mobility == EComponentMobility::Movable)
+	{
+		return CalculatePieceShape(Piece, Settings);
+	}
+	if (const FPieceShape* Cached = ShapeByPiece.Find(Piece))
+	{
+		return *Cached;
+	}
+	return ShapeByPiece.Add(Piece, CalculatePieceShape(Piece, Settings));
 }
 
 UOcclusionGroupSubsystem::FPieceShape UOcclusionGroupSubsystem::CalculatePieceShape(const UPrimitiveComponent* Piece, const FOcclusionGroupSettings& Settings) const
@@ -155,7 +170,7 @@ int32 UOcclusionGroupSubsystem::BuildGroup(UPrimitiveComponent* SeedPiece, const
 			}
 			Visited.Add(Candidate);
 
-			const FPieceShape CandidateShape = CalculatePieceShape(Candidate, Settings);
+			const FPieceShape CandidateShape = GetPieceShape(Candidate, Settings);
 			// 모서리, 기둥 등 덩어리 조각: 이 면과 같이 숨기되 이웃 탐색은 이어가지 않음 (다른 면으로 번지는 것 방지)
 			if (!CandidateShape.bIsPlanar)
 			{

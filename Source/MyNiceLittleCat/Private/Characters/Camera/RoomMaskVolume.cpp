@@ -26,11 +26,15 @@ void ARoomMaskVolume::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (ActorHasTag(TEXT("DisableRoomMask")))
+	// 방 마스크를 끈 볼륨은 충돌만 끄고 등록하지 않음
+	if (!bRoomMaskEnabled)
 	{
 		SetActorEnableCollision(false);
 		return;
 	}
+
+	// 방 박스 범위를 한 번만 모아 둠 (방은 움직이지 않음): 플레이어 위치로 방을 고를 때마다 컴포넌트를 다시 찾지 않음
+	GetRoomBounds(CachedRoomBounds);
 
 	TArray<UBoxComponent*> Boxes;
 	GatherBoxes(Boxes);
@@ -209,6 +213,12 @@ ARoomMaskVolume* ARoomMaskVolume::GetCurrentRoom()
 
 void ARoomMaskVolume::GetRoomBounds(TArray<FBox>& OutBounds) const
 {
+	if (!CachedRoomBounds.IsEmpty())
+	{
+		OutBounds = CachedRoomBounds;
+		return;
+	}
+
 	OutBounds.Reset();
 	TArray<UBoxComponent*> Boxes;
 	GatherBoxes(Boxes);

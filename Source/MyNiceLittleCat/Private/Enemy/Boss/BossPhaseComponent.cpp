@@ -2,6 +2,7 @@
 
 
 #include "Enemy/Boss/BossPhaseComponent.h"
+#include "Enemy/EnemyLog.h"
 
 #include "Engine/TargetPoint.h"
 #include "Engine/World.h"
@@ -30,13 +31,13 @@ bool UBossPhaseComponent::InitializePhases(UBossPhaseConfigData* InConfig)
 
 	if (!GetOwner()->HasAuthority() || !IsValid(InConfig) || !InConfig->ValidateConfiguration(Error))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[BossPhase] %s: initialization failed: %s"), *GetNameSafe(GetOwner()), *Error);
+		UE_LOG(LogEnemy, Error, TEXT("[BossPhase] %s: initialization failed: %s"), *GetNameSafe(GetOwner()), *Error);
 		return false;
 	}
 
 	if (!ValidateMovementRoutes(Error))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[BossPhase] %s: initialization failed: %s"), *GetNameSafe(GetOwner()), *Error);
+		UE_LOG(LogEnemy, Error, TEXT("[BossPhase] %s: initialization failed: %s"), *GetNameSafe(GetOwner()), *Error);
 		return false;
 	}
 
@@ -46,6 +47,17 @@ bool UBossPhaseComponent::InitializePhases(UBossPhaseConfigData* InConfig)
 void UBossPhaseComponent::SetMovementRoutes(const TMap<FName, FBossMovementRoute>& InRoutes)
 {
 	MovementRoutes = InRoutes;
+}
+
+void UBossPhaseComponent::SetRunState(EBossPhaseRunState NewState)
+{
+	if (RunState == NewState)
+	{
+		return;
+	}
+
+	RunState = NewState;
+	OnRunStateChanged.Broadcast();
 }
 
 bool UBossPhaseComponent::IsWaitingForPlayer() const
@@ -62,7 +74,7 @@ void UBossPhaseComponent::SetTransitionHandler(UObject* InHandler)
 	// 계약을 구현하지 않은 객체는 받지 않음
 	if (InHandler && !InHandler->GetClass()->ImplementsInterface(UBossPhaseTransitionHandler::StaticClass()))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[BossPhase] %s does not implement IBossPhaseTransitionHandler"), *GetNameSafe(InHandler));
+		UE_LOG(LogEnemy, Error, TEXT("[BossPhase] %s does not implement IBossPhaseTransitionHandler"), *GetNameSafe(InHandler));
 		TransitionHandlerObject.Reset();
 		return;
 	}
@@ -81,14 +93,14 @@ bool UBossPhaseComponent::StartPhases()
 	CurrentPhaseIndex = 0;
 
 	// 설정 적용 중에는 피해가 허용되지 않도록 Active 전환을 나중에 수행
-	RunState = EBossPhaseRunState::Transitioning;
+	SetRunState(EBossPhaseRunState::Transitioning);
 	if (!ApplyCurrentPhase())
 	{
 		StopAndInvalidate();
 		return false;
 	}
 
-	RunState = EBossPhaseRunState::Active;
+	SetRunState(EBossPhaseRunState::Active);
 
 	// 첫 페이즈 진입 중 즉시 완료된 기믹은 활성화 이후 처리
 	if (bPendingGimmickCompletion)
@@ -110,7 +122,7 @@ void UBossPhaseComponent::StopAndInvalidate()
 	PendingPhaseIndex = INDEX_NONE;
 	bApplyingPhase = false;
 	bPendingGimmickCompletion = false;
-	RunState = EBossPhaseRunState::Stopped;
+	SetRunState(EBossPhaseRunState::Stopped);
 
 	CancelTransitionPresentation(StoppedTransitionId);
 
@@ -124,7 +136,7 @@ void UBossPhaseComponent::StopAndInvalidate()
 void UBossPhaseComponent::EvaluateHealth(float Health, float MaxHealth)
 {
 	const FBossPhaseDefinition* Phase = GetCurrentPhase();
-	if (!IsActive() || !Phase || Phase->Kind != EBossPhaseKind::Combat)
+	if (!IsPhaseActive() || !Phase || Phase->Kind != EBossPhaseKind::Combat)
 	{
 		return;
 	}
@@ -169,7 +181,7 @@ bool UBossPhaseComponent::RequestNextPhaseFromGimmick(FName PhaseId, int64 Phase
 		return true;
 	}
 
-	if (!IsActive())
+	if (!IsPhaseActive())
 	{
 		return false;
 	}
@@ -216,7 +228,7 @@ bool UBossPhaseComponent::BeginPendingTransition()
 		return false;
 	}
 
-	RunState = EBossPhaseRunState::Transitioning;
+	SetRunState(EBossPhaseRunState::Transitioning);
 	StartTransitionPresentation();
 
 	return true;
@@ -235,7 +247,7 @@ bool UBossPhaseComponent::NotifyTransitionPresentationFinished(int64 TransitionI
 	bPresentationByHandler = false;
 	PresentationCinematic.Reset();
 
-	UE_LOG(LogTemp, Log, TEXT("[BossPhase] %s: transition presentation finished"),
+	UE_LOG(LogEnemy, Log, TEXT("[BossPhase] %s: transition presentation finished"),
 		*Config->Phases[PendingPhaseIndex].PhaseId.ToString());
 
 	CompleteTransition();
@@ -261,7 +273,7 @@ bool UBossPhaseComponent::GetCurrentWaypoint(FVector& OutLocation) const
 	const FBossPhaseDefinition* Phase = GetCurrentPhase();
 
 	// 페이즈가 기본 이동과 패턴별 예외 어디에서도 Waypoints를 사용하지 않으면 중단
-	if (!IsActive() || !Phase || !Phase->UsesWaypoints())
+	if (!IsPhaseActive() || !Phase || !Phase->UsesWaypoints())
 	{
 		return false;
 	}
@@ -288,7 +300,7 @@ bool UBossPhaseComponent::GetCurrentWaypoint(FVector& OutLocation) const
 int64 UBossPhaseComponent::GetLocomotionContextId() const
 {
 	// 활성 페이즈가 아니면 기본 이동 없음 → 이동 Task 종료
-	return IsActive() ? ActivePhaseExecutionId : 0;
+	return IsPhaseActive() ? ActivePhaseExecutionId : 0;
 }
 
 bool UBossPhaseComponent::ResolveLocomotion(FName PatternId, FEnemyLocomotionIntent& OutIntent) const
@@ -296,7 +308,7 @@ bool UBossPhaseComponent::ResolveLocomotion(FName PatternId, FEnemyLocomotionInt
 	OutIntent = FEnemyLocomotionIntent();
 
 	const FBossPhaseDefinition* Phase = GetCurrentPhase();
-	if (!IsActive() || !Phase)
+	if (!IsPhaseActive() || !Phase)
 	{
 		return false;
 	}
@@ -328,7 +340,7 @@ void UBossPhaseComponent::NotifyLocomotionDestinationReached(int64 ContextId)
 	// 아래 조건에서 무시
 	// - 페이즈가 전환 중이거나 정지 상태
 	// - 도착 알림이 현재 페이즈의 알림이 아님
-	if (!IsActive() || ContextId == 0 || ContextId != ActivePhaseExecutionId)
+	if (!IsPhaseActive() || ContextId == 0 || ContextId != ActivePhaseExecutionId)
 	{
 		return;
 	}
@@ -379,7 +391,7 @@ void UBossPhaseComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 // 다음 페이즈 전환을 중복 없이 요청하고 즉시 보호 처리 통지
 void UBossPhaseComponent::RequestNextPhase()
 {
-	if (!IsActive() || !Config || !Config->Phases.IsValidIndex(CurrentPhaseIndex + 1))
+	if (!IsPhaseActive() || !Config || !Config->Phases.IsValidIndex(CurrentPhaseIndex + 1))
 	{
 		return;
 	}
@@ -390,7 +402,7 @@ void UBossPhaseComponent::RequestNextPhase()
 
 	PendingPhaseIndex = CurrentPhaseIndex + 1;
 	ActiveTransitionId = ++NextTransitionId;
-	RunState = EBossPhaseRunState::TransitionPending;
+	SetRunState(EBossPhaseRunState::TransitionPending);
 
 	OnTransitionRequested.Broadcast();
 }
@@ -485,7 +497,7 @@ void UBossPhaseComponent::StartTransitionPresentation()
 		}
 
 		// 시퀀스 문제로 전투가 멈추지 않도록 연출만 건너뜀
-		UE_LOG(LogTemp, Warning, TEXT("[BossPhase] %s: transition sequence failed to start, skipped"),
+		UE_LOG(LogEnemy, Warning, TEXT("[BossPhase] %s: transition sequence failed to start, skipped"),
 			*NextPhase.PhaseId.ToString());
 	}
 
@@ -502,7 +514,7 @@ void UBossPhaseComponent::HandleDefaultPresentationEnded(FCinematicHandle Handle
 	}
 
 	// 정상 종료, 스킵, 제한 시간, 외부 정지 모두 연출 종료로 보고 다음 페이즈 진행
-	UE_LOG(LogTemp, Log, TEXT("[BossPhase] default transition sequence ended (%s)"), *UEnum::GetValueAsString(Reason));
+	UE_LOG(LogEnemy, Log, TEXT("[BossPhase] default transition sequence ended (%s)"), *UEnum::GetValueAsString(Reason));
 	NotifyTransitionPresentationFinished(ActiveTransitionId);
 }
 
@@ -563,7 +575,7 @@ void UBossPhaseComponent::CompleteTransition()
 		return;
 	}
 
-	RunState = EBossPhaseRunState::Active;
+	SetRunState(EBossPhaseRunState::Active);
 	ActiveTransitionId = 0;
 
 	// 진입 중 즉시 완료된 기믹은 완료 통지 전에 다음 전환으로 이어서 요청

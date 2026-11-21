@@ -7,6 +7,7 @@
 #include "Engine/StaticMeshSocket.h"
 #include "UObject/UnrealType.h"
 
+
 // 에디터에서 판정 항목을 추가하면 별도 에셋 없이 인라인 설정 생성
 void UEnemyMeleePatternSettings::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent)
 {

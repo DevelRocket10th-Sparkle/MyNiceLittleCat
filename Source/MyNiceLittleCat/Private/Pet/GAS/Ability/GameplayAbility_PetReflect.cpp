@@ -17,7 +17,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Components/WidgetComponent.h"
-#include "WIdgets/Interaction/InteractionPromptWidget.h"
+#include "Widgets/Interaction/InteractionPromptWidget.h"
 
 UGameplayAbility_PetReflect::UGameplayAbility_PetReflect()
 {

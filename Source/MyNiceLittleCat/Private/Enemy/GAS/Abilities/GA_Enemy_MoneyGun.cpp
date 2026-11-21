@@ -1,4 +1,5 @@
 #include "Enemy/GAS/Abilities/GA_Enemy_MoneyGun.h"
+#include "Enemy/EnemyLog.h"
 
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
@@ -9,24 +10,18 @@
 #include "Enemy/Data/MoneyGunPatternSettings.h"
 #include "Enemy/EnemyCharacter.h"
 
-namespace
-{
-	// 총의 전체 연출 시간이 패턴 제한 시간보다 이만큼 짧아야 정상 종료가 시간 초과보다 먼저 옴
-	constexpr float ExecutionTimeMargin = 0.1f;
-}
-
 bool UGA_Enemy_MoneyGun::CanStartPattern() const
 {
 	const UMoneyGunPatternSettings* MoneyGunSettings = GetPatternSettings<UMoneyGunPatternSettings>();
 
 	const bool bValid = MoneyGunSettings && MoneyGunSettings->IsValidConfiguration()
 		&& EnemyTargetUtils::IsAttackableTarget(ExecutionTarget)
-		&& MoneyGunSettings->GetExecutionSeconds() + ExecutionTimeMargin < ExecutionPattern.MaxExecutionSeconds
+		&& MoneyGunSettings->FitsExecutionTime(ExecutionPattern.MaxExecutionSeconds)
 		&& FindAnchor(MoneyGunSettings->LeftAnchorTag) && FindAnchor(MoneyGunSettings->RightAnchorTag);
 
 	if (!bValid)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[MoneyGun] %s: invalid settings, missing anchor tags, or MaxExecutionSeconds too short."),
+		UE_LOG(LogEnemy, Error, TEXT("[MoneyGun] %s: invalid settings, missing anchor tags, or MaxExecutionSeconds too short."),
 			*GetNameSafe(Enemy.Get()));
 	}
 

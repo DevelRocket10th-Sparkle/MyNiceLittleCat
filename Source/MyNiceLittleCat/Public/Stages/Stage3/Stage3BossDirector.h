@@ -2,12 +2,15 @@
 /*
 * 작성자: 전선현
 * 작성 일자: 2026.11.17. (AStage3BossCinematics 대체)
+* 수정 일자: 2026.11.20. (저녁 조명을 시간대 시스템으로, BossEffect → Cue 마커로 통일, 페이즈 눈 발광 하드코딩 제거 → bEyeGlowAtCutStart,
+*            엔딩·등장 전 보스 숨기기·첫 페이즈 시작 훅은 베이스로)
 * Stage3 저택 보스전 연출 (AStageEncounterDirector 파생)
 * - 오프닝: 도착 컷 → 대문 자물쇠 잠김 → (자물쇠를 열쇠로 풀면) 대문 열림 컷 → 마당 → (베이스) 보스 등장 컷 → 전투
 * - 페이즈 전환 연출: 핏자국, 사이렌, 보스 효과, 컷 종료 후 눈 색
-* - Stage3 전용 마커: Stair:Break
+* - Stage3 전용 마커: Stair:Break, EyeGlow
 *
-* 베이스가 처리하는 것: 보스방 등록, 컷 재생, Door/Event 마커, 보스 시작 위치, 아레나 진입 대기, 문 복원/출구 개방
+* 베이스가 처리하는 것: 보스방 등록, 컷 재생, Door/Event/Cue/Collapse 마커, 보스 시작 위치, 아레나 진입 대기, 문 복원/출구 개방,
+*   등장 전 보스 숨기기, 처치 후 엔딩 컷
 * 다른 곳으로 분리된 것: 시퀀스 재생(UCinematicSubsystem), 핏자국(UCinematicTrailDecalComponent),
 *   눈 발광(보스 BP의 UEnemyEyeGlowComponent), 문·잠긴 문 덜컹 소리(AGimmickDoor),
 *   열쇠·자물쇠 상호작용(AGimmickKeyLock), 재도전 초기화(ABossEncounterManager)
@@ -17,16 +20,14 @@
 
 #include "CoreMinimal.h"
 #include "Stages/StageEncounterDirector.h"
+#include "GameplayTagContainer.h"
 
 #include "Stage3BossDirector.generated.h"
 
 class AGimmickActorBase;
 class AGimmickKeyLock;
-class APetCharacter;
-class USoundBase;
 class UCinematicTrailDecalComponent;
 class UEnemyEyeGlowComponent;
-class UNiagaraSystem;
 
 // Stage3 페이즈 연출 설정: 공통 설정(컷, 보스 시작점, 진입 영역, 닫을 문) + Stage3 전용 연출
 USTRUCT(BlueprintType)
@@ -42,13 +43,13 @@ struct FStage3PhaseStaging : public FStagePhaseStaging
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Stage3")
 	FLinearColor EyeGlow = FLinearColor::Black;
 
-	// 컷 시작 시 경고 사이렌(눈 깜빡임) 재생
+	// 컷 시작 때 바로 눈 발광 색을 바꿈 (끄면 컷 종료나 시퀀스의 EyeGlow 마커에서 바꿈)
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Stage3")
+	bool bEyeGlowAtCutStart = false;
+
+	// 컷 시작 시 경고 사이렌(눈 깜빡임) 재생 (켜면 눈 색도 컷 시작 때 바꿈)
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Stage3")
 	bool bSirenWarning = false;
-
-	// 컷 시작 시 보스 메시에 붙일 효과 (옥상 탈출 연출 등)
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Stage3")
-	TObjectPtr<UNiagaraSystem> BossEffect;
 };
 
 // 베이스의 공통 페이즈 맵(Phase Staging)은 쓰지 않으므로 숨기고 Stage3 전용 Phases 사용
@@ -59,13 +60,8 @@ class MYNICELITTLECAT_API AStage3BossDirector : public AStageEncounterDirector
 
 public :
 
-	// 핏자국 컴포넌트 생성
+	// 핏자국 컴포넌트 생성, 등장 컷 전 보스 숨김
 	AStage3BossDirector();
-
-	/* IBossEncounterDirector */
-
-	// 엔딩 컷이 있으면 처치 후 레벨 이동을 엔딩이 끝날 때까지 미룸
-	virtual bool HoldsLevelAfterDefeat() const override;
 
 protected :
 
@@ -77,7 +73,6 @@ protected :
 	virtual const FStagePhaseStaging* FindPhaseStaging(FName PhaseId) const override;
 	virtual void AddCutBindings(FName CutTag, FCinematicRequest& Request) const override;
 
-	virtual void OnBossReady_Implementation(ABossCharacter* Boss) override;
 	virtual bool CanBeginIntro_Implementation(APlayerCharacter* Player) const override;
 	virtual void OnIntroStarting_Implementation(ABossCharacter* Boss) override;
 	virtual void OnIntroFinished_Implementation() override;
@@ -124,20 +119,6 @@ private :
 	// 전투 중 플레이어가 입구 문을 지나면 닫음
 	void UpdateEntranceCheck();
 
-	// 등장 컷 전에는 보스를 숨김
-	void HideBossBeforeIntro();
-
-	/* 엔딩 */
-
-	// 처치 다음 틱: 실제 보스 숨김, 펫 AI 정지, 엔딩 BGM, 엔딩 컷 재생
-	void StartEnding();
-
-	// 엔딩 컷 종료 후 검은 화면 유지 시간이 지나면 다음 레벨로
-	void FinishEnding();
-
-	// 플레이어의 파트너 펫 (없으면 nullptr)
-	APetCharacter* FindPartnerPet() const;
-
 	/* 레벨 상태 */
 
 	// 계단 막이 설정
@@ -145,6 +126,9 @@ private :
 
 	// 보스의 눈 발광 컴포넌트
 	UEnemyEyeGlowComponent* GetBossEyeGlow(const ABossCharacter* Boss) const;
+
+	// 페이즈 연출 설정의 눈 발광 색 적용 (bStopWarningPulse: 사이렌 깜빡임도 멈춤)
+	void ApplyPhaseEyeGlow(const ABossCharacter* Boss, const FStage3PhaseStaging& Staging, bool bStopWarningPulse) const;
 
 protected :
 
@@ -210,44 +194,19 @@ protected :
 	UPROPERTY(EditInstanceOnly, Category = "Stage3|Staging")
 	TObjectPtr<AActor> StairBlocker;
 
+	// 마커 Stair:Break에서 바꿀 시간대 (비우면 바꾸지 않음)
+	UPROPERTY(EditInstanceOnly, Category = "Stage3|Staging", meta = (Categories = "TimeOfDay"))
+	FGameplayTag StairBreakTimeOfDay;
+
 	// 사이렌 경고 길이. 깜빡임 색은 해당 페이즈의 EyeGlow 사용.
 	UPROPERTY(EditInstanceOnly, Category = "Stage3|Siren", meta = (ClampMin = "0.0", Units = "s"))
 	float SirenSeconds = 3.f;
-
-	/* 엔딩 */
-
-	// 보스 처치 후 재생할 엔딩 컷 (비우면 기존처럼 사망 연출 뒤 바로 다음 레벨)
-	// - 시퀀스: 보스 대역(스폰), Player/Pet 태그 바인딩, 마커 Cue:BossDust, Ragdoll:Player
-	UPROPERTY(EditInstanceOnly, Category = "Stage3|Ending")
-	TObjectPtr<ULevelSequence> EndingSequence;
-
-	// 엔딩 컷에서 펫을 연결할 바인딩 태그
-	UPROPERTY(EditInstanceOnly, Category = "Stage3|Ending")
-	FName PetBindingTag = TEXT("Pet");
-
-	// 엔딩 동안 이어질 곡 (이벤트 BGM: 존 볼륨보다 우선이라 컷이 마을로 넘어가도 곡 유지, 비우면 기존 곡)
-	UPROPERTY(EditInstanceOnly, Category = "Stage3|Ending")
-	TObjectPtr<USoundBase> EndingBGM;
-
-	// 엔딩 컷이 끝난 뒤(페이드 아웃 상태) 다음 레벨로 넘어가기 전 대기 시간
-	UPROPERTY(EditInstanceOnly, Category = "Stage3|Ending", meta = (ClampMin = "0.0", Units = "s"))
-	float EndingBlackHoldSeconds = 1.f;
 
 private :
 
 	// Stage3 전용 컷 태그
 	static const FName ArrivalCutTag;
 	static const FName UnlockCutTag;
-	static const FName EndingCutTag;
-
-	// 엔딩 컷에 연결할 펫 (엔딩 시작 시 저장, AddCutBindings가 const라 미리 찾아 둠)
-	TWeakObjectPtr<APetCharacter> EndingPet;
-
-	// 엔딩 진행 여부 (중복 시작 방지)
-	bool bEndingStarted = false;
-
-	// 엔딩 컷 종료 후 레벨 이동 대기
-	FTimerHandle EndingTimer;
 
 	// 오프닝 단계
 	EOpeningStep OpeningStep = EOpeningStep::WaitingForArrival;
